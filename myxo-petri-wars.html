@@ -255,9 +255,9 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 
     <section class="stage" id="stage" aria-label="Petri dish view">
       <canvas id="gl"></canvas>
       <div class="hud" id="hud" hidden>
-        <div class="side p"><div class="sname" id="hPName">Strain</div><div class="nums"><b id="hPCells">0</b> cells · <b id="hPE">0</b> ATP</div></div>
+        <div class="side p"><div class="sname" id="hPName">Strain</div><div class="nums"><b id="hPCells">0</b> cells · <b id="hPE">0</b> ATP<span id="hPFrag"></span></div></div>
         <div class="clock"><span id="hClock">00:00</span><small>incubation</small></div>
-        <div class="side e"><div class="sname" id="hEName">Rival</div><div class="nums"><b id="hECells">0</b> cells · <b id="hEE">0</b> ATP</div></div>
+        <div class="side e"><div class="sname" id="hEName">Rival</div><div class="nums"><b id="hECells">0</b> cells · <b id="hEE">0</b> ATP<span id="hEFrag"></span></div></div>
         <div class="tug" aria-hidden="true"><i class="tp" id="tugP" style="width:50%"></i><i class="te" id="tugE" style="width:50%"></i></div>
       </div>
       <div class="toast" id="toast" style="opacity:0"></div>
@@ -344,13 +344,14 @@ const GENES = [
   { id: 'toxin', cat: 'Offense', name: 'Antibiotic Haze', cost: 3, unlock: 5, desc: 'Poisons rival cells up to 2 cells away. Costs energy.' },
   { id: 'spores', cat: 'Offense', name: 'Spore Cannons', cost: 3, unlock: 6, desc: 'Every 45 min fires spores at distant food. Sporelings become new nuclei.' },
   { id: 'prune', cat: 'Network', name: 'Vein Pruning', cost: 1, unlock: 0, desc: 'Retracts idle tubes into a lean network. Refunds energy, lowers upkeep.' },
-  { id: 'fragment', cat: 'Network', name: 'Autonomy', cost: 2, unlock: 5, desc: 'Severed fragments survive and keep feeding.' },
+  { id: 'granules', cat: 'Network', name: 'Reserve Granules', cost: 2, unlock: 5, desc: 'Banks energy in every cell. Fragments cut off from food carry 2.5× the reserve and can wait out a famine, but less goes into growth.' },
 ];
 const GENE_BY_ID = Object.fromEntries(GENES.map(g => [g.id, g]));
 const TRAIT_COST = [0, 0, 1, 2, 4, 6]; // index by level 1..5
 const DRIVE_COST = [0, 0, 1, 2, 3, 5]; // index by level 0..5: a drive at 0 is free and switched off
 const SENSE_RANGE = [0, 5, 9, 13, 18, 26]; // cells a strain can sense from any cell it owns, by Sensor range level 1..5
 const PROBE_EVERY = 10, PROBE_TTL = 30, PROBE_REACH = 22; // exploration spikes: refill interval, lifetime, length (cells)
+const DOM_SHARE = 0.9, DOM_TICKS = 30, DOM_MIN = 200, BARE_GRACE = 60; // overrun: hold 90% of living tissue for 30 min with a real body; bare plate: called 60 min later
 const cl01 = (v, a, b) => Math.max(a, Math.min(b, v));
 
 // Genomes: { vigor 1-5, density 1-5, sense 1-5, genes [], taxis { food 0-5, hunt 0-5, explore 0-5 } }.
@@ -362,7 +363,7 @@ function normGenome(g) {
   const drive = (v, dflt) => cl01(Math.round(v == null ? dflt : v), 0, 5);
   return {
     vigor: cl01(Math.round(g.vigor || 2), 1, 5), density: cl01(Math.round(g.density || 2), 1, 5), sense: cl01(Math.round(g.sense || 2), 1, 5),
-    genes: (g.genes || []).slice(),
+    genes: (g.genes || []).map(id => id === 'fragment' ? 'granules' : id),
     taxis: old ? { food: lv(t.food), hunt: lv(t.hunt), explore: lv(t.wander) } : { food: drive(t.food, 3), hunt: drive(t.hunt, 1), explore: drive(t.explore, 2) },
   };
 }
@@ -383,7 +384,7 @@ function deriveSide(g0) {
   return {
     g, has, vigor: v, density: d, sense: g.sense, range: SENSE_RANGE[g.sense],
     acid: has('acid'), chitin: has('chitin'), mucus: has('mucus'), osmo: has('osmo'), sclero: has('sclero'),
-    regen: has('regen'), toxin: has('toxin'), spores: has('spores'), prune: has('prune'), fragment: has('fragment'),
+    regen: has('regen'), toxin: has('toxin'), spores: has('spores'), prune: has('prune'), granules: has('granules'),
     chloro: has('chloro'), necro: has('necro'),
     eat: [false, has('amylase'), has('protease'), has('ligninase')],
     maxHP: 12 + d * 6,
@@ -545,11 +546,12 @@ function makeDish(levelIdx) {
 }
 
 // ---------------- Battle ----------------
-// Every occupied cell also carries a *mass* (0..1): how much cytoplasm has been laid down there. New growth is a
-// sparse tendril (mass ~0.1); a cell thickens as it matures, as its own strain surrounds it, and when it sits on a
-// vein that routes energy back to a nucleus. Thin cells are cheap to keep but weak, and a rival's tendrils can creep
-// into them (contest) and push the occupant out. Veins come from the BFS tree in connect(): each cell routes its
-// intake to its parent, so flow accumulates along a few trunks that fatten over time (Physarum-style adaptation).
+// A strain is one decentralised organism. Every occupied cell carries a *mass* (0..1, sparse tendril → lace → sheet)
+// and a share of stored energy. Each minute the strain's connected fragments are found; a fragment pools its cells'
+// energy, earns income from the food it sits on, pays upkeep for its cells, and spends on growth and thickening.
+// Cutting a network apart splits its reserves in proportion to cell count; fragments that touch merge. A fragment
+// with no food simply starves. Veins come from a routing tree rooted at each fragment's feeding hub: cells attach to
+// the neighbour that carried the most flow last minute, so trunks between food sources fatten over time.
 const MASS_RATE = 0.025, MASS_DECAY = 0.02, MASS_COST = 0.25;
 function Battle(levelIdx, genomeP, genomeE) {
   const dish = makeDish(levelIdx);
@@ -561,6 +563,7 @@ function Battle(levelIdx, genomeP, genomeE) {
   this.hp = new Float32Array(NN);
   this.dorm = new Uint8Array(NN);
   this.mass = new Float32Array(NN); this.contest = new Float32Array(NN);
+  this.cellE = new Float32Array(NN); this.comp = new Int32Array(NN).fill(-1); this.starv = new Uint8Array(NN); this.isRoot = new Uint8Array(NN);
   this.parent = new Int32Array(NN).fill(-1); this.flow = new Float32Array(NN); this.flowPrev = new Float32Array(NN);
   this.vein = new Float32Array(NN); this.intake = new Float32Array(NN); this.cflag = new Uint8Array(NN);
   this.dist = [null, new Int16Array(NN), new Int16Array(NN)];
@@ -572,15 +575,15 @@ function Battle(levelIdx, genomeP, genomeE) {
   this.queue = new Int32Array(NN);
   this.stamp = new Int32Array(NN); this.stampId = 1;
   this.tmpA = new Uint8Array(NN); this.tmpB = new Uint8Array(NN);
-  this.candJ = new Int32Array(NN); this.candS = new Float32Array(NN); this.candK = new Uint8Array(NN);
+  this.candJ = new Int32Array(NN); this.candS = new Float32Array(NN); this.candK = new Uint8Array(NN); this.candF = new Int32Array(NN);
   this.rnd = rng(9001 + levelIdx * 131);
   const mk = (g, core) => {
     const s = deriveSide(g);
     Object.assign(s, {
-      energy: 100, roots: [core], core, cells: 0, connected: 0, alive: true, growAcc: 0,
+      energy: 100, core, hub: core, cells: 0, connected: 0, alive: true, growAcc: 0, frags: [], nFrags: 1, bigFrags: 1,
       starving: false, starveTicks: 0, dmgTaken: new Float32Array(8), lost: new Int32Array(8),
-      kills: 0, eaten: 0, peak: 0, coreLost: -1, pilesSeen: new Set(), lastBreach: -99, lastSever: -99, wasDormant: false,
-      prevDisc: 0, spent: 0, flowMax: 1, massSum: 0, massDorm: 0, contested: 0, pushes: 0, captures: 0,
+      kills: 0, eaten: 0, peak: 0, pilesSeen: new Set(), lastBreach: -99, lastSplit: -99, lastFragStarve: -99, splits: 0, fragStarved: 0, lastLost: core,
+      spent: 0, flowMax: 1, massSum: 0, massDorm: 0, contested: 0, pushes: 0, captures: 0, area: 0,
       known: new Set(), probes: [], probesSent: 0, probeFinds: 0, scouts: 0,
     });
     return s;
@@ -591,19 +594,25 @@ function Battle(levelIdx, genomeP, genomeE) {
     const c = S.core;
     this.setCell(c, s, S.maxHP, 1.0);
     for (let k = 0; k < 8; k++) { const j = NB[c * 8 + k]; if (j >= 0 && this.passable(j, S)) this.setCell(j, s, S.maxHP, 0.6); }
+    let n = 0; for (let i = 0; i < NN; i++) if (this.owner[i] === s) n++;
+    for (let i = 0; i < NN; i++) if (this.owner[i] === s) this.cellE[i] = 100 / n;
   }
-  this.tick = 0; this.done = false; this.result = null;
+  this.tick = 0; this.done = false; this.result = null; this.bareTick = -1; this.domRun = [0, 0, 0];
+  let f0 = 0; for (let i = 0; i < NN; i++) f0 += this.food[i]; this.food0Total = f0;
   this.frames = []; this.events = [];
   this.stats = { cells: [null, [], []], energy: [null, [], []] };
   this.contact = false;
-  this.connect(1); this.connect(2);
+  for (const s of [1, 2]) { this.label(s); this.connect(s); }
   this.scent(1); this.scent(2);
   this.mature();
   this.count();
   this.record();
 }
 
-Battle.prototype.setCell = function (i, s, hp, mass) { this.owner[i] = s; this.hp[i] = hp; this.dorm[i] = 0; this.mass[i] = mass == null ? 0.12 : mass; this.contest[i] = 0; this.parent[i] = -1; this.flow[i] = 0; };
+Battle.prototype.setCell = function (i, s, hp, mass, comp) {
+  this.owner[i] = s; this.hp[i] = hp; this.dorm[i] = 0; this.mass[i] = mass == null ? 0.12 : mass; this.contest[i] = 0;
+  this.parent[i] = -1; this.flow[i] = 0; this.cellE[i] = 0; this.starv[i] = 0; this.isRoot[i] = 0; this.comp[i] = comp == null ? -1 : comp;
+};
 Battle.prototype.passable = function (i, S) {
   const t = this.terrain[i];
   return t !== T_VOID && t !== T_ROCK;
@@ -612,16 +621,49 @@ Battle.prototype.hpCap = function (i, S) { return S.maxHP * (0.4 + 0.6 * this.ma
 Battle.prototype.event = function (side, type, cell, extra) {
   this.events.push(Object.assign({ t: this.tick, side, type, cell }, extra || {}));
 };
+// the fragment pool a cell draws on (falls back to the strain's largest fragment)
+Battle.prototype.fragOf = function (i) {
+  const S = this.sides[this.owner[i]]; if (!S) return null;
+  const c = this.comp[i];
+  return (c >= 0 && c < S.frags.length) ? S.frags[c] : S.frags[S.mainFrag] || null;
+};
 
-// Connectivity BFS from the nuclei. Also builds the routing tree: among equal-distance candidates a cell attaches to
-// the neighbour that carried the most flow last tick, so trunks that carry food keep attracting more (positive
-// feedback), and accumulates subtree flow (1 per cell + food intake) up the tree.
+// Fragments: connected components of a strain, each with its pooled energy, and the hub that will root its veins.
+Battle.prototype.label = function (s) {
+  const S = this.sides[s], owner = this.owner, comp = this.comp, q = this.queue, cellE = this.cellE, mass = this.mass, dorm = this.dorm, starv = this.starv, intake = this.intake, fp = this.flowPrev;
+  const frags = S.frags = [];
+  for (let i = 0; i < NN; i++) if (owner[i] === s) comp[i] = -1;
+  let main = 0;
+  for (let i = 0; i < NN; i++) {
+    if (owner[i] !== s || comp[i] >= 0) continue;
+    const id = frags.length, F = { id, cells: 0, energy: 0, income: 0, massSum: 0, dormCells: 0, starvCells: 0, feeding: 0, hub: i, hubScore: -1, starving: false, maxD: 0 };
+    frags.push(F);
+    let h = 0, t = 0; q[t++] = i; comp[i] = id;
+    while (h < t) {
+      const c = q[h++]; F.cells++; F.energy += cellE[c];
+      if (dorm[c]) { F.dormCells++; } else F.massSum += mass[c];
+      if (starv[c]) F.starvCells++;
+      if (intake[c] > 0) F.feeding++;
+      const sc = (intake[c] > 0 ? 1000 : 0) + fp[c] + mass[c] * 0.01;
+      if (sc > F.hubScore) { F.hubScore = sc; F.hub = c; }
+      for (let k = 0; k < 8; k++) { const j = NB[c * 8 + k]; if (j >= 0 && owner[j] === s && comp[j] < 0) { comp[j] = id; q[t++] = j; } }
+    }
+    F.starving = F.energy <= 0 || (F.energy < 20 && F.starvCells * 2 > F.cells);
+    if (F.cells > frags[main].cells) main = id;
+  }
+  S.mainFrag = main;
+  S.nFrags = frags.length;
+  S.bigFrags = frags.filter(F => F.cells >= 6).length;
+  if (frags.length) { S.hub = frags[main].hub; S.starving = frags[main].starving; }
+};
+
+// Routing tree from each fragment's hub. Among equal-distance candidates a cell attaches to the neighbour that
+// carried the most flow last minute (positive feedback), and subtree flow (1 per cell + food intake) accumulates.
 Battle.prototype.connect = function (s) {
-  const S = this.sides[s], dist = this.dist[s], owner = this.owner, q = this.queue, par = this.parent, flow = this.flow, fp = this.flowPrev, intake = this.intake;
+  const S = this.sides[s], dist = this.dist[s], owner = this.owner, q = this.queue, par = this.parent, flow = this.flow, fp = this.flowPrev, intake = this.intake, isRoot = this.isRoot;
   dist.fill(-1);
-  S.roots = S.roots.filter(r => owner[r] === s);
   let h = 0, t = 0;
-  for (const r of S.roots) { if (dist[r] >= 0) continue; dist[r] = 0; par[r] = -1; q[t++] = r; }
+  for (const F of S.frags) { const r = F.hub; dist[r] = 0; par[r] = -1; q[t++] = r; }
   while (h < t) {
     const i = q[h++], d = dist[i] + 1, fi = fp[i] + ((i * 2654435761) >>> 29) * 0.07;
     for (let k = 0; k < 8; k++) {
@@ -634,9 +676,15 @@ Battle.prototype.connect = function (s) {
   S.connected = t;
   for (let k = 0; k < t; k++) flow[q[k]] = 0;
   for (let k = t - 1; k >= 0; k--) { const i = q[k]; flow[i] += 1 + intake[i] * 6; const p = par[i]; if (p >= 0) flow[p] += flow[i]; }
-  let fmax = 8; for (const r of S.roots) if (flow[r] > fmax) fmax = flow[r];
+  let fmax = 8;
+  for (const F of S.frags) { if (flow[F.hub] > fmax) fmax = flow[F.hub]; F.maxD = 0; }
   S.flowMax = fmax;
-  for (let i = 0; i < NN; i++) if (owner[i] === s && dist[i] < 0) { flow[i] = 0; par[i] = -1; }
+  for (let i = 0; i < NN; i++) {
+    if (owner[i] !== s) continue;
+    isRoot[i] = 0;
+    const F = S.frags[this.comp[i]]; if (F && dist[i] > F.maxD) F.maxD = dist[i];
+  }
+  for (const F of S.frags) isRoot[F.hub] = 1;
 };
 
 Battle.prototype.bfsFrom = function (out, isSource, canPass, maxDepth) {
@@ -661,7 +709,7 @@ Battle.prototype.bfsFrom = function (out, isSource, canPass, maxDepth) {
 Battle.prototype.scent = function (s) {
   const S = this.sides[s], o = 3 - s, terr = this.terrain, food = this.food, ft = this.dish.foodType, owner = this.owner, pile = this.dish.pile, bd = this.bd[s];
   const canPass = j => { const t = terr[j]; return t !== T_VOID && (t !== T_ROCK || S.acid); };
-  this.bfsFrom(bd, i => owner[i] === s && (this.dist[s][i] >= 0 || S.fragment), canPass, S.range);
+  this.bfsFrom(bd, i => owner[i] === s, canPass, S.range);
   for (let i = 0; i < NN; i++) {
     const pid = pile[i];
     if (pid < 0 || bd[i] > S.range || !S.eat[ft[i]] || S.known.has(pid)) continue;
@@ -678,14 +726,15 @@ Battle.prototype.scent = function (s) {
 // growth along that ray gets a bonus, so a thin spike reaches out. Whatever the spike brings into sensor range is
 // then handled by the Food and Hunt drives.
 Battle.prototype.probe = function (s) {
-  const S = this.sides[s], owner = this.owner, terr = this.terrain, rnd = this.rnd, dist = this.dist[s], T = this.tick;
+  const S = this.sides[s], owner = this.owner, terr = this.terrain, rnd = this.rnd, T = this.tick;
   S.probes = S.probes.filter(p => T - p.t0 < PROBE_TTL);
   if (S.starving || S.probes.length >= S.explore) return;
   const canPass = j => { const t = terr[j]; return t !== T_VOID && (t !== T_ROCK || S.acid); };
-  // body centroid and frontier candidates
+  // body centroid and frontier candidates (from fragments that are not starving)
   let cx = 0, cy = 0, n = 0; const front = [];
   for (let i = 0; i < NN; i++) {
-    if (owner[i] !== s || dist[i] < 0 || this.dorm[i]) continue;
+    if (owner[i] !== s || this.dorm[i]) continue;
+    const F = this.fragOf(i); if (!F || F.starving) continue;
     const x = i % N, y = (i - x) / N; cx += x; cy += y; n++;
     let own = 0, open = 0;
     for (let k = 0; k < 8; k++) { const j = NB[i * 8 + k]; if (j < 0) continue; if (owner[j] === s) own++; else if (owner[j] === 0 && canPass(j)) open++; }
@@ -702,7 +751,6 @@ Battle.prototype.probe = function (s) {
       let ang = Math.atan2(y - cy, x - cx); if (!(Math.hypot(x - cx, y - cy) > 1)) ang = rnd() * Math.PI * 2;
       ang += (rnd() - 0.5) * 1.4;
       const dx = Math.cos(ang), dy = Math.sin(ang);
-      // free run: how far open agar continues along the ray
       let run = 0;
       for (let r = 1; r <= PROBE_REACH; r++) {
         const xx = Math.round(x + dx * r), yy = Math.round(y + dy * r);
@@ -731,28 +779,43 @@ Battle.prototype.count = function () {
     if (this.dorm[i]) { S.dormCells++; S.massDorm += this.mass[i]; } else S.massSum += this.mass[i];
     if (this.contest[i] > 0) S.contested++;
   }
-  for (const s of [1, 2]) { const S = this.sides[s]; if (S.cells > S.peak) S.peak = S.cells; }
+  for (const s of [1, 2]) {
+    const S = this.sides[s]; if (S.cells > S.peak) S.peak = S.cells;
+    let e = 0; for (const F of S.frags) e += Math.max(0, F.energy); S.energy = e;
+  }
+};
+
+// Spread each fragment's pool back over its cells, so a later cut divides reserves by cell count.
+Battle.prototype.settle = function (s) {
+  const S = this.sides[s], owner = this.owner, comp = this.comp, cellE = this.cellE, starv = this.starv;
+  const n = new Int32Array(S.frags.length);
+  for (let i = 0; i < NN; i++) if (owner[i] === s) { const c = comp[i]; if (c >= 0 && c < n.length) n[c]++; }
+  for (let i = 0; i < NN; i++) {
+    if (owner[i] !== s) continue;
+    const c = comp[i], F = (c >= 0 && c < n.length) ? S.frags[c] : null;
+    cellE[i] = F && n[c] ? Math.max(0, F.energy) / n[c] : 0;
+    starv[i] = F && F.starving ? 1 : 0;
+  }
 };
 
 // Cells mature: mass drifts toward a target set by how surrounded the cell is, how much flow its vein carries,
-// whether it is feeding or fighting. Thickening costs ATP; starving or severed cells thin out.
+// whether it is feeding or fighting. Thickening costs the fragment ATP; starving fragments thin out.
 Battle.prototype.mature = function () {
   const owner = this.owner, mass = this.mass, flow = this.flow, vein = this.vein, intake = this.intake, cf = this.cflag, dorm = this.dorm;
   for (let i = 0; i < NN; i++) {
     const o = owner[i]; if (!o) { vein[i] = 0; continue; }
-    const S = this.sides[o], d = this.dist[o][i];
-    const v = d < 0 ? 0 : Math.log(1 + flow[i]) / Math.log(1 + S.flowMax);
+    const S = this.sides[o], F = this.fragOf(i), starving = F ? F.starving : S.starving;
+    const v = Math.log(1 + flow[i]) / Math.log(1 + S.flowMax);
     vein[i] = v;
     let own = 0; for (let k = 0; k < 8; k++) { const j = NB[i * 8 + k]; if (j >= 0 && owner[j] === o) own++; }
     let target = 0.1 + 0.42 * Math.pow(own / 8, 1.5) + 0.5 * v * v + (intake[i] > 0 ? 0.25 : 0) + ((cf[i] & 2) ? 0.15 : 0);
-    if (d < 0 && !S.fragment) target = 0.05;
-    if (S.starving) target *= 0.5;
+    if (starving) target *= 0.5;
     if (dorm[i]) target = Math.max(target, 0.6);
     if (target > 1) target = 1;
     const m = mass[i];
     if (m < target) {
       const dm = Math.min(target - m, MASS_RATE), cost = dm * MASS_COST * S.growCost;
-      if (!S.starving && S.energy > cost + 2) { S.energy -= cost; S.spent += cost; mass[i] = m + dm; }
+      if (F && !starving && F.energy > cost + 2) { F.energy -= cost; S.spent += cost; mass[i] = m + dm; }
     } else if (m > target) mass[i] = Math.max(target, m - MASS_DECAY);
   }
 };
@@ -760,72 +823,71 @@ Battle.prototype.mature = function () {
 Battle.prototype.step = function () {
   if (this.done) return;
   this.tick++;
-  const T = this.tick, rnd = this.rnd, owner = this.owner, hp = this.hp, terr = this.terrain, food = this.food, mass = this.mass, contest = this.contest, cf = this.cflag;
+  const T = this.tick, rnd = this.rnd, owner = this.owner, hp = this.hp, terr = this.terrain, food = this.food, mass = this.mass, contest = this.contest, cf = this.cflag, cellE = this.cellE, comp = this.comp;
   const ft = this.dish.foodType, dorm = this.dorm;
   this.dmg.fill(0); this.dsrc.fill(0); this.dsrcAmt.fill(0); this.dby.fill(0); cf.fill(0);
   this.flowPrev.set(this.flow);
 
-  // 1. connectivity
-  for (const s of [1, 2]) {
-    const S = this.sides[s];
-    const hadCore = owner[S.core] === s;
-    this.connect(s);
-    if (S.coreLost < 0 && !hadCore) { S.coreLost = T; }
-  }
+  // 1. fragments and routing
+  for (const s of [1, 2]) { this.label(s); this.connect(s); }
   // 2. scent
   if (T % 5 === 1) { this.scent(1); this.scent(2); }
 
-  // 3. income
+  // 3. income, credited to the fragment doing the eating
   const intake = this.intake; intake.fill(0);
-  for (const s of [1, 2]) this.sides[s].income = 0.5;
+  for (const s of [1, 2]) { this.sides[s].income = 0; for (const F of this.sides[s].frags) F.income = 0.5 * F.cells / Math.max(1, this.sides[s].cells); }
   for (let i = 0; i < NN; i++) {
     const o = owner[i]; if (!o) continue;
-    const S = this.sides[o];
+    const S = this.sides[o], F = this.fragOf(i);
     const f = ft[i];
     if (f && food[i] > 0 && S.eat[f]) {
       const take = Math.min(food[i], EAT_RATE[f] * (dorm[i] ? 0.5 : 1));
-      food[i] -= take; S.income += take * YIELD[f]; S.eaten += take * YIELD[f]; intake[i] = take * YIELD[f];
+      food[i] -= take; const gain = take * YIELD[f]; S.eaten += gain; intake[i] = gain; if (F) F.income += gain;
       const pid = this.dish.pile[i];
       if (pid >= 0 && !S.pilesSeen.has(pid)) { S.pilesSeen.add(pid); this.event(o, 'food', i, { food: f }); }
     }
-    if (terr[i] === T_LIGHT && S.chloro) { S.income += 0.2; intake[i] += 0.2; }
+    if (terr[i] === T_LIGHT && S.chloro) { intake[i] += 0.2; if (F) F.income += 0.2; }
   }
   for (let i = 0; i < NN; i++) if (ft[i] === F_PROT && food[i] < this.dish.food0[i]) food[i] = Math.min(this.dish.food0[i], food[i] + 0.03);
-  // 4. upkeep & starvation state (thin tendrils are cheaper to maintain than thick sheets)
+  if (this.bareTick < 0 && T % 5 === 0) { let fl = 0; for (let i = 0; i < NN; i++) fl += food[i]; if (fl < this.food0Total * 0.05) { this.bareTick = T; this.event(0, 'bare', -1); } }
+  // 4. upkeep per fragment (thin tendrils are cheaper to maintain than thick sheets); starvation is per fragment
   for (const s of [1, 2]) {
-    const S = this.sides[s];
-    const active = S.cells - S.dormCells;
-    const cost = (active * 0.55 + S.massSum * 0.7) * S.upkeep + S.dormCells * S.upkeep * 0.15;
-    S.energy += S.income - cost;
-    S.lastIncome = S.income; S.lastUpkeep = cost;
-    if (S.energy <= 0) {
-      S.energy = 0;
-      if (!S.starving) { S.starving = true; this.event(s, S.sclero ? 'dormant' : 'starve', S.core); }
-    } else if (S.starving && S.energy > 20) { S.starving = false; this.event(s, 'recover', S.core); }
+    const S = this.sides[s]; let inc = 0, up = 0;
+    for (const F of S.frags) {
+      const active = F.cells - F.dormCells;
+      const cost = (active * 0.55 + F.massSum * 0.7) * S.upkeep + F.dormCells * S.upkeep * 0.15;
+      F.energy += F.income - cost; inc += F.income; up += cost;
+      const was = F.starving;
+      if (F.energy <= 0) { F.energy = 0; F.starving = true; }
+      else if (F.starving && F.energy > 20) F.starving = false;
+      if (F.id === S.mainFrag) {
+        if (F.starving && !S.starving) this.event(s, S.sclero ? 'dormant' : 'starve', F.hub);
+        else if (!F.starving && S.starving) this.event(s, 'recover', F.hub);
+        S.starving = F.starving;
+      } else if (F.starving && !was && F.cells >= 8 && T - S.lastFragStarve > 30) { S.lastFragStarve = T; S.fragStarved++; this.event(s, 'fragstarve', F.hub, { n: F.cells }); }
+    }
+    S.lastIncome = inc; S.lastUpkeep = up; S.income = inc;
     if (S.starving) S.starveTicks++;
   }
-  // dormancy toggling
+  // dormancy toggling (sclerotia harden fragment by fragment)
   for (let i = 0; i < NN; i++) {
     const o = owner[i]; if (!o) continue;
-    const S = this.sides[o];
-    if (S.sclero) dorm[i] = S.starving ? 1 : 0; else dorm[i] = 0;
+    const S = this.sides[o], F = this.fragOf(i);
+    if (S.sclero) dorm[i] = (F && F.starving) ? 1 : 0; else dorm[i] = 0;
   }
 
-  // 5. hazards, decay, starvation, regen
-  let maxD = [0, 0, 0];
-  for (let i = 0; i < NN; i++) { const o = owner[i]; if (o && this.dist[o][i] > maxD[o]) maxD[o] = this.dist[o][i]; }
+  // 5. hazards, starvation, regen
   for (let i = 0; i < NN; i++) {
     const o = owner[i]; if (!o) continue;
-    const S = this.sides[o], t = terr[i], dm = dorm[i] ? 0.4 : 1;
+    const S = this.sides[o], F = this.fragOf(i), t = terr[i], dm = dorm[i] ? 0.4 : 1;
     if (t === T_SALT && !S.osmo) this.addDmg(i, 1.1 * dm, S_SALT);
     if (t === T_LIGHT && !S.chloro) this.addDmg(i, 0.55 * dm, S_UV);
-    const d = this.dist[o][i];
-    if (d < 0 && !S.fragment) this.addDmg(i, S.roots.length ? 0.45 : 1.6, S_SEVER);
-    if (S.starving && !S.sclero && d > maxD[o] * 0.5) this.addDmg(i, 0.35, S_STARVE);
+    const d = this.dist[o][i], starving = F ? F.starving : false;
+    if (starving && !S.sclero && (!F || d > F.maxD * 0.5 || F.cells <= 3)) this.addDmg(i, 0.35, S_STARVE);
     const cap = this.hpCap(i, S);
-    if (!S.starving && (d >= 0 || S.fragment) && !dorm[i] && hp[i] < cap) {
+    if (!starving && !dorm[i] && hp[i] < cap) {
       const h = Math.min(cap - hp[i], 0.15 + (S.regen ? 1.0 : 0));
-      hp[i] += h; if (S.regen) { S.energy -= h * 0.02; if (h > 0.3) cf[i] |= 1; }
+      hp[i] += h; if (S.regen) { if (F) F.energy -= h * 0.02; if (h > 0.3) cf[i] |= 1; }
     } else if (hp[i] > cap) hp[i] -= Math.min(hp[i] - cap, 0.25);
   }
 
@@ -840,33 +902,36 @@ Battle.prototype.step = function () {
     cf[i] |= 2;
     const O = this.sides[o], vigour = 0.5 + 0.5 * Math.min(1, hp[i] / S.maxHP), dm = dorm[best] ? 0.4 : 1;
     this.addDmg(best, S.engulf * vigour * (O.chitin ? 0.5 : 1) * dm, S_ENGULF, s);
-    if (S.acid && S.energy > 1) { this.addDmg(best, 2.4 * vigour * (O.mucus ? 0.35 : 1) * dm, S_ACID, s); S.energy -= 0.03; }
+    const F = this.fragOf(i);
+    if (S.acid && F && F.energy > 1) { this.addDmg(best, 2.4 * vigour * (O.mucus ? 0.35 : 1) * dm, S_ACID, s); F.energy -= 0.03; }
   }
   // 6b. contested cells: rival tendrils inside a thin cell push against the occupant
   for (let i = 0; i < NN; i++) {
     const c = contest[i]; if (c <= 0) continue;
     const o = owner[i]; if (!o) { contest[i] = 0; continue; }
     const k = 3 - o, K = this.sides[k], O = this.sides[o];
-    let sup = 0, supHp = 0;
-    for (let q = 0; q < 8; q++) { const j = NB[i * 8 + q]; if (j >= 0 && owner[j] === k && !dorm[j]) { sup++; supHp += hp[j] / K.maxHP; } }
+    let sup = 0, supHp = 0, supCell = -1;
+    for (let q = 0; q < 8; q++) { const j = NB[i * 8 + q]; if (j >= 0 && owner[j] === k && !dorm[j]) { sup++; supHp += hp[j] / K.maxHP; supCell = j; } }
     if (!sup) { contest[i] = Math.max(0, c - 0.2); continue; }
     cf[i] |= 2;
+    const KF = this.fragOf(supCell);
     const push = K.engulf * (0.4 + 0.6 * supHp / sup) * Math.min(1, sup / 3) * (O.chitin ? 0.6 : 1) * (K.acid && !O.mucus ? 1.3 : 1);
     const hold = (hp[i] / O.maxHP) * (0.5 + 1.0 * mass[i]) * O.engulf * (dorm[i] ? 2.5 : 1) * 0.85;
     const dc = 0.1 * (push - hold) / (push + hold + 0.01) + (rnd() - 0.5) * 0.03;
     this.addDmg(i, K.engulf * c * 0.5 * (O.chitin ? 0.5 : 1) * (dorm[i] ? 0.4 : 1), S_ENGULF, k);
-    if (K.acid && K.energy > 1) { this.addDmg(i, 1.2 * c * (O.mucus ? 0.35 : 1), S_ACID, k); K.energy -= 0.02; }
+    if (K.acid && KF && KF.energy > 1) { this.addDmg(i, 1.2 * c * (O.mucus ? 0.35 : 1), S_ACID, k); KF.energy -= 0.02; }
     let nc = c + dc;
     if (nc >= 1) {
       O.lost[S_ENGULF]++; K.kills++; K.captures++;
-      if (i === O.core) this.event(o, 'core', i);
-      const ri = O.roots.indexOf(i); if (ri >= 0) O.roots.splice(ri, 1);
-      this.setCell(i, k, K.maxHP * 0.4, 0.2); contest[i] = 0.3;
-      if (K.necro) { K.energy += 6; K.eaten += 6; }
+      const OF = this.fragOf(i); if (OF) OF.energy -= cellE[i];
+      O.lastLost = i;
+      this.setCell(i, k, K.maxHP * 0.4, 0.2, comp[supCell]); contest[i] = 0.3;
+      if (K.necro && KF) { KF.energy += 6; K.eaten += 6; }
     } else contest[i] = nc < 0.02 ? 0 : nc;
   }
   for (const s of [1, 2]) {
-    const S = this.sides[s]; if (!S.toxin || S.energy < 2) continue;
+    const S = this.sides[s]; if (!S.toxin) continue;
+    const MF = S.frags[S.mainFrag]; if (!MF || MF.energy < 2) continue;
     const o = 3 - s, A = this.tmpA, B = this.tmpB, O = this.sides[o];
     for (let i = 0; i < NN; i++) A[i] = (owner[i] === s && !dorm[i]) ? 1 : 0;
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
@@ -876,18 +941,19 @@ Battle.prototype.step = function () {
     for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
       const i = y * N + x; if (owner[i] !== o) continue;
       let m = 0; for (let dy = -2; dy <= 2 && !m; dy++) { const yy = y + dy; if (yy >= 0 && yy < N && B[yy * N + x]) m = 1; }
-      if (m) { this.addDmg(i, 0.55 * (O.mucus ? 0.6 : 1) * (dorm[i] ? 0.4 : 1), S_TOXIN, s); S.energy -= 0.012; }
+      if (m) { this.addDmg(i, 0.55 * (O.mucus ? 0.6 : 1) * (dorm[i] ? 0.4 : 1), S_TOXIN, s); MF.energy -= 0.012; }
     }
   }
   // 7. acid on granite
   for (const s of [1, 2]) {
-    const S = this.sides[s]; if (!S.acid || S.energy < 3) continue;
+    const S = this.sides[s]; if (!S.acid) continue;
     for (let i = 0; i < NN; i++) {
       if (terr[i] !== T_ROCK) continue;
-      let n = 0;
-      for (let k = 0; k < 4; k++) { const j = NB[i * 8 + k]; if (j >= 0 && owner[j] === s && !dorm[j]) n++; }
+      let n = 0, from = -1;
+      for (let k = 0; k < 4; k++) { const j = NB[i * 8 + k]; if (j >= 0 && owner[j] === s && !dorm[j]) { n++; from = j; } }
       if (!n) continue;
-      this.rockHP[i] -= 0.45 * n; S.energy -= 0.05 * n;
+      const F = this.fragOf(from); if (!F || F.energy < 3) continue;
+      this.rockHP[i] -= 0.45 * n; F.energy -= 0.05 * n;
       if (this.rockHP[i] <= 0) {
         this.rockHP[i] = 0; terr[i] = T_AGAR;
         if (T - S.lastBreach > 25) { S.lastBreach = T; this.event(s, 'breach', i); }
@@ -904,18 +970,17 @@ Battle.prototype.step = function () {
     if (hp[i] <= 0) {
       S.lost[src]++;
       const hadRival = contest[i] > 0.15;
-      owner[i] = 0; hp[i] = 0; dorm[i] = 0; mass[i] = 0; contest[i] = 0;
-      const isRoot = S.roots.indexOf(i);
-      if (i === S.core) { this.event(o, 'core', i); }
-      if (isRoot >= 0) S.roots.splice(isRoot, 1);
+      const OF = this.fragOf(i); if (OF) OF.energy -= cellE[i];
+      owner[i] = 0; hp[i] = 0; dorm[i] = 0; mass[i] = 0; contest[i] = 0; cellE[i] = 0; comp[i] = -1;
+      S.lastLost = i;
       const k = this.dby[i];
       if (k && (src === S_ENGULF || src === S_ACID || src === S_TOXIN)) {
         const K = this.sides[k]; K.kills++;
-        if (K.necro) { K.energy += 6; K.eaten += 6; }
-        if ((src === S_ENGULF || src === S_ACID) && K.energy > K.growCost) {
-          // capture if adjacent, or if the killer's tendrils were already inside
-          let adj = hadRival; for (let q = 0; q < 8 && !adj; q++) { const j = NB[i * 8 + q]; if (j >= 0 && owner[j] === k) adj = true; }
-          if (adj) { this.setCell(i, k, K.maxHP * 0.35, 0.15); K.energy -= K.growCost * 0.6; }
+        let adj = -1; for (let q = 0; q < 8; q++) { const j = NB[i * 8 + q]; if (j >= 0 && owner[j] === k) { adj = j; break; } }
+        const KF = adj >= 0 ? this.fragOf(adj) : K.frags[K.mainFrag];
+        if (K.necro && KF) { KF.energy += 6; K.eaten += 6; }
+        if ((src === S_ENGULF || src === S_ACID) && KF && KF.energy > K.growCost && (adj >= 0 || hadRival)) {
+          this.setCell(i, k, K.maxHP * 0.35, 0.15, adj >= 0 ? comp[adj] : K.mainFrag); KF.energy -= K.growCost * 0.6;
         }
       }
     }
@@ -931,40 +996,56 @@ Battle.prototype.step = function () {
   if (T % 45 === 40) for (const s of [1, 2]) if (this.sides[s].spores) this.sporulate(s);
 
   this.count();
-  // severance detection
+  for (const s of [1, 2]) this.settle(s);
+  // split detection: did the number of sizeable fragments go up?
   for (const s of [1, 2]) {
-    const S = this.sides[s];
-    this.connect(s);
-    const disc = S.cells - S.connected;
-    if (disc - S.prevDisc >= 8 && T - S.lastSever > 20) { S.lastSever = T; this.event(s, 'sever', S.core, { n: disc }); }
-    S.prevDisc = disc;
+    const S = this.sides[s], before = S.bigFrags;
+    this.label(s);
+    if (S.bigFrags > before && T - S.lastSplit > 20) {
+      S.lastSplit = T; S.splits++;
+      const sizes = S.frags.map(F => F.cells).filter(c => c >= 6).sort((a, b) => b - a);
+      this.event(s, 'split', S.frags[S.mainFrag].hub, { n: S.bigFrags, piece: sizes[1] || 0 });
+    }
   }
   this.record();
-  // end
-  const p = this.sides[1], e = this.sides[2];
+  // end: wipe-out, overrun (one strain holds almost all living tissue for a sustained spell), a bare plate called
+  // after a grace period, or the 12-hour incubation; the last two are judged on coverage over the whole incubation
+  const p = this.sides[1], e = this.sides[2], tot = p.cells + e.cells || 1;
+  for (const s of [1, 2]) { const S = this.sides[s]; this.domRun[s] = (S.cells / tot >= DOM_SHARE && S.cells >= DOM_MIN) ? this.domRun[s] + 1 : 0; }
   if (p.cells === 0 || e.cells === 0) {
     this.done = true;
     this.result = { winner: e.cells === 0 && p.cells > 0 ? 1 : 2, reason: 'elim', tick: T };
-  } else if (T >= MAXT) {
+  } else if (this.domRun[1] >= DOM_TICKS || this.domRun[2] >= DOM_TICKS) {
     this.done = true;
-    this.result = { winner: p.cells > e.cells ? 1 : 2, reason: 'time', tick: T };
+    const w = this.domRun[1] >= DOM_TICKS ? 1 : 2;
+    this.result = { winner: w, reason: 'dom', tick: T, share: this.sides[w].cells / tot };
+  } else if (this.bareTick > 0 && T >= this.bareTick + BARE_GRACE) {
+    this.done = true;
+    this.result = { winner: p.area >= e.area ? 1 : 2, reason: 'bare', tick: T, share: p.area / Math.max(1, p.area + e.area) };
+  } else if (T >= MAXT) {
+    // a plate that goes the distance is judged on coverage over the whole incubation, not on famine remnants
+    this.done = true;
+    this.result = { winner: p.area >= e.area ? 1 : 2, reason: 'time', tick: T, share: p.area / Math.max(1, p.area + e.area) };
   }
-  if (this.done) this.event(this.result.winner, 'end', this.result.winner === 1 ? e.core : p.core);
+  if (this.done) { const L = this.sides[3 - this.result.winner]; this.event(this.result.winner, 'end', L.cells ? L.hub : L.lastLost); }
 };
 
 Battle.prototype.grow = function (s) {
-  const S = this.sides[s]; if (S.starving || !S.cells) return;
-  const owner = this.owner, terr = this.terrain, rnd = this.rnd, dist = this.dist[s], fd = this.fd[s], ed = this.ed[s], mass = this.mass, contest = this.contest, dorm = this.dorm, o = 3 - s;
+  const S = this.sides[s]; if (!S.cells) return;
+  const owner = this.owner, terr = this.terrain, rnd = this.rnd, fd = this.fd[s], ed = this.ed[s], mass = this.mass, contest = this.contest, dorm = this.dorm, o = 3 - s, comp = this.comp;
   S.growAcc += S.k0 + S.k1 * Math.sqrt(S.cells);
   let n = Math.floor(S.growAcc); S.growAcc -= n;
-  const reserve = 4 + S.cells * S.upkeep * 60;
-  if (n <= 0 || S.energy < S.growCost + reserve) return;
-  const sid = ++this.stampId, stamp = this.stamp, CJ = this.candJ, CS = this.candS, CK = this.candK;
+  if (n <= 0) return;
+  // each fragment grows only from what it can afford, keeping a reserve (Reserve Granules bank a much larger one)
+  const reserveOf = F => 4 + F.cells * S.upkeep * (S.granules ? 150 : 60);
+  const can = S.frags.map(F => !F.starving && F.energy >= S.growCost + reserveOf(F));
+  if (!can.some(Boolean)) return;
+  const sid = ++this.stampId, stamp = this.stamp, CJ = this.candJ, CS = this.candS, CK = this.candK, CF = this.candF;
   const probes = S.probes, np = probes.length, T = this.tick;
   let m = 0;
   for (let i = 0; i < NN; i++) {
     if (owner[i] !== s || dorm[i]) continue;
-    if (dist[i] < 0 && !S.fragment) continue;
+    const ci = comp[i]; if (ci < 0 || !can[ci]) continue;
     for (let k = 0; k < 8; k++) {
       const j = NB[i * 8 + k];
       if (j < 0 || stamp[j] === sid) continue;
@@ -993,25 +1074,25 @@ Battle.prototype.grow = function (s) {
       if (S.prune && own >= 6 && f > 1) sc -= 0.6;
       if (k >= 4) sc -= 0.02;
       if (infil) sc += S.wH * 2.0 - 0.9 - mass[j];
-      CJ[m] = j; CS[m] = sc; CK[m] = infil ? 1 : 0; m++;
+      CJ[m] = j; CS[m] = sc; CK[m] = infil ? 1 : 0; CF[m] = ci; m++;
     }
   }
   for (let c = 0; c < n && m > 0; c++) {
     let bi = 0; for (let q = 1; q < m; q++) if (CS[q] > CS[bi]) bi = q;
-    const j = CJ[bi], infil = CK[bi]; CJ[bi] = CJ[m - 1]; CS[bi] = CS[m - 1]; CK[bi] = CK[m - 1]; m--;
+    const j = CJ[bi], infil = CK[bi], ci = CF[bi]; CJ[bi] = CJ[m - 1]; CS[bi] = CS[m - 1]; CK[bi] = CK[m - 1]; CF[bi] = CF[m - 1]; m--;
+    const F = S.frags[ci];
     const cost = S.growCost * (infil ? 0.5 : (terr[j] === T_SALT && !S.osmo ? 1.4 : 1));
-    if (S.energy < cost + reserve) break;
-    S.energy -= cost; S.spent += cost;
+    if (F.energy < cost + reserveOf(F)) { c--; continue; }
+    F.energy -= cost; S.spent += cost;
     if (infil) { contest[j] = Math.min(0.95, contest[j] + 0.3 + rnd() * 0.15); S.pushes++; }
-    else this.setCell(j, s, S.maxHP * 0.5, 0.12);
+    else { this.setCell(j, s, S.maxHP * 0.5, 0.12, ci); F.cells++; }
   }
 };
 
 Battle.prototype.prune = function (s) {
   const S = this.sides[s], owner = this.owner, rnd = this.rnd, ft = this.dish.foodType, food = this.food;
   for (let i = 0; i < NN; i++) {
-    if (owner[i] !== s || this.dorm[i] || S.roots.indexOf(i) >= 0) continue;
-    if (this.dist[s][i] < 0) continue;
+    if (owner[i] !== s || this.dorm[i] || this.isRoot[i]) continue;
     if (this.ed[s][i] <= 3) continue;
     if (ft[i] && food[i] > 0.5 && S.eat[ft[i]]) continue;
     if (S.chloro && this.terrain[i] === T_LIGHT) continue;
@@ -1021,15 +1102,19 @@ Battle.prototype.prune = function (s) {
     let p = 0;
     if (own === 8 && this.fd[s][i] > 2) p = 0.14;
     else if (own <= 1 && this.fd[s][i] > 4) p = 0.2;
-    if (p && rnd() < p) { owner[i] = 0; this.hp[i] = 0; this.mass[i] = 0; this.contest[i] = 0; S.energy += S.growCost * 0.5; }
+    if (p && rnd() < p) {
+      const F = this.fragOf(i); if (F) F.energy += S.growCost * 0.5 + this.cellE[i];
+      owner[i] = 0; this.hp[i] = 0; this.mass[i] = 0; this.contest[i] = 0; this.cellE[i] = 0; this.comp[i] = -1;
+    }
   }
 };
 
 Battle.prototype.sporulate = function (s) {
-  const S = this.sides[s]; if (S.energy < 45 || S.starving) return;
+  const S = this.sides[s]; if (S.starving) return;
+  const MF = S.frags[S.mainFrag]; if (!MF || MF.energy < 45) return;
   const owner = this.owner, rnd = this.rnd, terr = this.terrain, fd = this.fd[s];
   const shots = [];
-  const own = []; for (let i = 0; i < NN; i++) if (owner[i] === s && this.dist[s][i] >= 0) own.push(i);
+  const own = []; for (let i = 0; i < NN; i++) if (owner[i] === s && this.comp[i] === S.mainFrag) own.push(i);
   if (!own.length) return;
   for (let shot = 0; shot < 3; shot++) {
     let best = -1, bs = 1e9, from = -1;
@@ -1045,8 +1130,11 @@ Battle.prototype.sporulate = function (s) {
       const sc = fd[j] + rnd();
       if (sc < bs) { bs = sc; best = j; from = src; }
     }
-    if (best >= 0) {
-      this.setCell(best, s, S.maxHP * 0.7, 0.5); S.roots.push(best); S.energy -= 12;
+    if (best >= 0 && MF.energy >= 12) {
+      // a sporeling is a fragment of its own, carrying a little packed energy
+      const id = S.frags.length;
+      S.frags.push({ id, cells: 1, energy: 8, income: 0, massSum: 0.5, dormCells: 0, starvCells: 0, feeding: 0, hub: best, hubScore: 0, starving: false, maxD: 0 });
+      this.setCell(best, s, S.maxHP * 0.7, 0.5, id); MF.energy -= 12;
       shots.push([from, best]);
     }
   }
@@ -1054,28 +1142,30 @@ Battle.prototype.sporulate = function (s) {
 };
 
 // Frame layout (all per cell):
-//  dens  RGBA: R side-1 density, G side-2 density (0.3..1 by HP), B distance from nucleus ×3, A damage this minute
-//  flags: bits 0-1 owner, 2 dormant, 3 severed, 4-7 damage source
+//  dens  RGBA: R side-1 density, G side-2 density (0.3..1 by HP), B routing distance from the fragment's hub ×3, A damage this minute
+//  flags: bits 0-1 owner, 2 dormant, 3 hub (routing root), 4-7 damage source
 //  matter: food or granite remaining
 //  aux   RGBA: R mass, G vein strength, B routing (low nibble: parent offset code 0..8, 4 = none; bit 4 healed, bit 5 fighting), A contest
+//  frag: fragment index per cell; frags[side]: [cells, energy, starving] per fragment
 Battle.prototype.record = function () {
-  const dens = new Uint8Array(NN * 4), flags = new Uint8Array(NN), matter = new Uint8Array(NN), aux = new Uint8Array(NN * 4);
-  const owner = this.owner, d0 = this.dish.food0, terr = this.terrain, par = this.parent, mass = this.mass, vein = this.vein, contest = this.contest, cf = this.cflag;
+  const dens = new Uint8Array(NN * 4), flags = new Uint8Array(NN), matter = new Uint8Array(NN), aux = new Uint8Array(NN * 4), frag = new Uint8Array(NN);
+  const owner = this.owner, d0 = this.dish.food0, terr = this.terrain, par = this.parent, mass = this.mass, vein = this.vein, contest = this.contest, cf = this.cflag, comp = this.comp;
   for (let i = 0; i < NN; i++) {
     const o = owner[i];
     if (o) {
       const S = this.sides[o];
       const v = Math.max(0, Math.min(1, this.hp[i] / S.maxHP));
       dens[i * 4 + o - 1] = Math.round((0.3 + 0.7 * v) * 255);
-      const d = this.dist[o][i];
-      dens[i * 4 + 2] = d < 0 ? 0 : Math.min(255, d * 3);
-      flags[i] = o | (this.dorm[i] ? 4 : 0) | (d < 0 ? 8 : 0);
+      const d = Math.max(0, this.dist[o][i]);
+      dens[i * 4 + 2] = Math.min(255, d * 3);
+      flags[i] = o | (this.dorm[i] ? 4 : 0) | (this.isRoot[i] ? 8 : 0);
       aux[i * 4] = Math.round(mass[i] * 255); aux[i * 4 + 1] = Math.round(vein[i] * 255);
       let code = 4;
       const p = par[i];
-      if (p >= 0 && d >= 0) { const dx = (p % N) - (i % N), dy = Math.floor(p / N) - Math.floor(i / N); code = (dx + 1) + 3 * (dy + 1); }
+      if (p >= 0) { const dx = (p % N) - (i % N), dy = Math.floor(p / N) - Math.floor(i / N); code = (dx + 1) + 3 * (dy + 1); }
       aux[i * 4 + 2] = code | ((cf[i] & 1) ? 16 : 0) | ((cf[i] & 2) ? 32 : 0);
       aux[i * 4 + 3] = Math.round(Math.min(1, contest[i]) * 255);
+      frag[i] = Math.min(255, Math.max(0, comp[i]));
     } else aux[i * 4 + 2] = 4;
     const dm = this.dmg[i];
     if (dm > 0) { dens[i * 4 + 3] = Math.min(255, Math.round(dm * 70)); flags[i] |= (this.dsrc[i] << 4); }
@@ -1083,8 +1173,9 @@ Battle.prototype.record = function () {
     else if (terr[i] === T_ROCK) matter[i] = Math.max(1, Math.round(this.rockHP[i] / ROCK_HP * 255));
   }
   const probes = [null, this.sides[1].probes.map(p => [p.x, p.y, p.dx, p.dy]), this.sides[2].probes.map(p => [p.x, p.y, p.dx, p.dy])];
-  this.frames.push({ dens, flags, matter, aux, probes });
-  for (const s of [1, 2]) { this.stats.cells[s].push(this.sides[s].cells); this.stats.energy[s].push(this.sides[s].energy); }
+  const frags = [null, this.sides[1].frags.map(F => [F.cells, Math.round(Math.max(0, F.energy)), F.starving ? 1 : 0]), this.sides[2].frags.map(F => [F.cells, Math.round(Math.max(0, F.energy)), F.starving ? 1 : 0])];
+  this.frames.push({ dens, flags, matter, aux, probes, frag, frags });
+  for (const s of [1, 2]) { const S = this.sides[s]; S.area += S.cells; this.stats.cells[s].push(S.cells); this.stats.energy[s].push(S.energy); }
 };
 if (typeof module !== 'undefined') module.exports = { Battle, LEVELS, GENES, genomeCost, normGenome, deriveSide, SENSE_RANGE, DRIVE_COST, TRAIT_COST, MAXT, N, NN, makeDish };
 
@@ -1187,7 +1278,7 @@ const surfUniforms = {
   uPCol: { value: new THREE.Color(0xf6c52e) }, uECol: { value: new THREE.Color(0xe0457f) }, uAgar: { value: new THREE.Color(0x6f6650) },
   uSel: { value: new THREE.Vector3(0, 0, 0) }, uGridN: { value: N }, uGenes: { value: new THREE.Vector4(0, 0, 0, 0) },
 };
-// Shared sampling. Frame textures: dens (bilinear) carries per-side density, nucleus distance and damage; aux (nearest)
+// Shared sampling. Frame textures: dens (bilinear) carries per-side density, hub distance and damage; aux (nearest)
 // carries mass, vein strength, routing code and contest. Frames t and t+1 are blended by uMix for smooth playback.
 const SURF_COMMON = `
     uniform sampler2D uDensA, uDensB, uAuxA, uAuxB, uNoise, uTerr;
@@ -1327,10 +1418,10 @@ const surfMat = new THREE.ShaderMaterial({
       mold+=vec3(1.0,0.95,0.7)*isU*dmg*(0.3+0.5*step(0.5,fract(uTime*6.0+nz.r*3.0)));
       mold=mix(mold,vec3(0.45,0.42,0.35),isSt*dmg*0.7);
       mold=mix(mold,vec3(0.4,0.47,0.55),isSv*dmg*0.7);
-      // sclerotia crust, severed grey
+      // sclerotia crust; the fragment's feeding hub glows softly
       vec3 crust=vec3(0.36,0.24,0.12)+base*0.12;
       mold=mix(mold,crust*(0.8+0.4*nz.b),st.r*0.8); alpha=max(alpha,st.r*occ*0.95);
-      mold=mix(mold,mold*0.45+vec3(0.08,0.1,0.12),st.g*(0.55+0.15*sin(uTime*6.0)));
+      mold+=base*st.g*(0.3+0.25*sin(uTime*3.5)); alpha=max(alpha,st.g*occ*0.9);
       // defences: chitin rind darkens the thread edges, alkaline slime films the pockets
       float chi=o0<1.5?uGenes.x:uGenes.z; float muc=o0<1.5?uGenes.y:uGenes.w;
       float rim=smoothstep(0.0,0.3,cov)*(1.0-smoothstep(0.3,0.7,cov));
@@ -1410,14 +1501,10 @@ const MAT = {
   prot: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.22, metalness: 0.0 }),
   bark: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, flatShading: true }),
 };
-let world = null; // { dish, rocks:{mesh, cells, base[]}, foods:[{mesh,cells,base}], cores, lights }
+let world = null; // { dish, groups:[{kind, mesh, cells, base[]}] }
 const dummy = new THREE.Object3D();
 function cellXZ(i) { const x = i % N, y = Math.floor(i / N); return [((x + 0.5) / N) * SIZE - SIZE / 2, SIZE / 2 - ((y + 0.5) / N) * SIZE]; }
 
-const coreGeo = new THREE.SphereGeometry(0.13, 24, 16);
-const cores = [null, new THREE.Mesh(coreGeo, new THREE.MeshStandardMaterial({ color: 0xffe9a0, emissive: 0xf4b400, emissiveIntensity: 0.9, roughness: 0.3 })),
-  new THREE.Mesh(coreGeo, new THREE.MeshStandardMaterial({ color: 0xffc0dc, emissive: 0xd81b60, emissiveIntensity: 0.9, roughness: 0.3 }))];
-scene.add(cores[1], cores[2]);
 
 const beamMat = new THREE.ShaderMaterial({
   transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, uniforms: { uTime: { value: 0 } },
@@ -1472,7 +1559,6 @@ function buildWorld(dish) {
     const [x, z] = cellXZ(Math.round(L.y) * N + Math.round(L.x));
     beam.position.set(x, 2.25, z); dishProps.add(beam);
   }
-  for (const s of [1, 2]) { const [x, z] = cellXZ(s === 1 ? CORE_P : CORE_E); cores[s].position.set(x, 0.2, z); }
   world = w;
 }
 
@@ -1514,7 +1600,6 @@ function showFrame(b, t, frac) {
     }
     texStatus.needsUpdate = true;
     applyMatter(F.matter); showProbes(F);
-    for (const s of [1, 2]) cores[s].visible = (F.flags[s === 1 ? CORE_P : CORE_E] & 3) === s;
     shown = { battle: b, t, t2 };
   }
   surfUniforms.uMix.value = t2 > t ? clamp(frac, 0, 1) : 0;
@@ -1757,8 +1842,8 @@ function renderRack() {
     <li><b>Feed.</b> Energy (ATP) comes from food your enzymes can digest. Every living cell costs upkeep, so a strain that grows faster than it eats will starve and wither from the edges.</li>
     <li><b>Grow.</b> Vigor sets how fast new cells spread. Sensing decides where: a strain only knows about food and rivals within its sensor range, remembers food it has found, and can send out exploratory spikes to find more.</li>
     <li><b>Fight.</b> Touching cells engulf each other each minute. Density, acids, rinds and slimes decide who gives ground.</li>
-    <li><b>Stay connected.</b> Cells cut off from a nucleus wither. Lose every nucleus and the whole strain collapses.</li>
-    <li><b>Win.</b> Wipe out the rival, or hold more of the dish when the 12-hour incubation ends.</li>
+    <li><b>Stay fed.</b> A strain is one organism with no centre. Each connected fragment pools its own energy: cut a network apart and every piece lives on its share until it finds food, or starves. Pieces that touch again merge.</li>
+    <li><b>Win.</b> Wipe out the rival, or overrun it: hold nine tenths of the living tissue for half an hour. If the plate is eaten bare, or the 12-hour incubation runs out, the strain that covered more of the dish over the whole incubation takes it.</li>
     <li><b>Zoom in.</b> Scroll to get close and right-drag to pan. New growth is a sparse tendril that thickens into lace, sheets and pulsing veins as it matures; rival tendrils creep into thin cells and wrestle for them, and every attack has its own look.</li>
     <li><b>Study.</b> Every battle is recorded minute by minute. Rewind, step and tap cells to see why it went the way it did.</li>
   </ol></details>
@@ -1920,7 +2005,7 @@ function fireEvents(a, b) {
     if (ev.t > a && ev.t <= b) {
       const col = ev.side === 1 ? 0xf4c53c : ev.side === 2 ? 0xe2508a : 0xffffff;
       if (ev.type === 'spores') { for (const [f, to] of ev.shots) fxSpore(f, to, col); }
-      else if (ev.type !== 'recover' && ev.type !== 'scout') fxRing(ev.cell, col, ev.type === 'core' || ev.type === 'end' ? 2.2 : ev.type === 'contact' ? 1.6 : 1.1);
+      else if (ev.type !== 'recover' && ev.type !== 'scout' && ev.cell >= 0) fxRing(ev.cell, col, ev.type === 'end' ? 2.2 : ev.type === 'contact' || ev.type === 'split' ? 1.6 : 1.1);
     }
   }
 }
@@ -1931,12 +2016,13 @@ function evText(ev) {
     case 'food': return `${n} reached ${FOOD_NAMES[ev.food].toLowerCase()}`;
     case 'scout': return `${n} sensed ${FOOD_NAMES[ev.food].toLowerCase()}`;
     case 'contact': return 'First contact between the strains';
+    case 'bare': return 'The plate has been eaten bare';
     case 'breach': return `${n} dissolved a granite wall`;
-    case 'sever': return `${n} cut off: ${ev.n} cells severed from a nucleus`;
+    case 'split': return `${n} was cut apart: ${ev.n} fragments, one of ${ev.piece} cells`;
+    case 'fragstarve': return `A cut-off fragment of ${n} (${ev.n} cells) is starving`;
     case 'starve': return `${n} is starving and withering`;
     case 'dormant': return `${n} formed sclerotia and went dormant`;
     case 'recover': return `${n} recovered its energy`;
-    case 'core': return `${n} lost its main nucleus`;
     case 'spores': return `${n} fired ${ev.shots.length} spore${ev.shots.length > 1 ? 's' : ''}`;
     case 'end': return `${n} holds the dish`;
   }
@@ -1970,6 +2056,8 @@ function updateHud() {
   const cp = b.stats.cells[1][t] || 0, ce = b.stats.cells[2][t] || 0;
   $('hPCells').textContent = cp; $('hECells').textContent = ce;
   $('hPE').textContent = Math.round(b.stats.energy[1][t] || 0); $('hEE').textContent = Math.round(b.stats.energy[2][t] || 0);
+  const Fr = b.frames[t] && b.frames[t].frags;
+  for (const s of [1, 2]) { const n = Fr ? Fr[s].filter(x => x[0] >= 6).length : 1; $(s === 1 ? 'hPFrag' : 'hEFrag').textContent = n > 1 ? ` · ${n} fragments` : ''; }
   $('hClock').textContent = fmt(t); $('tNow').textContent = fmt(t);
   const tot = cp + ce || 1;
   $('tugP').style.width = (cp / tot * 100) + '%'; $('tugE').style.width = (ce / tot * 100) + '%';
@@ -2017,7 +2105,7 @@ function drawScrub() {
   for (const ev of b.events) {
     if (ev.t > S.revealed + 0.001) break;
     sg.fillStyle = evColor(ev);
-    const big = ev.type === 'core' || ev.type === 'end' || ev.type === 'contact';
+    const big = ev.type === 'split' || ev.type === 'end' || ev.type === 'contact';
     sg.beginPath(); sg.arc(X(ev.t), 5, big ? 3.2 : 2, 0, Math.PI * 2); sg.fill();
   }
   // playhead
@@ -2030,7 +2118,7 @@ function scrubAt(clientX) {
   const t = clamp((clientX - r.left - 6) / (r.width - 12), 0, 1) * timelineTotal();
   seek(t);
 }
-scrub.addEventListener('pointerdown', e => { scrub.setPointerCapture(e.pointerId); scrubDrag = { was: S.playing }; S.playing = false; setPlayIcon(); scrubAt(e.clientX); });
+scrub.addEventListener('pointerdown', e => { try { scrub.setPointerCapture(e.pointerId); } catch (err) { } scrubDrag = { was: S.playing }; S.playing = false; setPlayIcon(); scrubAt(e.clientX); });
 scrub.addEventListener('pointermove', e => { if (scrubDrag) scrubAt(e.clientX); });
 const endScrub = () => { if (scrubDrag) { S.playing = scrubDrag.was && S.playhead < lastTick(); scrubDrag = null; setPlayIcon(); } };
 scrub.addEventListener('pointerup', endScrub); scrub.addEventListener('pointercancel', endScrub);
@@ -2089,11 +2177,13 @@ function updateInspect() {
   let occ = '<dd>Empty agar</dd>', body = '';
   if (o) {
     const Sd = b.sides[o], v = F.dens[i * 4 + o - 1] / 255, hpv = Math.max(0, (v - 0.3) / 0.7) * Sd.maxHP;
-    const status = [(f & 4) ? 'dormant' : '', (f & 8) ? 'severed' : '', i === Sd.core ? 'main nucleus' : ''].filter(Boolean).join(', ');
+    const status = [(f & 4) ? 'dormant' : '', (f & 8) ? 'feeding hub' : ''].filter(Boolean).join(', ');
     occ = `<dd><span style="color:${o === 1 ? COL.p : COL.e};font-weight:600">${esc(sideName(o))}</span>${status ? ' · ' + status : ''}<div>${hpv.toFixed(1)} / ${Sd.maxHP} HP</div><div class="hpbar"><i style="width:${hpv / Sd.maxHP * 100}%;background:${o === 1 ? COL.p : COL.e}"></i></div></dd>`;
     const mass = F.aux[i * 4] / 255, vein = F.aux[i * 4 + 1] / 255, ct = F.aux[i * 4 + 3] / 255;
     const kind = mass < 0.3 ? 'sparse tendril' : mass < 0.6 ? 'lace' : 'thick sheet';
     body = `<dt>Body</dt><dd>${kind} · ${Math.round(mass * 100)}% mass${vein > 0.45 ? ` · <span style="color:${o === 1 ? COL.p : COL.e}">vein</span> ${Math.round(vein * 100)}%` : ''}</dd>`;
+    const fr = F.frags && F.frags[o][F.frag[i]];
+    if (fr) body += `<dt>Fragment</dt><dd>${fr[0]} cells · ${fr[1]} ATP${fr[2] ? ' · <span style="color:var(--bad)">starving</span>' : ''}</dd>`;
     if (ct > 0.01) body += `<dt>Contested</dt><dd><span style="color:${o === 1 ? COL.e : COL.p};font-weight:600">${esc(sideName(3 - o))}</span> tendrils hold ${Math.round(ct * 100)}%<div class="hpbar"><i style="width:${ct * 100}%;background:${o === 1 ? COL.e : COL.p}"></i></div></dd>`;
   }
   const src = f >> 4, dm = F.dens[i * 4 + 3] / 70;
@@ -2118,16 +2208,17 @@ function analyze(b) {
   const missed = [0, 0, 0, 0];
   b.dish.piles.forEach((pl, pid) => { if (P.eat[pl.type] && !P.known.has(pid)) for (const i of pl.cells) missed[pl.type] += b.dish.food0[i]; });
   for (const f of [3, 2, 1]) if (missed[f] > 150) notes.push(`${FOOD_NAMES[f]} worth about ${Math.round(missed[f] * YIELD[f])} ATP was never discovered. Raise Sensor range or Explore to find it.`);
-  if (P.starveTicks > 30) notes.push(`Your strain starved for ${P.starveTicks} min. It grew faster than it could feed: lower Vigor or Density, add Vein Pruning, or raise Seek food.`);
+  if (b.bareTick > 0 && P.starveTicks > 30) notes.push(`The plate was eaten bare by ${fmt(b.bareTick)} and both strains withered. Vein Pruning and lower Density stretch the food; a faster kill ends it sooner.`);
+  else if (P.starveTicks > 30) notes.push(`Your strain starved for ${P.starveTicks} min. It grew faster than it could feed: lower Vigor or Density, add Vein Pruning, or raise Seek food.`);
   if (share(S_ACID) > 0.3 && !has('mucus')) notes.push(`Acid did ${Math.round(share(S_ACID) * 100)}% of your damage. ${iso('mucus') ? 'Alkaline Slime neutralises most of it.' : 'A slime gene against acid is coming.'}`);
   if (share(S_ENGULF) > 0.45 && !has('chitin') && P.lost[S_ENGULF] > 40) notes.push(`Engulfing did ${Math.round(share(S_ENGULF) * 100)}% of your damage. Chitin Rind halves it; more Density makes cells tougher.`);
   if (share(S_TOXIN) > 0.2 && !has('mucus')) notes.push('The rival’s antibiotic haze ate your front line. Alkaline Slime blunts it.');
   if (P.lost[S_SALT] > 15 && !has('osmo')) notes.push(`${P.lost[S_SALT]} cells died on salt crust. ${iso('osmo') ? 'Osmotic Pumps make you immune.' : 'Lower Explore so growth stays off the crust.'}`);
   if (P.lost[S_UV] > 15 && !has('chloro')) notes.push(`${P.lost[S_UV]} cells burned under the lamp. ${iso('chloro') ? 'An Algal Symbiont turns that light into food.' : 'Lower Explore to keep out of the light.'}`);
-  if (P.lost[S_SEVER] > 25 && !has('fragment')) notes.push(`${P.lost[S_SEVER]} cells withered after being cut off from a nucleus. A broader front resists being severed${iso('fragment') ? ', and Autonomy keeps fragments alive' : ''}.`);
+  if (P.splits >= 2 || P.fragStarved >= 2) notes.push(`Your network was cut apart ${P.splits} time${P.splits === 1 ? '' : 's'} and ${P.fragStarved} cut-off fragment${P.fragStarved === 1 ? '' : 's'} starved. Keep fronts broad${iso('granules') && !has('granules') ? ', or take Reserve Granules so fragments can wait for food' : ''}.`);
   const rocks = b.dish.terrain.some(t => t === T_ROCK);
   if (rocks && !has('acid') && b.result.winner !== 1 && E.acid) notes.push(`${LEVELS[b.level].rival.name.split(' ')[0]} burned through granite you had to walk around. ${iso('acid') ? 'Oxalic Acid opens the same shortcuts.' : ''}`);
-  if (b.result.winner !== 1 && b.result.reason === 'time') notes.push('Territory decides at 12:00. Raise Hunt rival to press the attack, or Vigor to claim agar sooner.');
+  if (b.result.winner !== 1 && (b.result.reason === 'time' || b.result.reason === 'bare')) notes.push('Coverage over the whole incubation decides a plate that is not overrun. Raise Hunt rival to press the attack, or Vigor to claim agar sooner.');
   if (b.result.winner === 1 && !notes.length) notes.push(b.result.reason === 'elim' ? `Clean kill at ${fmt(b.result.tick)}. Try a cheaper genome to see how lean a winning strain can be.` : 'You won on territory. A harder-hitting front could finish the rival outright.');
   return notes.slice(0, 3);
 }
@@ -2139,9 +2230,14 @@ function showResult() {
     prog.cleared[b.level] = true; save(); renderProgress();
     newGenes = GENES.filter(G => G.unlock === b.level + 2);
   }
-  const why = b.result.reason === 'elim'
-    ? (win ? `${rv} was wiped from the plate at ${fmt(b.result.tick)}.` : `${rv} consumed your strain at ${fmt(b.result.tick)}.`)
-    : (win ? `You held ${P.cells} cells to ${E.cells} when incubation ended.` : `${rv} held ${E.cells} cells to your ${P.cells} when incubation ended.`);
+  const R0 = b.result, pct = Math.round(R0.share * 100);
+  const why = R0.reason === 'elim'
+    ? (win ? `${rv} was wiped from the plate at ${fmt(R0.tick)}.` : `${rv} consumed your strain at ${fmt(R0.tick)}.`)
+    : R0.reason === 'dom'
+    ? (win ? `${rv} was overrun: down to ${100 - pct}% of the living tissue by ${fmt(R0.tick)}.` : `${rv} overran the plate by ${fmt(R0.tick)}; your strain was down to ${100 - pct}% of the living tissue.`)
+    : R0.reason === 'bare'
+    ? (win ? `The plate was eaten bare at ${fmt(b.bareTick)}. Your strain had covered ${pct}% of the occupied agar, peaking at ${P.peak} cells to ${E.peak}.` : `The plate was eaten bare at ${fmt(b.bareTick)}. ${rv} had covered ${100 - pct}% of the occupied agar, peaking at ${E.peak} cells to your ${P.peak}.`)
+    : (win ? `Over the incubation your strain covered ${Math.round(b.result.share * 100)}% of the occupied agar, peaking at ${P.peak} cells to ${E.peak}.` : `${rv} covered ${Math.round((1 - b.result.share) * 100)}% of the occupied agar over the incubation, peaking at ${E.peak} cells to your ${P.peak}.`);
   const lostTot = P.lost.reduce((a, x) => a + x, 0);
   const lossBar = lostTot ? [1, 2, 3, 4, 5, 6, 7].filter(k => P.lost[k]).map(k => `<i style="width:${P.lost[k] / lostTot * 100}%;background:${SRC_COL[k]}" title="${SRC_NAMES[k]}"></i>`).join('') : '';
   const legend = [1, 2, 3, 4, 5, 6, 7].filter(k => P.lost[k]).map(k => `<span><i style="background:${SRC_COL[k]}"></i>${SRC_NAMES[k]} ${P.lost[k]}</span>`).join('');
@@ -2200,8 +2296,6 @@ function frame(now) {
     showFrame(S.preview, 0, 0);
   }
   if (cam.auto && !pointers.size) { cam.theta += dt * 0.08; updateCamera(); }
-  const pulse = 1 + 0.18 * Math.sin(time * 3.2);
-  cores[1].scale.setScalar(pulse); cores[2].scale.setScalar(1 + 0.18 * Math.sin(time * 3.2 + 1.3));
   updateFx(dt);
   if (renderer) renderer.render(scene, camera);
   requestAnimationFrame(frame);
