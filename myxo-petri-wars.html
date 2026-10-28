@@ -1,0 +1,1808 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Myxo Petri Wars</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one-screen lab bench. A lit petri "lightbox" stage plus a specimen panel (left on desktop, below on phones); battle mode gives the stage the whole bench. Single dark look by choice: a lab bench at night. */
+:root {
+  --bench: #0d1214;
+  --bench-2: #121a1d;
+  --panel: #151d20;
+  --raised: #1c262a;
+  --raised-2: #243035;
+  --line: #2a363b;
+  --ink: #ece5d3;
+  --dim: #98a39e;
+  --faint: #66736f;
+  --gold: #f4c53c;
+  --gold-deep: #c8961a;
+  --gold-ink: #241a02;
+  --rival: #e2508a;
+  --rival-deep: #a72b5e;
+  --agar: #b9a77e;
+  --ok: #9ad17f;
+  --bad: #f06a5f;
+  --f-display: "Bricolage Grotesque", "Avenir Next Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "Instrument Sans", "Helvetica Neue", Arial, system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --r-lg: 18px; --r-md: 12px; --r-sm: 8px;
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body { background: var(--bench); color: var(--ink); font-family: var(--f-body); font-size: 14px; line-height: 1.45; overflow: hidden; -webkit-tap-highlight-color: transparent; }
+button { font: inherit; color: inherit; }
+button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+
+#app { height: 100%; display: flex; flex-direction: column; gap: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 10px 12px; box-sizing: border-box; }
+.bar { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 36px; }
+.brand { display: flex; align-items: baseline; gap: 10px; }
+.logo { font-family: var(--f-display); font-weight: 800; font-size: 26px; letter-spacing: -0.03em; color: var(--gold); line-height: 1; }
+.logo span { color: var(--rival); }
+.tagline { font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); }
+.progress { font-family: var(--f-mono); font-size: 12px; color: var(--dim); display: flex; align-items: center; gap: 8px; }
+.progress .dots { display: flex; gap: 4px; }
+.progress .dots i { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--line); }
+.progress .dots i.on { background: var(--gold); border-color: var(--gold); }
+
+.main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
+.stage { position: relative; flex: none; height: 40%; min-height: 220px; border-radius: var(--r-lg); overflow: hidden; background: radial-gradient(120% 90% at 50% 38%, #24302f 0%, #141c1e 48%, #0b1012 100%); box-shadow: inset 0 0 0 1px var(--line); touch-action: none; }
+.stage canvas#gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.panel { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; border-radius: var(--r-lg); background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); }
+#app.mode-battle .stage { flex: 1; height: auto; }
+#app.mode-battle .panel { display: none; }
+@media (min-width: 880px) {
+  .main { flex-direction: row-reverse; }
+  .stage { flex: 1; height: auto; }
+  .panel { flex: none; width: 420px; }
+}
+
+/* ---------- Rack ---------- */
+.pad { padding: 18px 18px 22px; }
+.eyebrow { font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); }
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+.rack h1 { font-family: var(--f-display); font-weight: 800; font-size: 30px; line-height: 1.05; letter-spacing: -0.02em; margin-top: 6px; }
+.rack .lede { color: var(--dim); margin: 8px 0 16px; max-width: 62ch; }
+.dishes { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.dish { width: 100%; display: grid; grid-template-columns: 56px 1fr auto; gap: 12px; align-items: center; text-align: left; padding: 10px 12px 10px 10px; border-radius: var(--r-md); background: var(--raised); border: 1px solid var(--line); cursor: pointer; min-height: 72px; }
+.dish:hover:not(:disabled) { background: var(--raised-2); }
+.dish:disabled { cursor: not-allowed; opacity: 0.5; }
+.dish.sel { border-color: var(--gold); }
+.dish canvas { width: 56px; height: 56px; border-radius: 50%; display: block; }
+.dish .meta { min-width: 0; display: grid; gap: 2px; }
+.dish .code { font-family: var(--f-mono); font-size: 11px; color: var(--faint); letter-spacing: 0.08em; }
+.dish b { font-family: var(--f-display); font-weight: 700; font-size: 17px; line-height: 1.15; }
+.dish .rv { color: var(--dim); font-size: 12.5px; font-style: italic; }
+.chip { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; padding: 4px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim); white-space: nowrap; }
+.chip.won { color: var(--gold-ink); background: var(--gold); border-color: var(--gold); }
+.chip.ready { color: var(--gold); border-color: var(--gold-deep); }
+.howto { margin-top: 18px; border-top: 1px solid var(--line); padding-top: 14px; }
+.howto summary { cursor: pointer; font-family: var(--f-display); font-weight: 700; font-size: 16px; list-style: none; display: flex; justify-content: space-between; align-items: center; min-height: 32px; }
+.howto summary::after { content: "+"; font-family: var(--f-mono); color: var(--faint); }
+.howto[open] summary::after { content: "–"; }
+.howto ol { margin: 10px 0 0; padding-left: 20px; color: var(--dim); display: grid; gap: 6px; max-width: 62ch; }
+.howto b { color: var(--ink); font-weight: 600; }
+.linkbtn { background: none; border: 0; padding: 8px 0; color: var(--faint); font-family: var(--f-mono); font-size: 11.5px; text-decoration: underline; cursor: pointer; margin-top: 14px; }
+
+/* ---------- Lab ---------- */
+.lab { display: flex; flex-direction: column; min-height: 100%; }
+.lab-body { padding: 14px 18px 8px; display: grid; gap: 18px; }
+.back { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; padding: 6px 0; color: var(--dim); cursor: pointer; font-size: 13px; min-height: 36px; }
+.lab-title { display: grid; gap: 4px; }
+.lab-title h2 { font-family: var(--f-display); font-weight: 800; font-size: 28px; line-height: 1.05; letter-spacing: -0.02em; }
+.lab-title p { margin: 2px 0 0; color: var(--dim); max-width: 62ch; }
+.intel { display: grid; gap: 10px; padding: 12px; border-radius: var(--r-md); background: var(--bench-2); border: 1px solid var(--line); }
+.intel .row { display: grid; gap: 6px; }
+.intel .lbl { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 4px 9px; border-radius: 999px; background: var(--raised); border: 1px solid var(--line); }
+.tag .sw { width: 9px; height: 9px; border-radius: 3px; }
+.tag.yes { border-color: #4a6b3c; }
+.tag.no { border-color: #6b3b38; }
+.tag .mk { font-family: var(--f-mono); font-size: 11px; }
+.tag.yes .mk { color: var(--ok); } .tag.no .mk { color: var(--bad); }
+.rival-name { font-family: var(--f-display); font-weight: 700; font-size: 16px; color: var(--rival); font-style: italic; }
+.rival-stats { font-family: var(--f-mono); font-size: 11.5px; color: var(--dim); }
+.sec { display: grid; gap: 10px; }
+.sec-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.sec-h h3 { font-family: var(--f-display); font-weight: 700; font-size: 18px; }
+.sec-h small { color: var(--faint); font-size: 12px; }
+.name-in { width: 100%; box-sizing: border-box; background: var(--raised); border: 1px solid var(--line); border-radius: var(--r-sm); color: var(--ink); padding: 10px 12px; font-family: var(--f-display); font-weight: 700; font-size: 17px; min-height: 44px; }
+.trait { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; padding: 10px 12px; border-radius: var(--r-md); background: var(--raised); border: 1px solid var(--line); }
+.trait .tn { font-weight: 600; }
+.trait .td { grid-column: 1 / -1; color: var(--dim); font-size: 12.5px; }
+.stepper { display: flex; align-items: center; gap: 4px; }
+.stepper button { width: 40px; height: 40px; border-radius: 10px; background: var(--raised-2); border: 1px solid var(--line); cursor: pointer; font-size: 18px; line-height: 1; }
+.stepper button:disabled { opacity: 0.35; cursor: not-allowed; }
+.pips { display: flex; gap: 3px; padding: 0 6px; }
+.pips i { width: 8px; height: 18px; border-radius: 3px; background: var(--raised-2); }
+.pips i.on { background: var(--gold); }
+.cost { font-family: var(--f-mono); font-size: 11px; color: var(--faint); }
+.derived { font-family: var(--f-mono); font-size: 11.5px; color: var(--dim); display: flex; flex-wrap: wrap; gap: 4px 14px; font-variant-numeric: tabular-nums; }
+.derived b { color: var(--ink); font-weight: 500; }
+.slider { display: grid; grid-template-columns: 92px 1fr 26px; align-items: center; gap: 10px; min-height: 40px; }
+.slider label { font-size: 13px; }
+.slider output { font-family: var(--f-mono); font-size: 12px; color: var(--dim); text-align: right; font-variant-numeric: tabular-nums; }
+input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 28px; background: transparent; margin: 0; }
+input[type=range]::-webkit-slider-runnable-track { height: 6px; border-radius: 3px; background: var(--raised-2); }
+input[type=range]::-moz-range-track { height: 6px; border-radius: 3px; background: var(--raised-2); }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 22px; height: 22px; border-radius: 50%; background: var(--gold); margin-top: -8px; border: 3px solid var(--panel); }
+input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 50%; background: var(--gold); border: 3px solid var(--panel); }
+.genes { display: grid; gap: 6px; }
+.gene { display: grid; grid-template-columns: 30px 1fr auto; gap: 2px 10px; align-items: center; text-align: left; width: 100%; padding: 10px 12px 10px 10px; border-radius: var(--r-md); background: var(--raised); border: 1px solid var(--line); cursor: pointer; min-height: 56px; }
+.gene .glyph { grid-row: 1 / 3; width: 30px; height: 30px; border-radius: 50%; border: 1.5px solid var(--line); display: grid; place-items: center; }
+.gene .glyph svg { width: 16px; height: 16px; }
+.gene .gn { font-weight: 600; }
+.gene .gc { font-family: var(--f-mono); font-size: 11px; color: var(--dim); }
+.gene .gd { grid-column: 2 / 4; color: var(--dim); font-size: 12.5px; }
+.gene[aria-pressed="true"] { background: #2b2a17; border-color: var(--gold-deep); }
+.gene[aria-pressed="true"] .glyph { background: var(--gold); border-color: var(--gold); color: var(--gold-ink); }
+.gene[aria-pressed="true"] .gc { color: var(--gold); }
+.gene.locked { cursor: not-allowed; opacity: 0.45; }
+.gene.locked .gd { font-style: italic; }
+.gene.cant:not([aria-pressed="true"]) { opacity: 0.7; }
+.lab-foot { position: sticky; bottom: 0; margin-top: auto; background: linear-gradient(to top, var(--panel) 75%, transparent); padding: 18px 18px 14px; display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center; }
+.budget { display: grid; gap: 6px; }
+.budget .bl { display: flex; justify-content: space-between; font-family: var(--f-mono); font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.budget .bl b { color: var(--ink); font-weight: 500; }
+.budget.over .bl b { color: var(--bad); }
+.meter { height: 8px; border-radius: 4px; background: var(--raised-2); overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--gold); border-radius: 4px; transition: width .2s; }
+.budget.over .meter i { background: var(--bad); }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; padding: 0 18px; border-radius: var(--r-md); background: var(--raised-2); border: 1px solid var(--line); cursor: pointer; font-weight: 600; white-space: nowrap; }
+.btn.primary { background: var(--gold); border-color: var(--gold); color: var(--gold-ink); font-family: var(--f-display); font-weight: 800; font-size: 16px; letter-spacing: 0.01em; }
+.btn.primary:disabled { background: var(--raised-2); border-color: var(--line); color: var(--faint); cursor: not-allowed; }
+.btn svg { width: 18px; height: 18px; }
+
+/* ---------- Battle HUD ---------- */
+.hud { position: absolute; left: 0; right: 0; top: 0; padding: 10px 12px 26px; background: linear-gradient(to bottom, rgba(8,12,13,.85), rgba(8,12,13,0)); pointer-events: none; display: grid; grid-template-columns: 1fr auto 1fr; gap: 6px 10px; align-items: start; }
+.hud .side { min-width: 0; display: grid; gap: 1px; }
+.hud .side.e { text-align: right; }
+.hud .sname { font-family: var(--f-display); font-weight: 700; font-size: 15px; line-height: 1.1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hud .side.p .sname { color: var(--gold); } .hud .side.e .sname { color: var(--rival); font-style: italic; }
+.hud .nums { font-family: var(--f-mono); font-size: 11.5px; color: var(--dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hud .nums b { color: var(--ink); font-weight: 500; }
+.hud .clock { text-align: center; display: grid; }
+.hud .clock span { font-family: var(--f-mono); font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.hud .clock small { font-family: var(--f-mono); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); }
+.tug { grid-column: 1 / -1; height: 6px; border-radius: 3px; overflow: hidden; display: flex; background: var(--raised-2); }
+.tug i { display: block; height: 100%; transition: width .15s linear; }
+.tug .tp { background: var(--gold); } .tug .te { background: var(--rival); margin-left: auto; }
+.toast { position: absolute; left: 50%; top: 78px; transform: translateX(-50%); max-width: calc(100% - 32px); padding: 7px 12px; border-radius: 999px; background: rgba(13,18,20,.88); border: 1px solid var(--line); font-size: 13px; display: flex; gap: 8px; align-items: center; pointer-events: none; transition: opacity .3s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.toast .tt { font-family: var(--f-mono); font-size: 11px; color: var(--faint); }
+.toast .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.hint { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); font-family: var(--f-mono); font-size: 11px; color: var(--faint); pointer-events: none; transition: opacity .6s; white-space: nowrap; }
+.inspect { position: absolute; left: 12px; bottom: 12px; width: min(270px, calc(100% - 24px)); padding: 12px 14px; border-radius: var(--r-md); background: rgba(16,22,24,.94); border: 1px solid var(--line); display: grid; gap: 6px; font-size: 13px; }
+.inspect header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.inspect header b { font-family: var(--f-display); font-size: 15px; }
+.inspect .x { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised); cursor: pointer; }
+.inspect dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0; }
+.inspect dt { color: var(--faint); font-family: var(--f-mono); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; padding-top: 2px; }
+.inspect dd { margin: 0; font-variant-numeric: tabular-nums; }
+.hpbar { height: 5px; border-radius: 3px; background: var(--raised-2); overflow: hidden; margin-top: 3px; }
+.hpbar i { display: block; height: 100%; }
+.log { position: absolute; right: 12px; top: 86px; bottom: 12px; width: min(300px, calc(100% - 24px)); border-radius: var(--r-md); background: rgba(16,22,24,.95); border: 1px solid var(--line); display: flex; flex-direction: column; }
+.log header { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+.log header b { font-family: var(--f-display); font-size: 15px; }
+.log ol { list-style: none; margin: 0; padding: 4px; overflow-y: auto; flex: 1; }
+.log li button { width: 100%; text-align: left; background: none; border: 0; padding: 8px; border-radius: 8px; display: grid; grid-template-columns: 44px 10px 1fr; gap: 8px; align-items: center; cursor: pointer; font-size: 12.5px; }
+.log li button:hover, .log li button.cur { background: var(--raised); }
+.log .tt { font-family: var(--f-mono); font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.log .dot { width: 8px; height: 8px; border-radius: 50%; }
+
+.result { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; background: rgba(6,9,10,.55); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); }
+.card { width: min(440px, 100%); max-height: 100%; overflow-y: auto; box-sizing: border-box; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 20px; display: grid; gap: 14px; }
+.card .verdict { font-family: var(--f-display); font-weight: 800; font-size: 34px; line-height: 1; letter-spacing: -0.02em; }
+.card .verdict.win { color: var(--gold); } .card .verdict.lose { color: var(--rival); }
+.card .why { color: var(--dim); margin-top: 6px; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stat { padding: 8px 10px; border-radius: var(--r-sm); background: var(--raised); }
+.stat small { display: block; font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); }
+.stat b { font-family: var(--f-mono); font-weight: 500; font-size: 17px; font-variant-numeric: tabular-nums; }
+.stat .vs { color: var(--faint); font-size: 12px; }
+.losses .bar2 { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--raised-2); margin: 6px 0; }
+.losses .bar2 i { display: block; height: 100%; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--dim); }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
+.notes { margin: 0; padding-left: 18px; display: grid; gap: 6px; color: var(--ink); }
+.notes li::marker { color: var(--gold); }
+.unlock { padding: 10px 12px; border-radius: var(--r-md); border: 1px dashed var(--gold-deep); color: var(--gold); font-size: 13px; }
+.unlock b { color: var(--ink); }
+.card .acts { display: flex; flex-wrap: wrap; gap: 8px; }
+.card .acts .btn { flex: 1 1 120px; }
+.sub-h { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); }
+
+/* ---------- Transport ---------- */
+.transport { flex: none; display: grid; gap: 8px; }
+.scrubwrap { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; }
+.scrubwrap .tt { font-family: var(--f-mono); font-size: 11.5px; color: var(--dim); font-variant-numeric: tabular-nums; min-width: 40px; }
+.scrubwrap .tt:last-child { text-align: right; }
+#scrub { width: 100%; height: 48px; display: block; border-radius: 10px; touch-action: none; cursor: pointer; background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); }
+.controls { display: flex; align-items: center; gap: 6px; justify-content: center; flex-wrap: wrap; }
+.ib { width: 46px; height: 46px; border-radius: 12px; background: var(--raised); border: 1px solid var(--line); display: grid; place-items: center; cursor: pointer; padding: 0; }
+.ib svg { width: 20px; height: 20px; }
+.ib.play { width: 58px; background: var(--gold); border-color: var(--gold); color: var(--gold-ink); }
+.ib.txt { width: auto; padding: 0 12px; font-family: var(--f-mono); font-size: 13px; }
+.controls .gap { flex: 1 1 0; max-width: 18px; }
+.nogl { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: var(--dim); }
+@media (max-width: 420px) {
+  .ib { width: 40px; height: 42px; border-radius: 10px; } .ib.play { width: 48px; } .ib.txt { padding: 0 8px; min-width: 40px; }
+  .controls { gap: 3px; flex-wrap: nowrap; }
+  .controls .gap { display: none; }
+  .hud .sname { font-size: 13px; }
+}
+@media (prefers-reduced-motion: reduce) { .meter i, .tug i, .toast, .hint { transition: none; } }
+</style>
+
+<div id="app" class="mode-rack">
+  <header class="bar">
+    <div class="brand"><div class="logo">MYX<span>O</span></div><div class="tagline">petri wars</div></div>
+    <div class="progress" id="progress"></div>
+  </header>
+  <main class="main">
+    <section class="stage" id="stage" aria-label="Petri dish view">
+      <canvas id="gl"></canvas>
+      <div class="hud" id="hud" hidden>
+        <div class="side p"><div class="sname" id="hPName">Strain</div><div class="nums"><b id="hPCells">0</b> cells · <b id="hPE">0</b> ATP</div></div>
+        <div class="clock"><span id="hClock">00:00</span><small>incubation</small></div>
+        <div class="side e"><div class="sname" id="hEName">Rival</div><div class="nums"><b id="hECells">0</b> cells · <b id="hEE">0</b> ATP</div></div>
+        <div class="tug" aria-hidden="true"><i class="tp" id="tugP" style="width:50%"></i><i class="te" id="tugE" style="width:50%"></i></div>
+      </div>
+      <div class="toast" id="toast" style="opacity:0"></div>
+      <div class="hint" id="hint">Drag to orbit · pinch or scroll to zoom</div>
+      <div class="inspect" id="inspect" hidden></div>
+      <div class="log" id="log" hidden><header><b>Battle log</b><button class="ib" id="logX" aria-label="Close log" style="width:34px;height:34px">✕</button></header><ol id="logList"></ol></div>
+      <div class="result" id="result" hidden></div>
+    </section>
+    <aside class="panel" id="panel">
+      <div id="rack" class="rack pad"></div>
+      <div id="lab" class="lab" hidden></div>
+    </aside>
+  </main>
+  <footer class="transport" id="transport" hidden>
+    <div class="scrubwrap"><span class="tt" id="tNow">00:00</span><canvas id="scrub" aria-label="Battle timeline. Drag to rewind or fast-forward."></canvas><span class="tt" id="tEnd">12:00</span></div>
+    <div class="controls">
+      <button class="ib" id="bLab" aria-label="Back to the gene lab" title="Gene lab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3"/><path d="M7.5 14h9"/></svg></button>
+      <span class="gap"></span>
+      <button class="ib" id="bPrevEv" aria-label="Previous event" title="Previous event"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14l-10-7z"/></svg></button>
+      <button class="ib" id="bBack" aria-label="Step back one minute" title="Step back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
+      <button class="ib play" id="bPlay" aria-label="Play"><svg viewBox="0 0 24 24" fill="currentColor" id="playIcon"><path d="M7 4v16l13-8z"/></svg></button>
+      <button class="ib" id="bFwd" aria-label="Step forward one minute" title="Step forward"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button>
+      <button class="ib" id="bNextEv" aria-label="Next event" title="Next event"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l10-7z"/></svg></button>
+      <span class="gap"></span>
+      <button class="ib txt" id="bSpeed" aria-label="Playback speed">1×</button>
+      <button class="ib" id="bLog" aria-label="Battle log" title="Battle log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2" fill="currentColor"/><circle cx="4.5" cy="12" r="1.2" fill="currentColor"/><circle cx="4.5" cy="18" r="1.2" fill="currentColor"/></svg></button>
+    </div>
+  </footer>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ===================== MYXO SIMULATION =====================
+// Deterministic cellular battle between two plasmodia on a petri dish.
+const N = 52, NN = N * N, MAXT = 720;
+const CXf = (N - 1) / 2, DISH_R = N / 2 - 1.0;
+const T_VOID = 0, T_AGAR = 1, T_ROCK = 2, T_SALT = 3, T_LIGHT = 4;
+const F_NONE = 0, F_SUGAR = 1, F_PROT = 2, F_LIGN = 3;
+const S_NONE = 0, S_ENGULF = 1, S_ACID = 2, S_TOXIN = 3, S_SALT = 4, S_UV = 5, S_STARVE = 6, S_SEVER = 7;
+const SRC_NAMES = ['—', 'Engulfed', 'Acid', 'Antibiotic', 'Salt', 'UV glare', 'Starvation', 'Severed'];
+const FOOD_NAMES = ['', 'Oat flakes', 'Bacterial lawn', 'Bark chips'];
+const ROCK_HP = 14;
+const EAT_RATE = [0, 0.5, 0.5, 0.22];
+const YIELD = [0, 1.0, 1.25, 2.6];
+
+const DX = [1, -1, 0, 0, 1, 1, -1, -1], DY = [0, 0, 1, -1, 1, -1, 1, -1];
+const NB = new Int32Array(NN * 8).fill(-1);
+for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+  const i = y * N + x;
+  for (let k = 0; k < 8; k++) {
+    const nx = x + DX[k], ny = y + DY[k];
+    if (nx >= 0 && ny >= 0 && nx < N && ny < N) NB[i * 8 + k] = ny * N + nx;
+  }
+}
+
+function rng(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// ---------------- Genes ----------------
+const GENES = [
+  { id: 'amylase', cat: 'Metabolism', name: 'Amylase', cost: 1, unlock: 0, desc: 'Digests oat flakes. The staple diet.' },
+  { id: 'protease', cat: 'Metabolism', name: 'Protease', cost: 1, unlock: 0, desc: 'Digests bacterial lawns. Richer than oats.' },
+  { id: 'ligninase', cat: 'Metabolism', name: 'Ligninase', cost: 2, unlock: 3, desc: 'Digests bark chips. Slow to break down, very rich.' },
+  { id: 'chloro', cat: 'Metabolism', name: 'Algal Symbiont', cost: 3, unlock: 4, desc: 'Feeds on sunlit agar and shrugs off UV glare.' },
+  { id: 'necro', cat: 'Metabolism', name: 'Necrotrophy', cost: 2, unlock: 6, desc: 'Absorbs slain rival cells for a burst of energy.' },
+  { id: 'chitin', cat: 'Defense', name: 'Chitin Rind', cost: 2, unlock: 0, desc: 'Halves engulfing damage. Growth costs 15% more.' },
+  { id: 'mucus', cat: 'Defense', name: 'Alkaline Slime', cost: 2, unlock: 2, desc: 'Neutralises 65% of acid and 40% of antibiotic damage.' },
+  { id: 'osmo', cat: 'Defense', name: 'Osmotic Pumps', cost: 1, unlock: 3, desc: 'Immune to salt crust. Grows across it freely.' },
+  { id: 'sclero', cat: 'Defense', name: 'Sclerotia', cost: 2, unlock: 4, desc: 'When starving, hardens and sleeps instead of dying. Sleeping cells take 60% less damage.' },
+  { id: 'regen', cat: 'Defense', name: 'Cytoplasmic Healing', cost: 2, unlock: 0, desc: 'Connected cells heal quickly between fights.' },
+  { id: 'crush', cat: 'Offense', name: 'Pseudopod Crush', cost: 2, unlock: 0, desc: '+60% engulfing damage on contact.' },
+  { id: 'acid', cat: 'Offense', name: 'Oxalic Acid', cost: 3, unlock: 2, desc: 'Burns rivals on contact and dissolves granite. Costs energy per burn.' },
+  { id: 'toxin', cat: 'Offense', name: 'Antibiotic Haze', cost: 3, unlock: 5, desc: 'Poisons rival cells up to 2 cells away. Costs energy.' },
+  { id: 'spores', cat: 'Offense', name: 'Spore Cannons', cost: 3, unlock: 6, desc: 'Every 45 min fires spores at distant food. Sporelings become new nuclei.' },
+  { id: 'prune', cat: 'Network', name: 'Vein Pruning', cost: 1, unlock: 0, desc: 'Retracts idle tubes into a lean network. Refunds energy, lowers upkeep.' },
+  { id: 'fragment', cat: 'Network', name: 'Autonomy', cost: 2, unlock: 5, desc: 'Severed fragments survive and keep feeding.' },
+];
+const GENE_BY_ID = Object.fromEntries(GENES.map(g => [g.id, g]));
+const TRAIT_COST = [0, 0, 1, 2, 4, 6]; // index by level 1..5
+
+function genomeCost(g) {
+  let c = TRAIT_COST[g.vigor] + TRAIT_COST[g.density];
+  for (const id of g.genes) c += GENE_BY_ID[id] ? GENE_BY_ID[id].cost : 0;
+  return c;
+}
+
+function deriveSide(g) {
+  const G = new Set(g.genes);
+  const has = id => G.has(id);
+  const v = g.vigor, d = g.density;
+  let tf = g.taxis.food, th = g.taxis.hunt, tw = g.taxis.wander;
+  let sum = tf + th + tw; if (sum <= 0) { tw = 1; sum = 1; }
+  let costly = 0; for (const id of g.genes) if (GENE_BY_ID[id] && GENE_BY_ID[id].cost >= 2) costly++;
+  return {
+    g, has, vigor: v, density: d,
+    acid: has('acid'), chitin: has('chitin'), mucus: has('mucus'), osmo: has('osmo'), sclero: has('sclero'),
+    regen: has('regen'), toxin: has('toxin'), spores: has('spores'), prune: has('prune'), fragment: has('fragment'),
+    chloro: has('chloro'), necro: has('necro'),
+    eat: [false, has('amylase'), has('protease'), has('ligninase')],
+    maxHP: 12 + d * 6,
+    growCost: (1.0 + d * 0.5) * (has('chitin') ? 1.15 : 1),
+    engulf: (0.8 + d * 0.4) * (has('crush') ? 1.6 : 1),
+    k0: 0.4 + v * 0.45, k1: 0.035 * v,
+    upkeep: Math.max(0.002, 0.0035 + d * 0.0018 + v * 0.0016 + costly * 0.0004 - (has('prune') ? 0.0012 : 0)),
+    wF: tf / sum, wH: th / sum, wW: tw / sum,
+  };
+}
+
+// ---------------- Levels ----------------
+const LEVELS = [
+  {
+    name: 'Oat Flake Plate', code: 'D-01', seed: 101, budget: 8,
+    blurb: 'Plain 2% agar scattered with rolled oats. A gentle first culture.',
+    rival: { name: 'Fuligo minor', vigor: 2, density: 2, genes: ['amylase', 'protease', 'crush'], taxis: { food: 8, hunt: 2, wander: 4 } },
+    gen(D, r) {
+      D.pile(F_SUGAR, CXf, CXf, 2.4, 110);
+      D.pile(F_SUGAR, 15, 17, 1.8, 90); D.pile(F_SUGAR, 14, 35, 1.7, 90);
+      D.pile(F_PROT, 21, 8, 1.5, 90); D.pile(F_SUGAR, 20, 27, 1.3, 70);
+      D.pile(F_SUGAR, 29, 14, 1.6, 90); D.pile(F_PROT, 9, 37, 1.3, 70);
+    }
+  },
+  {
+    name: 'Granite Maze', code: 'D-02', seed: 202, budget: 10,
+    blurb: 'Crushed granite walls split the plate. Bark chips sit sealed in the centre ring.',
+    rival: { name: 'Lycogala corrodens', vigor: 2, density: 2, genes: ['amylase', 'acid', 'ligninase'], taxis: { food: 6, hunt: 5, wander: 2 } },
+    gen(D, r) {
+      D.line(14, 12, 14, 40, 0.9, D.rock);
+      D.ring(CXf, CXf, 7.5, 1.0, [0.6, 2.2, 3.7, 5.3], D.rock);
+      D.pile(F_LIGN, CXf, CXf, 2.6, 120);
+      D.pile(F_SUGAR, 9, 18, 1.4, 70);
+      D.pile(F_SUGAR, 20, 8, 1.6, 90); D.pile(F_SUGAR, 21, 43, 1.6, 90);
+      D.pile(F_PROT, 23, 31, 1.3, 70);
+    }
+  },
+  {
+    name: 'Salt Pan', code: 'D-03', seed: 303, budget: 12,
+    blurb: 'Brine has dried into crusts. The best food lies inside the salt.',
+    rival: { name: 'Stemonitis lorica', vigor: 2, density: 3, genes: ['amylase', 'protease', 'ligninase', 'chitin', 'osmo', 'regen', 'prune'], taxis: { food: 7, hunt: 3, wander: 2 } },
+    gen(D, r) {
+      D.line(17, 3, 21, 48, 2.6, D.salt);
+      D.disc(CXf, CXf, 6.5, D.salt);
+      D.pile(F_LIGN, CXf, CXf, 2.2, 120);
+      D.pile(F_SUGAR, 19, 15, 1.6, 100); D.pile(F_SUGAR, 20, 36, 1.6, 100);
+      D.pile(F_SUGAR, 10, 15, 1.2, 60);
+      D.pile(F_PROT, 27, 9, 1.4, 80);
+    }
+  },
+  {
+    name: 'Sunlit Shallows', code: 'D-04', seed: 404, budget: 13,
+    blurb: 'A thin film of agar under a lamp. Little food, lots of light, harsh UV.',
+    rival: { name: 'Ceratiomyxa lumina', vigor: 3, density: 3, genes: ['chloro', 'amylase', 'sclero', 'prune'], taxis: { food: 6, hunt: 3, wander: 3 } },
+    gen(D, r) {
+      D.light(CXf, CXf, 6.5); D.light(15, 12, 4.5); D.light(15, 40, 4.0);
+      D.pile(F_SUGAR, 12, 30, 1.1, 50); D.pile(F_SUGAR, 22, 18, 1.1, 50);
+      D.pile(F_LIGN, 15, 12, 1.3, 70);
+      D.rock(19, 26, 1.2); D.rock(28, 8, 1.3);
+    }
+  },
+  {
+    name: 'Bacterial Bloom', code: 'D-05', seed: 505, budget: 15,
+    blurb: 'A lawn of bacteria has bloomed overnight. Your rival is fast and hungry.',
+    rival: { name: 'Badhamia vorax', vigor: 4, density: 2, genes: ['protease', 'amylase', 'acid', 'crush'], taxis: { food: 5, hunt: 7, wander: 1 } },
+    gen(D, r) {
+      const spots = [[13, 14], [19, 21], [12, 33], [21, 37], [24, 10], [16, 44], [26, 27], [10, 22]];
+      for (const [x, y] of spots) D.pile(F_PROT, x, y, 1.3 + r() * 0.5, 80 + r() * 40);
+      D.pile(F_SUGAR, CXf, CXf, 2.0, 90);
+      D.salt(19, 29, 1.5); D.rock(22, 16, 1.0);
+    }
+  },
+  {
+    name: 'The Elder Plasmodium', code: 'D-06', seed: 606, budget: 17,
+    blurb: 'An ancient strain holds this plate. Granite, brine and light, all at once.',
+    rival: { name: 'Physarum senex', vigor: 3, density: 3, genes: ['amylase', 'protease', 'ligninase', 'acid', 'mucus', 'chitin', 'regen', 'osmo', 'prune', 'chloro'], taxis: { food: 6, hunt: 5, wander: 1 } },
+    gen(D, r) {
+      D.ring(CXf, CXf, 8.0, 1.0, [1.2, 2.8, 4.4, 6.0], D.rock);
+      D.light(CXf, CXf, 5.0);
+      D.pile(F_LIGN, CXf, CXf, 2.2, 130);
+      D.line(15, 6, 18, 18, 1.6, D.salt);
+      D.pile(F_PROT, 17, 12, 1.3, 90);
+      D.pile(F_SUGAR, 13, 36, 1.6, 90); D.pile(F_PROT, 22, 42, 1.4, 90);
+      D.pile(F_SUGAR, 25, 7, 1.4, 80);
+      D.rock(13, 28, 1.0);
+    }
+  },
+];
+
+const CORE_P = 25 * N + 7, CORE_E = NN - 1 - CORE_P;
+
+function makeDish(levelIdx) {
+  const L = LEVELS[levelIdx];
+  const r = rng(L.seed);
+  const terrain = new Uint8Array(NN), foodType = new Uint8Array(NN), food0 = new Float32Array(NN);
+  const pile = new Int16Array(NN).fill(-1), rockHP = new Float32Array(NN);
+  const piles = [], lights = [];
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const dx = x - CXf, dy = y - CXf;
+    terrain[y * N + x] = (dx * dx + dy * dy <= DISH_R * DISH_R) ? T_AGAR : T_VOID;
+  }
+  const isCenter = (x, y) => Math.abs(x - CXf) < 0.01 && Math.abs(y - CXf) < 0.01;
+  function cells(cx, cy, rad, fn) {
+    const out = [];
+    for (let y = Math.floor(cy - rad - 1); y <= cy + rad + 1; y++) for (let x = Math.floor(cx - rad - 1); x <= cx + rad + 1; x++) {
+      if (x < 0 || y < 0 || x >= N || y >= N) continue;
+      const d = Math.hypot(x - cx, y - cy);
+      if (d <= rad) { const i = y * N + x; if (terrain[i] !== T_VOID) out.push([i, d / Math.max(rad, 0.01)]); }
+    }
+    return out;
+  }
+  const D = {
+    rock(cx, cy, rad) {
+      for (const [i] of cells(cx, cy, rad)) for (const j of [i, NN - 1 - i]) {
+        if (terrain[j] === T_VOID) continue;
+        terrain[j] = T_ROCK; rockHP[j] = ROCK_HP; foodType[j] = 0; food0[j] = 0; pile[j] = -1;
+      }
+    },
+    salt(cx, cy, rad) {
+      for (const [i] of cells(cx, cy, rad)) for (const j of [i, NN - 1 - i]) if (terrain[j] === T_AGAR || terrain[j] === T_LIGHT) terrain[j] = T_SALT;
+    },
+    light(cx, cy, rad) {
+      for (const [i] of cells(cx, cy, rad)) for (const j of [i, NN - 1 - i]) if (terrain[j] === T_AGAR) terrain[j] = T_LIGHT;
+      lights.push({ x: cx, y: cy, r: rad });
+      if (!isCenter(cx, cy)) lights.push({ x: N - 1 - cx, y: N - 1 - cy, r: rad });
+    },
+    disc(cx, cy, rad, fn) { fn(cx, cy, rad); },
+    line(x0, y0, x1, y1, w, fn) {
+      const len = Math.hypot(x1 - x0, y1 - y0), steps = Math.ceil(len * 2);
+      for (let s = 0; s <= steps; s++) { const t = s / steps; fn(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, w); }
+    },
+    ring(cx, cy, rad, w, gaps, fn) {
+      const steps = Math.ceil(rad * Math.PI * 4);
+      for (let s = 0; s < steps; s++) {
+        const a = s / steps * Math.PI * 2;
+        if (gaps.some(g => Math.abs(((a - g + Math.PI * 3) % (Math.PI * 2)) - Math.PI) < 0.32)) continue;
+        fn(cx + Math.cos(a) * rad, cy + Math.sin(a) * rad, w);
+      }
+    },
+    pile(type, cx, cy, rad, amt) {
+      const variants = isCenter(cx, cy) ? [false] : [false, true];
+      for (const mir of variants) {
+        const id = piles.length, list = [];
+        const px = mir ? N - 1 - cx : cx, py = mir ? N - 1 - cy : cy;
+        for (const [i, d] of cells(px, py, rad)) {
+          if (terrain[i] === T_ROCK) continue;
+          foodType[i] = type; food0[i] = 1.8 * amt * (0.55 + 0.45 * (1 - d)); pile[i] = id; list.push(i);
+        }
+        piles.push({ type, x: px, y: py, cells: list });
+      }
+    },
+  };
+  L.gen(D, r);
+  for (const c of [CORE_P, CORE_E]) {
+    const cx = c % N, cy = Math.floor(c / N);
+    for (const [i] of cells(cx, cy, 3.6)) { terrain[i] = T_AGAR; foodType[i] = 0; food0[i] = 0; pile[i] = -1; rockHP[i] = 0; }
+  }
+  return { terrain, foodType, food0, pile, rockHP, piles, lights, level: levelIdx };
+}
+
+// ---------------- Battle ----------------
+function Battle(levelIdx, genomeP, genomeE) {
+  const dish = makeDish(levelIdx);
+  this.dish = dish; this.level = levelIdx;
+  this.terrain = dish.terrain.slice();
+  this.food = dish.food0.slice();
+  this.rockHP = dish.rockHP.slice();
+  this.owner = new Uint8Array(NN);
+  this.hp = new Float32Array(NN);
+  this.dorm = new Uint8Array(NN);
+  this.dist = [null, new Int16Array(NN), new Int16Array(NN)];
+  this.fd = [null, new Uint16Array(NN), new Uint16Array(NN)];
+  this.ed = [null, new Uint16Array(NN), new Uint16Array(NN)];
+  this.dmg = new Float32Array(NN); this.dsrc = new Uint8Array(NN); this.dsrcAmt = new Float32Array(NN);
+  this.dby = new Uint8Array(NN);
+  this.queue = new Int32Array(NN);
+  this.stamp = new Int32Array(NN); this.stampId = 1;
+  this.tmpA = new Uint8Array(NN); this.tmpB = new Uint8Array(NN);
+  this.candJ = new Int32Array(NN); this.candS = new Float32Array(NN);
+  this.rnd = rng(9001 + levelIdx * 131);
+  const mk = (g, core) => {
+    const s = deriveSide(g);
+    Object.assign(s, {
+      energy: 100, roots: [core], core, cells: 0, connected: 0, alive: true, growAcc: 0,
+      starving: false, starveTicks: 0, dmgTaken: new Float32Array(8), lost: new Int32Array(8),
+      kills: 0, eaten: 0, peak: 0, coreLost: -1, pilesSeen: new Set(), lastBreach: -99, lastSever: -99, wasDormant: false,
+      prevDisc: 0, spent: 0,
+    });
+    return s;
+  };
+  this.sides = [null, mk(genomeP, CORE_P), mk(genomeE, CORE_E)];
+  for (const s of [1, 2]) {
+    const S = this.sides[s];
+    const c = S.core;
+    this.setCell(c, s, S.maxHP);
+    for (let k = 0; k < 8; k++) { const j = NB[c * 8 + k]; if (j >= 0 && this.passable(j, S)) this.setCell(j, s, S.maxHP); }
+  }
+  this.tick = 0; this.done = false; this.result = null;
+  this.frames = []; this.events = [];
+  this.stats = { cells: [null, [], []], energy: [null, [], []] };
+  this.contact = false;
+  this.connect(1); this.connect(2);
+  this.scent(1); this.scent(2);
+  this.count();
+  this.record();
+}
+
+Battle.prototype.setCell = function (i, s, hp) { this.owner[i] = s; this.hp[i] = hp; this.dorm[i] = 0; };
+Battle.prototype.passable = function (i, S) {
+  const t = this.terrain[i];
+  return t !== T_VOID && t !== T_ROCK;
+};
+Battle.prototype.event = function (side, type, cell, extra) {
+  this.events.push(Object.assign({ t: this.tick, side, type, cell }, extra || {}));
+};
+
+Battle.prototype.connect = function (s) {
+  const S = this.sides[s], dist = this.dist[s], owner = this.owner, q = this.queue;
+  dist.fill(-1);
+  S.roots = S.roots.filter(r => owner[r] === s);
+  let h = 0, t = 0;
+  for (const r of S.roots) { dist[r] = 0; q[t++] = r; }
+  while (h < t) {
+    const i = q[h++], d = dist[i] + 1;
+    for (let k = 0; k < 8; k++) {
+      const j = NB[i * 8 + k];
+      if (j < 0 || owner[j] !== s || dist[j] >= 0) continue;
+      dist[j] = d; q[t++] = j;
+    }
+  }
+  S.connected = t;
+};
+
+Battle.prototype.bfsFrom = function (out, isSource, canPass) {
+  const q = this.queue; let h = 0, t = 0;
+  out.fill(65535);
+  for (let i = 0; i < NN; i++) if (isSource(i)) { out[i] = 0; q[t++] = i; }
+  while (h < t) {
+    const i = q[h++], d = out[i] + 1;
+    for (let k = 0; k < 8; k++) {
+      const j = NB[i * 8 + k];
+      if (j < 0 || out[j] !== 65535 || !canPass(j)) continue;
+      out[j] = d; q[t++] = j;
+    }
+  }
+};
+
+Battle.prototype.scent = function (s) {
+  const S = this.sides[s], o = 3 - s, terr = this.terrain, food = this.food, ft = this.dish.foodType, owner = this.owner;
+  const canPass = j => { const t = terr[j]; return t !== T_VOID && (t !== T_ROCK || S.acid); };
+  this.bfsFrom(this.fd[s], i => (food[i] > 0.5 && S.eat[ft[i]] && terr[i] !== T_ROCK && owner[i] !== o) || (S.chloro && terr[i] === T_LIGHT && owner[i] === 0), canPass);
+  this.bfsFrom(this.ed[s], i => owner[i] === o, canPass);
+};
+
+Battle.prototype.addDmg = function (j, amt, src, by) {
+  if (amt <= 0) return;
+  this.dmg[j] += amt;
+  if (amt > this.dsrcAmt[j]) { this.dsrcAmt[j] = amt; this.dsrc[j] = src; this.dby[j] = by || 0; }
+};
+
+Battle.prototype.count = function () {
+  for (const s of [1, 2]) { const S = this.sides[s]; S.cells = 0; S.dormCells = 0; }
+  for (let i = 0; i < NN; i++) { const o = this.owner[i]; if (o) { this.sides[o].cells++; if (this.dorm[i]) this.sides[o].dormCells++; } }
+  for (const s of [1, 2]) { const S = this.sides[s]; if (S.cells > S.peak) S.peak = S.cells; }
+};
+
+Battle.prototype.step = function () {
+  if (this.done) return;
+  this.tick++;
+  const T = this.tick, rnd = this.rnd, owner = this.owner, hp = this.hp, terr = this.terrain, food = this.food;
+  const ft = this.dish.foodType, dorm = this.dorm;
+  this.dmg.fill(0); this.dsrc.fill(0); this.dsrcAmt.fill(0); this.dby.fill(0);
+
+  // 1. connectivity
+  for (const s of [1, 2]) {
+    const S = this.sides[s];
+    const hadCore = owner[S.core] === s;
+    this.connect(s);
+    if (S.coreLost < 0 && !hadCore) { S.coreLost = T; }
+  }
+  // 2. scent
+  if (T % 5 === 1) { this.scent(1); this.scent(2); }
+
+  // 3. income
+  for (const s of [1, 2]) this.sides[s].income = 0.5;
+  for (let i = 0; i < NN; i++) {
+    const o = owner[i]; if (!o) continue;
+    const S = this.sides[o];
+    const f = ft[i];
+    if (f && food[i] > 0 && S.eat[f]) {
+      const take = Math.min(food[i], EAT_RATE[f] * (dorm[i] ? 0.5 : 1));
+      food[i] -= take; S.income += take * YIELD[f]; S.eaten += take * YIELD[f];
+      const pid = this.dish.pile[i];
+      if (pid >= 0 && !S.pilesSeen.has(pid)) { S.pilesSeen.add(pid); this.event(o, 'food', i, { food: f }); }
+    }
+    if (terr[i] === T_LIGHT && S.chloro) S.income += 0.2;
+  }
+  for (let i = 0; i < NN; i++) if (ft[i] === F_PROT && food[i] < this.dish.food0[i]) food[i] = Math.min(this.dish.food0[i], food[i] + 0.03);
+  // 4. upkeep & starvation state
+  for (const s of [1, 2]) {
+    const S = this.sides[s];
+    const active = S.cells - S.dormCells;
+    const cost = active * S.upkeep + S.dormCells * S.upkeep * 0.15;
+    S.energy += S.income - cost;
+    S.lastIncome = S.income; S.lastUpkeep = cost;
+    if (S.energy <= 0) {
+      S.energy = 0;
+      if (!S.starving) { S.starving = true; this.event(s, S.sclero ? 'dormant' : 'starve', S.core); }
+    } else if (S.starving && S.energy > 20) { S.starving = false; this.event(s, 'recover', S.core); }
+    if (S.starving) S.starveTicks++;
+  }
+  // dormancy toggling
+  for (let i = 0; i < NN; i++) {
+    const o = owner[i]; if (!o) continue;
+    const S = this.sides[o];
+    if (S.sclero) dorm[i] = S.starving ? 1 : 0; else dorm[i] = 0;
+  }
+
+  // 5. hazards, decay, starvation, regen
+  let maxD = [0, 0, 0];
+  for (let i = 0; i < NN; i++) { const o = owner[i]; if (o && this.dist[o][i] > maxD[o]) maxD[o] = this.dist[o][i]; }
+  for (let i = 0; i < NN; i++) {
+    const o = owner[i]; if (!o) continue;
+    const S = this.sides[o], t = terr[i], dm = dorm[i] ? 0.4 : 1;
+    if (t === T_SALT && !S.osmo) this.addDmg(i, 1.1 * dm, S_SALT);
+    if (t === T_LIGHT && !S.chloro) this.addDmg(i, 0.55 * dm, S_UV);
+    const d = this.dist[o][i];
+    if (d < 0 && !S.fragment) this.addDmg(i, S.roots.length ? 0.45 : 1.6, S_SEVER);
+    if (S.starving && !S.sclero && d > maxD[o] * 0.5) this.addDmg(i, 0.35, S_STARVE);
+    if (!S.starving && (d >= 0 || S.fragment) && !dorm[i] && hp[i] < S.maxHP) {
+      const h = Math.min(S.maxHP - hp[i], 0.15 + (S.regen ? 1.0 : 0));
+      hp[i] += h; if (S.regen) S.energy -= h * 0.02;
+    }
+  }
+
+  // 6. combat
+  for (let i = 0; i < NN; i++) {
+    const s = owner[i]; if (!s || dorm[i]) continue;
+    const S = this.sides[s], o = 3 - s;
+    let best = -1, bh = 1e9;
+    for (let k = 0; k < 4; k++) { const j = NB[i * 8 + k]; if (j >= 0 && owner[j] === o && hp[j] < bh) { bh = hp[j]; best = j; } }
+    if (best < 0) continue;
+    if (!this.contact) { this.contact = true; this.event(0, 'contact', i); }
+    const O = this.sides[o], vigour = 0.5 + 0.5 * Math.min(1, hp[i] / S.maxHP), dm = dorm[best] ? 0.4 : 1;
+    this.addDmg(best, S.engulf * vigour * (O.chitin ? 0.5 : 1) * dm, S_ENGULF, s);
+    if (S.acid && S.energy > 1) { this.addDmg(best, 2.4 * vigour * (O.mucus ? 0.35 : 1) * dm, S_ACID, s); S.energy -= 0.03; }
+  }
+  for (const s of [1, 2]) {
+    const S = this.sides[s]; if (!S.toxin || S.energy < 2) continue;
+    const o = 3 - s, A = this.tmpA, B = this.tmpB, O = this.sides[o];
+    for (let i = 0; i < NN; i++) A[i] = (owner[i] === s && !dorm[i]) ? 1 : 0;
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      let m = 0; for (let dx = -2; dx <= 2 && !m; dx++) { const xx = x + dx; if (xx >= 0 && xx < N && A[y * N + xx]) m = 1; }
+      B[y * N + x] = m;
+    }
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      const i = y * N + x; if (owner[i] !== o) continue;
+      let m = 0; for (let dy = -2; dy <= 2 && !m; dy++) { const yy = y + dy; if (yy >= 0 && yy < N && B[yy * N + x]) m = 1; }
+      if (m) { this.addDmg(i, 0.55 * (O.mucus ? 0.6 : 1) * (dorm[i] ? 0.4 : 1), S_TOXIN, s); S.energy -= 0.012; }
+    }
+  }
+  // 7. acid on granite
+  for (const s of [1, 2]) {
+    const S = this.sides[s]; if (!S.acid || S.energy < 3) continue;
+    for (let i = 0; i < NN; i++) {
+      if (terr[i] !== T_ROCK) continue;
+      let n = 0;
+      for (let k = 0; k < 4; k++) { const j = NB[i * 8 + k]; if (j >= 0 && owner[j] === s && !dorm[j]) n++; }
+      if (!n) continue;
+      this.rockHP[i] -= 0.45 * n; S.energy -= 0.05 * n;
+      if (this.rockHP[i] <= 0) {
+        this.rockHP[i] = 0; terr[i] = T_AGAR;
+        if (T - S.lastBreach > 25) { S.lastBreach = T; this.event(s, 'breach', i); }
+      }
+    }
+  }
+  // 8. apply damage
+  for (let i = 0; i < NN; i++) {
+    const d = this.dmg[i]; if (d <= 0) continue;
+    const o = owner[i]; if (!o) continue;
+    const S = this.sides[o], src = this.dsrc[i];
+    S.dmgTaken[src] += d;
+    hp[i] -= d;
+    if (hp[i] <= 0) {
+      S.lost[src]++;
+      owner[i] = 0; hp[i] = 0; dorm[i] = 0;
+      const isRoot = S.roots.indexOf(i);
+      if (i === S.core) { this.event(o, 'core', i); }
+      if (isRoot >= 0) S.roots.splice(isRoot, 1);
+      const k = this.dby[i];
+      if (k && (src === S_ENGULF || src === S_ACID || src === S_TOXIN)) {
+        const K = this.sides[k]; K.kills++;
+        if (K.necro) { K.energy += 6; K.eaten += 6; }
+        if ((src === S_ENGULF || src === S_ACID) && K.energy > K.growCost) {
+          // capture if adjacent
+          let adj = false; for (let q = 0; q < 8; q++) { const j = NB[i * 8 + q]; if (j >= 0 && owner[j] === k) { adj = true; break; } }
+          if (adj) { this.setCell(i, k, K.maxHP * 0.35); K.energy -= K.growCost * 0.6; }
+        }
+      }
+    }
+  }
+  // 9. growth
+  for (const s of [1, 2]) this.grow(s);
+  // 10. pruning
+  if (T % 5 === 0) for (const s of [1, 2]) if (this.sides[s].prune) this.prune(s);
+  // 11. spores
+  if (T % 45 === 40) for (const s of [1, 2]) if (this.sides[s].spores) this.sporulate(s);
+
+  this.count();
+  // severance detection
+  for (const s of [1, 2]) {
+    const S = this.sides[s];
+    this.connect(s);
+    const disc = S.cells - S.connected;
+    if (disc - S.prevDisc >= 8 && T - S.lastSever > 20) { S.lastSever = T; this.event(s, 'sever', S.core, { n: disc }); }
+    S.prevDisc = disc;
+  }
+  this.record();
+  // end
+  const p = this.sides[1], e = this.sides[2];
+  if (p.cells === 0 || e.cells === 0) {
+    this.done = true;
+    this.result = { winner: e.cells === 0 && p.cells > 0 ? 1 : 2, reason: 'elim', tick: T };
+  } else if (T >= MAXT) {
+    this.done = true;
+    this.result = { winner: p.cells > e.cells ? 1 : 2, reason: 'time', tick: T };
+  }
+  if (this.done) this.event(this.result.winner, 'end', this.result.winner === 1 ? e.core : p.core);
+};
+
+Battle.prototype.grow = function (s) {
+  const S = this.sides[s]; if (S.starving || !S.cells) return;
+  const owner = this.owner, terr = this.terrain, rnd = this.rnd, dist = this.dist[s], fd = this.fd[s], ed = this.ed[s];
+  S.growAcc += S.k0 + S.k1 * Math.sqrt(S.cells);
+  let n = Math.floor(S.growAcc); S.growAcc -= n;
+  const reserve = 4 + S.cells * S.upkeep * 60;
+  if (n <= 0 || S.energy < S.growCost + reserve) return;
+  const sid = ++this.stampId, stamp = this.stamp, CJ = this.candJ, CS = this.candS;
+  let m = 0;
+  for (let i = 0; i < NN; i++) {
+    if (owner[i] !== s || this.dorm[i]) continue;
+    if (dist[i] < 0 && !S.fragment) continue;
+    for (let k = 0; k < 8; k++) {
+      const j = NB[i * 8 + k];
+      if (j < 0 || owner[j] !== 0 || stamp[j] === sid) continue;
+      const t = terr[j]; if (t === T_VOID || t === T_ROCK) continue;
+      stamp[j] = sid;
+      let own = 0;
+      if (S.prune) { for (let q = 0; q < 8; q++) { const jj = NB[j * 8 + q]; if (jj >= 0 && owner[jj] === s) own++; } }
+      const f = fd[j], e = ed[j];
+      let sc = S.wF * (f >= 65535 ? 0 : Math.max(0, 40 - f) * 0.25) + S.wH * (e >= 65535 ? 0 : Math.max(0, 60 - e) * 0.2) + S.wW * rnd() * 1.6 + rnd() * 0.05;
+      if (t === T_SALT && !S.osmo) sc -= 0.5;
+      if (t === T_LIGHT) sc += S.chloro ? 0.12 : -0.25;
+      if (S.prune && own >= 6 && f > 1) sc -= 0.6;
+      if (k >= 4) sc -= 0.02;
+      CJ[m] = j; CS[m] = sc; m++;
+    }
+  }
+  for (let c = 0; c < n && m > 0; c++) {
+    let bi = 0; for (let q = 1; q < m; q++) if (CS[q] > CS[bi]) bi = q;
+    const j = CJ[bi]; CJ[bi] = CJ[m - 1]; CS[bi] = CS[m - 1]; m--;
+    const cost = S.growCost * (terr[j] === T_SALT && !S.osmo ? 1.4 : 1);
+    if (S.energy < cost + reserve) break;
+    S.energy -= cost; S.spent += cost;
+    this.setCell(j, s, S.maxHP * 0.5);
+  }
+};
+
+Battle.prototype.prune = function (s) {
+  const S = this.sides[s], owner = this.owner, rnd = this.rnd, ft = this.dish.foodType, food = this.food;
+  for (let i = 0; i < NN; i++) {
+    if (owner[i] !== s || this.dorm[i] || S.roots.indexOf(i) >= 0) continue;
+    if (this.dist[s][i] < 0) continue;
+    if (this.ed[s][i] <= 3) continue;
+    if (ft[i] && food[i] > 0.5 && S.eat[ft[i]]) continue;
+    if (S.chloro && this.terrain[i] === T_LIGHT) continue;
+    let own = 0;
+    for (let q = 0; q < 8; q++) { const j = NB[i * 8 + q]; if (j >= 0 && owner[j] === s) own++; }
+    let p = 0;
+    if (own === 8 && this.fd[s][i] > 2) p = 0.14;
+    else if (own <= 1 && this.fd[s][i] > 4) p = 0.2;
+    if (p && rnd() < p) { owner[i] = 0; this.hp[i] = 0; S.energy += S.growCost * 0.5; }
+  }
+};
+
+Battle.prototype.sporulate = function (s) {
+  const S = this.sides[s]; if (S.energy < 45 || S.starving) return;
+  const owner = this.owner, rnd = this.rnd, terr = this.terrain, fd = this.fd[s];
+  const shots = [];
+  const own = []; for (let i = 0; i < NN; i++) if (owner[i] === s && this.dist[s][i] >= 0) own.push(i);
+  if (!own.length) return;
+  for (let shot = 0; shot < 3; shot++) {
+    let best = -1, bs = 1e9, from = -1;
+    for (let a = 0; a < 40; a++) {
+      const src = own[Math.floor(rnd() * own.length)];
+      const ang = rnd() * Math.PI * 2, rad = 6 + rnd() * 9;
+      const x = Math.round(src % N + Math.cos(ang) * rad), y = Math.round(Math.floor(src / N) + Math.sin(ang) * rad);
+      if (x < 0 || y < 0 || x >= N || y >= N) continue;
+      const j = y * N + x, t = terr[j];
+      if (owner[j] || t === T_VOID || t === T_ROCK || (t === T_SALT && !S.osmo) || (t === T_LIGHT && !S.chloro)) continue;
+      let near = false; for (let q = 0; q < 8; q++) { const jj = NB[j * 8 + q]; if (jj >= 0 && owner[jj]) { near = true; break; } }
+      if (near) continue;
+      const sc = fd[j] + rnd();
+      if (sc < bs) { bs = sc; best = j; from = src; }
+    }
+    if (best >= 0) {
+      this.setCell(best, s, S.maxHP * 0.7); S.roots.push(best); S.energy -= 12;
+      shots.push([from, best]);
+    }
+  }
+  if (shots.length) this.event(s, 'spores', shots[0][1], { shots });
+};
+
+Battle.prototype.record = function () {
+  const dens = new Uint8Array(NN * 4), flags = new Uint8Array(NN), matter = new Uint8Array(NN);
+  const owner = this.owner, d0 = this.dish.food0, terr = this.terrain;
+  for (let i = 0; i < NN; i++) {
+    const o = owner[i];
+    if (o) {
+      const S = this.sides[o];
+      const v = Math.max(0, Math.min(1, this.hp[i] / S.maxHP));
+      dens[i * 4 + o - 1] = Math.round((0.3 + 0.7 * v) * 255);
+      const d = this.dist[o][i];
+      dens[i * 4 + 2] = d < 0 ? 0 : Math.min(255, d * 3);
+      flags[i] = o | (this.dorm[i] ? 4 : 0) | (d < 0 ? 8 : 0);
+    }
+    const dm = this.dmg[i];
+    if (dm > 0) { dens[i * 4 + 3] = Math.min(255, Math.round(dm * 70)); flags[i] |= (this.dsrc[i] << 4); }
+    if (d0[i] > 0) matter[i] = Math.round(Math.max(0, this.food[i] / d0[i]) * 255);
+    else if (terr[i] === T_ROCK) matter[i] = Math.max(1, Math.round(this.rockHP[i] / ROCK_HP * 255));
+  }
+  this.frames.push({ dens, flags, matter });
+  for (const s of [1, 2]) { this.stats.cells[s].push(this.sides[s].cells); this.stats.energy[s].push(this.sides[s].energy); }
+};
+
+if (typeof module !== 'undefined') module.exports = { Battle, LEVELS, GENES, genomeCost, MAXT, N, NN, makeDish };
+
+// ===================== MYXO APP =====================
+(function () {
+'use strict';
+const $ = id => document.getElementById(id);
+const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = t => String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(Math.floor(t % 60)).padStart(2, '0');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const COL = { p: '#f4c53c', e: '#e2508a', n: '#ece5d3' };
+const SRC_COL = ['#000', '#ff6a2e', '#c6ff3d', '#a98bff', '#f2f6f8', '#fff3a8', '#8a7a62', '#7ea6c4'];
+const FOOD_COL = ['', '#d8c08a', '#efd6c6', '#6b4527'];
+const FOOD_ENZ = ['', 'amylase', 'protease', 'ligninase'];
+
+// ---------------- Progress ----------------
+const KEY = 'myxo.petri.v1';
+const DEFAULT_GENOME = { vigor: 2, density: 2, genes: ['amylase', 'protease', 'chitin', 'crush'], taxis: { food: 7, hunt: 3, wander: 3 } };
+let prog = { cleared: [false, false, false, false, false, false], genomes: {}, name: 'Strain P-01' };
+try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && Array.isArray(s.cleared)) prog = Object.assign(prog, s); } catch (e) { }
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(prog)); } catch (e) { } };
+const isolated = g => g.unlock <= 1 || !!prog.cleared[g.unlock - 2];
+const playable = i => i === 0 || !!prog.cleared[i - 1];
+const cloneG = g => ({ vigor: g.vigor, density: g.density, genes: g.genes.slice(), taxis: Object.assign({}, g.taxis) });
+
+// ---------------- App state ----------------
+const S = { mode: 'rack', level: 0, genome: cloneG(DEFAULT_GENOME), battle: null, playhead: 0, playing: false, speed: 1, sel: -1, resultShown: false, shownEvt: -1, lastFx: 0 };
+const SPEEDS = [0.25, 0.5, 1, 2, 4];
+const TPS = 24; // ticks per second at 1x
+
+// ===================== 3D =====================
+const stage = $('stage'), canvas = $('gl');
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
+} catch (e) { renderer = null; }
+if (!renderer) { stage.appendChild(el('div', 'nogl', 'This game draws its petri dishes with WebGL, which this browser has turned off.')); }
+const SIZE = 10, CELL = SIZE / N, DISH_UV = (N / 2 - 1.0) / N, DISH_W = DISH_UV * SIZE;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(36, 1, 0.1, 100);
+const cam = { theta: 0.0, phi: 0.78, zoom: 1, base: 16, target: new THREE.Vector3(0, 0, 0.15), auto: true };
+let isMobile = Math.min(window.innerWidth, window.innerHeight) < 600;
+if (renderer) renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.75 : 2));
+
+scene.add(new THREE.HemisphereLight(0xfff1d6, 0x1c2a30, 0.75));
+const sun = new THREE.DirectionalLight(0xfff0d8, 0.95); sun.position.set(-4, 10, 5); scene.add(sun);
+const fill = new THREE.DirectionalLight(0x7fb6c9, 0.25); fill.position.set(5, 4, -6); scene.add(fill);
+
+const GLSL_NOISE = `
+vec3 permute(vec3 x){return mod(((x*34.0)+1.0)*x,289.0);}
+float snoise(vec2 v){
+  const vec4 C=vec4(0.211324865405187,0.366025403784439,-0.577350269189626,0.024390243902439);
+  vec2 i=floor(v+dot(v,C.yy)); vec2 x0=v-i+dot(i,C.xx);
+  vec2 i1=(x0.x>x0.y)?vec2(1.0,0.0):vec2(0.0,1.0);
+  vec4 x12=x0.xyxy+C.xxzz; x12.xy-=i1; i=mod(i,289.0);
+  vec3 p=permute(permute(i.y+vec3(0.0,i1.y,1.0))+i.x+vec3(0.0,i1.x,1.0));
+  vec3 m=max(0.5-vec3(dot(x0,x0),dot(x12.xy,x12.xy),dot(x12.zw,x12.zw)),0.0); m=m*m; m=m*m;
+  vec3 x=2.0*fract(p*C.www)-1.0; vec3 h=abs(x)-0.5; vec3 ox=floor(x+0.5); vec3 a0=x-ox;
+  m*=1.79284291400159-0.85373472095314*(a0*a0+h*h);
+  vec3 g; g.x=a0.x*x0.x+h.x*x0.y; g.yz=a0.yz*x12.xz+h.yz*x12.yw; return 130.0*dot(m,g);
+}`;
+
+// --- baked noise texture (edges, veins, crystals, caustics) ---
+let noiseRT = null;
+if (renderer) {
+  noiseRT = new THREE.WebGLRenderTarget(1024, 1024, { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, format: THREE.RGBAFormat, depthBuffer: false });
+  const nScene = new THREE.Scene(), nCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+  nScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.ShaderMaterial({
+    vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.0,1.0); }',
+    fragmentShader: GLSL_NOISE + `
+      varying vec2 vUv;
+      void main(){
+        vec2 uv=vUv;
+        float r=0.5+0.5*(snoise(uv*9.0)*0.55+snoise(uv*23.0+4.1)*0.3+snoise(uv*57.0+9.3)*0.15);
+        vec2 q=uv*8.0; q+=0.6*vec2(snoise(q*0.7+1.7),snoise(q*0.7+8.3));
+        float a=1.0-abs(snoise(q)); float b2=1.0-abs(snoise(q*2.3+5.2)); float c2=1.0-abs(snoise(q*4.7+2.9));
+        float g=clamp(pow(a,7.0)+0.6*pow(b2,9.0)+0.3*pow(c2,10.0),0.0,1.0);
+        float bb=0.5+0.5*(snoise(uv*160.0)*0.6+snoise(uv*330.0+2.0)*0.4);
+        vec2 c=uv*14.0; c+=vec2(snoise(c*0.5),snoise(c*0.5+3.0))*0.8;
+        float ca=pow(1.0-abs(snoise(c)),8.0);
+        gl_FragColor=vec4(r,g,bb,ca);
+      }`
+  })));
+  renderer.setRenderTarget(noiseRT); renderer.render(nScene, nCam); renderer.setRenderTarget(null);
+}
+
+// --- data textures ---
+function dataTex(filter) {
+  const t = new THREE.DataTexture(new Uint8Array(NN * 4), N, N, THREE.RGBAFormat, THREE.UnsignedByteType);
+  t.magFilter = filter; t.minFilter = filter; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.needsUpdate = true; return t;
+}
+const texA = dataTex(THREE.LinearFilter), texB = dataTex(THREE.LinearFilter);
+const texStatus = dataTex(THREE.LinearFilter), texGlow = dataTex(THREE.LinearFilter), texTerr = dataTex(THREE.LinearFilter);
+
+const surfUniforms = {
+  uDensA: { value: texA }, uDensB: { value: texB }, uStatus: { value: texStatus }, uGlow: { value: texGlow }, uTerr: { value: texTerr },
+  uNoise: { value: noiseRT ? noiseRT.texture : null }, uMix: { value: 0 }, uTime: { value: 0 }, uSize: { value: SIZE }, uDishR: { value: DISH_UV },
+  uPCol: { value: new THREE.Color(0xf6c52e) }, uECol: { value: new THREE.Color(0xe0457f) }, uAgar: { value: new THREE.Color(0x6f6650) },
+  uSel: { value: new THREE.Vector3(0, 0, 0) }, uGridN: { value: N },
+};
+const DENS_FN = `
+    vec4 densAt(vec2 uv){ return mix(texture2D(uDensA,uv),texture2D(uDensB,uv),uMix); }
+    vec4 dens(vec2 uv, vec4 nz){
+      float tx=1.0/uGridN;
+      vec2 w=uv+vec2(nz.r-0.5, texture2D(uNoise,uv.yx*0.93+0.31).r-0.5)*tx*1.6;
+      float o=tx*0.6;
+      return (densAt(w+vec2(o,o))+densAt(w+vec2(-o,o))+densAt(w+vec2(o,-o))+densAt(w+vec2(-o,-o)))*0.25;
+    }`;
+const surfMat = new THREE.ShaderMaterial({
+  uniforms: surfUniforms,
+  vertexShader: `
+    uniform sampler2D uDensA, uDensB, uNoise, uTerr; uniform float uMix, uTime, uSize, uGridN;
+    varying vec2 vUv; varying vec3 vN; varying vec3 vPos;
+    DENS_FN
+    float hAt(vec2 uv){
+      vec4 nz=texture2D(uNoise,uv); vec4 d=dens(uv,nz);
+      float m=max(d.r,d.g);
+      float body=smoothstep(0.12,0.32,m+(nz.r-0.5)*0.18);
+      float pulse=0.5+0.5*sin(d.b*255.0*0.55-uTime*3.2);
+      float h=body*(0.03+0.10*m)+body*nz.g*(0.045+0.03*pulse)*(0.85+0.15*sin(uTime*1.3+d.b*40.0));
+      vec4 t=texture2D(uTerr,uv);
+      h+=t.r*0.035*nz.b;
+      return h;
+    }
+    void main(){
+      vUv=uv;
+      float e=1.0/170.0;
+      float h=hAt(uv);
+      float hx=hAt(uv+vec2(e,0.0))-hAt(uv-vec2(e,0.0));
+      float hz=hAt(uv+vec2(0.0,e))-hAt(uv-vec2(0.0,e));
+      vN=normalize(vec3(-hx/(2.0*e*uSize),1.0,hz/(2.0*e*uSize)));
+      vec3 p=position; p.y+=h; vPos=p;
+      gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);
+    }`,
+  fragmentShader: `
+    uniform sampler2D uDensA, uDensB, uNoise, uTerr, uStatus, uGlow;
+    uniform float uMix, uTime, uDishR, uGridN; uniform vec3 uPCol, uECol, uAgar, uSel;
+    varying vec2 vUv; varying vec3 vN; varying vec3 vPos;
+    DENS_FN
+    void main(){
+      vec2 uv=vUv; float rr=length(uv-0.5);
+      if(rr>uDishR) discard;
+      vec4 nz=texture2D(uNoise,uv);
+      vec4 d=dens(uv,nz);
+      vec4 st=texture2D(uStatus,uv); vec4 gl=texture2D(uGlow,uv); vec4 tr=texture2D(uTerr,uv);
+      float m=max(d.r,d.g);
+      float body=smoothstep(0.14,0.25,m+(nz.r-0.5)*0.18+(nz.b-0.5)*0.05);
+      float vein=nz.g;
+      float pulse=0.5+0.5*sin(d.b*255.0*0.55-uTime*3.2);
+      float share=d.r/max(d.r+d.g,0.001);
+      vec3 base=mix(uECol,uPCol,smoothstep(0.35,0.65,share));
+      // normal with fine vein bump
+      float ee=1.0/1024.0;
+      float gx=texture2D(uNoise,uv+vec2(ee,0.0)).g-texture2D(uNoise,uv-vec2(ee,0.0)).g;
+      float gz=texture2D(uNoise,uv+vec2(0.0,ee)).g-texture2D(uNoise,uv-vec2(0.0,ee)).g;
+      vec3 N=normalize(vN+body*vec3(-gx,0.0,gz)*1.6);
+      vec3 L=normalize(vec3(-0.45,1.0,0.55)); vec3 V=normalize(cameraPosition-vPos); vec3 H=normalize(L+V);
+      float diff=max(dot(N,L),0.0); float spec=pow(max(dot(N,H),0.0),70.0); float fres=pow(1.0-max(dot(N,V),0.0),3.0);
+      // mold colour
+      float thick=0.55+0.45*m;
+      vec3 mold=base*thick*(0.88+0.24*nz.r);
+      float tube=smoothstep(0.25,0.75,vein);
+      mold=mix(mold,base*0.6,smoothstep(0.08,0.3,vein)*(1.0-tube)*0.35);
+      mold+=base*tube*(0.2+0.6*pulse)*0.5;
+      float edge=body*(1.0-body)*4.0; mold*=1.0-edge*0.35;
+      vec3 crust=vec3(0.36,0.24,0.12)+base*0.12;
+      mold=mix(mold,crust*(0.8+0.4*nz.b),st.r*0.8);
+      mold=mix(mold,mold*0.45+vec3(0.08,0.1,0.12),st.g*(0.55+0.15*sin(uTime*6.0)));
+      vec3 moldLit=mold*(0.42+0.7*diff)+spec*0.6*(1.0-st.r)+fres*base*0.45+base*0.18*vein*pulse;
+      // agar
+      vec3 agar=uAgar*(0.9+0.16*nz.r)+vec3(0.1,0.12,0.1)*nz.a*0.35;
+      agar=mix(agar,vec3(0.86,0.88,0.9)*(0.65+0.45*nz.b),tr.r*0.92);
+      agar+=vec3(1.0,0.84,0.52)*tr.g*(0.22+0.05*sin(uTime*0.9+uv.x*18.0));
+      agar=mix(agar,vec3(0.16,0.15,0.15),tr.b*0.55);
+      float rim=smoothstep(uDishR-0.035,uDishR,rr);
+      agar=mix(agar,agar*1.35+0.05,rim);
+      vec3 agarLit=agar*(0.7+0.35*diff)+spec*0.08;
+      vec3 col=mix(agarLit,moldLit,body);
+      col+=gl.rgb*(0.75+0.25*sin(uTime*18.0+uv.x*90.0+uv.y*70.0))*1.4;
+      if(uSel.z>0.5){
+        float ds=length((uv-uSel.xy)*uGridN);
+        col+=vec3(1.0)*(smoothstep(0.16,0.0,abs(ds-1.15))*(0.7+0.3*sin(uTime*5.0)));
+      }
+      col*=1.0-smoothstep(uDishR*0.6,uDishR,rr)*0.18;
+      gl_FragColor=vec4(col,1.0);
+    }`
+});
+surfMat.vertexShader = surfMat.vertexShader.replace('DENS_FN', DENS_FN);
+surfMat.fragmentShader = surfMat.fragmentShader.replace('DENS_FN', DENS_FN);
+const SEG = isMobile ? 130 : 190;
+const surfGeo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG); surfGeo.rotateX(-Math.PI / 2);
+const surface = new THREE.Mesh(surfGeo, surfMat); scene.add(surface);
+
+// dish glass + base
+const dishBase = new THREE.Mesh(new THREE.CylinderGeometry(DISH_W + 0.25, DISH_W + 0.35, 0.3, 96), new THREE.MeshStandardMaterial({ color: 0x1b2427, roughness: 0.35, metalness: 0.1 }));
+dishBase.position.y = -0.16; scene.add(dishBase);
+const glassMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, side: THREE.DoubleSide, uniforms: { uTime: { value: 0 } },
+  vertexShader: 'varying vec3 vN; varying vec3 vW; varying vec2 vUv; void main(){ vUv=uv; vN=normalize(normalMatrix*normal); vec4 w=modelMatrix*vec4(position,1.0); vW=w.xyz; gl_Position=projectionMatrix*viewMatrix*w; }',
+  fragmentShader: 'varying vec3 vN; varying vec3 vW; varying vec2 vUv; void main(){ vec3 V=normalize(cameraPosition-vW); float f=pow(1.0-abs(dot(normalize(vN),normalize((viewMatrix*vec4(V,0.0)).xyz))),2.0); float top=smoothstep(0.8,1.0,vUv.y); float a=0.05+0.35*f+0.4*top; gl_FragColor=vec4(vec3(0.82,0.93,0.95),a); }'
+});
+const glass = new THREE.Mesh(new THREE.CylinderGeometry(DISH_W + 0.12, DISH_W + 0.12, 0.6, 128, 1, true), glassMat);
+glass.position.y = 0.22; scene.add(glass);
+const rimRing = new THREE.Mesh(new THREE.TorusGeometry(DISH_W + 0.12, 0.03, 8, 128), new THREE.MeshStandardMaterial({ color: 0xd8eef0, roughness: 0.15, transparent: true, opacity: 0.6 }));
+rimRing.rotation.x = Math.PI / 2; rimRing.position.y = 0.52; scene.add(rimRing);
+const shadow = new THREE.Mesh(new THREE.CircleGeometry(DISH_W * 1.45, 64), new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false,
+  vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+  fragmentShader: 'varying vec2 vUv; void main(){ float d=length(vUv-0.5)*2.0; gl_FragColor=vec4(0.0,0.0,0.0,0.55*smoothstep(1.0,0.55,d)); }'
+}));
+shadow.rotation.x = -Math.PI / 2; shadow.position.y = -0.32; scene.add(shadow);
+
+// --- per-dish instanced props ---
+const dishProps = new THREE.Group(); scene.add(dishProps);
+function jitterGeo(geo, amt, seed) {
+  const r = rng(seed), p = geo.attributes.position, map = new Map();
+  for (let i = 0; i < p.count; i++) {
+    const k = p.getX(i).toFixed(3) + ',' + p.getY(i).toFixed(3) + ',' + p.getZ(i).toFixed(3);
+    if (!map.has(k)) map.set(k, [(r() - 0.5) * amt, (r() - 0.5) * amt, (r() - 0.5) * amt]);
+    const j = map.get(k); p.setXYZ(i, p.getX(i) + j[0], p.getY(i) + j[1], p.getZ(i) + j[2]);
+  }
+  geo.computeVertexNormals(); return geo;
+}
+const GEO = {
+  rock: jitterGeo(new THREE.IcosahedronGeometry(0.5, 1), 0.22, 7),
+  oat: jitterGeo(new THREE.CylinderGeometry(0.5, 0.46, 0.09, 9, 1), 0.12, 11),
+  prot: new THREE.SphereGeometry(0.5, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2),
+  bark: jitterGeo(new THREE.BoxGeometry(1, 0.32, 0.42, 3, 1, 1), 0.14, 13),
+};
+const MAT = {
+  rock: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, flatShading: true }),
+  oat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.75 }),
+  prot: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.22, metalness: 0.0 }),
+  bark: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, flatShading: true }),
+};
+let world = null; // { dish, rocks:{mesh, cells, base[]}, foods:[{mesh,cells,base}], cores, lights }
+const dummy = new THREE.Object3D();
+function cellXZ(i) { const x = i % N, y = Math.floor(i / N); return [((x + 0.5) / N) * SIZE - SIZE / 2, SIZE / 2 - ((y + 0.5) / N) * SIZE]; }
+
+const coreGeo = new THREE.SphereGeometry(0.13, 24, 16);
+const cores = [null, new THREE.Mesh(coreGeo, new THREE.MeshStandardMaterial({ color: 0xffe9a0, emissive: 0xf4b400, emissiveIntensity: 0.9, roughness: 0.3 })),
+  new THREE.Mesh(coreGeo, new THREE.MeshStandardMaterial({ color: 0xffc0dc, emissive: 0xd81b60, emissiveIntensity: 0.9, roughness: 0.3 }))];
+scene.add(cores[1], cores[2]);
+
+const beamMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, uniforms: { uTime: { value: 0 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+  fragmentShader: 'uniform float uTime; varying vec2 vUv; void main(){ float a=pow(1.0-vUv.y,1.6)*0.13*(0.8+0.2*sin(uTime*1.1+vUv.x*25.0)); gl_FragColor=vec4(1.0,0.88,0.62,a); }'
+});
+
+function buildWorld(dish) {
+  while (dishProps.children.length) { const c = dishProps.children.pop(); if (c.isInstancedMesh) c.dispose(); }
+  const r = rng(dish.level * 97 + 5);
+  const w = { dish, groups: [] };
+  // terrain texture: R salt, G light, B rock, A unused
+  const td = texTerr.image.data;
+  for (let i = 0; i < NN; i++) {
+    const t = dish.terrain[i];
+    td[i * 4] = t === T_SALT ? 255 : 0; td[i * 4 + 1] = t === T_LIGHT ? 255 : 0; td[i * 4 + 2] = t === T_ROCK ? 255 : 0; td[i * 4 + 3] = 255;
+  }
+  texTerr.needsUpdate = true;
+  function group(kind, cells, colorFn, place) {
+    if (!cells.length) return;
+    const mesh = new THREE.InstancedMesh(GEO[kind], MAT[kind], cells.length);
+    const base = [];
+    cells.forEach((c, k) => {
+      const [x, z] = cellXZ(c);
+      const b = place(x, z);
+      base.push(b);
+      mesh.setColorAt(k, colorFn());
+    });
+    mesh.instanceColor.needsUpdate = true;
+    dishProps.add(mesh);
+    const g = { kind, mesh, cells, base, last: new Float32Array(cells.length).fill(-1) };
+    w.groups.push(g); return g;
+  }
+  const rocks = [], oats = [], prots = [], barks = [];
+  for (let i = 0; i < NN; i++) {
+    if (dish.terrain[i] === T_ROCK) rocks.push(i);
+    else if (dish.food0[i] > 0) [null, oats, prots, barks][dish.foodType[i]].push(i);
+  }
+  const c3 = (hx) => new THREE.Color(hx);
+  group('rock', rocks, () => { const v = r(); return v < 0.33 ? c3(0x8c8580) : v < 0.66 ? c3(0x4d4848) : c3(0xa08c84); },
+    (x, z) => ({ x: x + (r() - 0.5) * CELL * 0.3, y: 0.05, z: z + (r() - 0.5) * CELL * 0.3, s: CELL * (1.05 + r() * 0.35), sy: 0.6 + r() * 0.5, rx: r() * 6, ry: r() * 6, rz: r() * 6 }));
+  group('oat', oats, () => c3(0xd8c08a).offsetHSL((r() - 0.5) * 0.03, 0, (r() - 0.5) * 0.12),
+    (x, z) => ({ x: x + (r() - 0.5) * CELL * 0.4, y: 0.07, z: z + (r() - 0.5) * CELL * 0.4, s: CELL * (1.1 + r() * 0.35), sy: 1, rx: (r() - 0.5) * 0.5, ry: r() * 6, rz: (r() - 0.5) * 0.5 }));
+  group('prot', prots, () => c3(0xf3dccb).offsetHSL((r() - 0.5) * 0.04, 0, (r() - 0.5) * 0.08),
+    (x, z) => ({ x: x + (r() - 0.5) * CELL * 0.4, y: 0.01, z: z + (r() - 0.5) * CELL * 0.4, s: CELL * (0.75 + r() * 0.45), sy: 0.55 + r() * 0.3, rx: 0, ry: r() * 6, rz: 0 }));
+  group('bark', barks, () => c3(0x6b4527).offsetHSL(0, 0, (r() - 0.5) * 0.12),
+    (x, z) => ({ x: x + (r() - 0.5) * CELL * 0.4, y: 0.07, z: z + (r() - 0.5) * CELL * 0.4, s: CELL * (1.0 + r() * 0.5), sy: 1, rx: (r() - 0.5) * 0.4, ry: r() * 6, rz: (r() - 0.5) * 0.4 }));
+  // light beams
+  for (const L of dish.lights) {
+    const rad = (L.r + 0.6) * CELL;
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(rad * 0.55, rad, 4.5, 40, 1, true), beamMat);
+    const [x, z] = cellXZ(Math.round(L.y) * N + Math.round(L.x));
+    beam.position.set(x, 2.25, z); dishProps.add(beam);
+  }
+  for (const s of [1, 2]) { const [x, z] = cellXZ(s === 1 ? CORE_P : CORE_E); cores[s].position.set(x, 0.2, z); }
+  world = w;
+}
+
+function applyMatter(matter) {
+  if (!world) return;
+  for (const g of world.groups) {
+    let dirty = false;
+    for (let k = 0; k < g.cells.length; k++) {
+      const m = matter[g.cells[k]] / 255;
+      if (Math.abs(m - g.last[k]) < 0.004) continue;
+      g.last[k] = m; dirty = true;
+      const b = g.base[k];
+      const f = m <= 0 ? 0.0001 : (g.kind === 'rock' ? 0.35 + 0.65 * m : 0.3 + 0.7 * Math.sqrt(m));
+      dummy.position.set(b.x, b.y * f, b.z); dummy.rotation.set(b.rx, b.ry, b.rz);
+      dummy.scale.set(b.s * f, b.s * f * b.sy, b.s * f); dummy.updateMatrix();
+      g.mesh.setMatrixAt(k, dummy.matrix);
+    }
+    if (dirty) g.mesh.instanceMatrix.needsUpdate = true;
+  }
+}
+
+// --- frame upload ---
+let shown = { battle: null, t: -1, t2: -1 };
+function showFrame(b, t, frac) {
+  const last = b.frames.length - 1;
+  t = clamp(t, 0, last);
+  const t2 = Math.min(t + 1, last);
+  if (shown.battle !== b || shown.t !== t || shown.t2 !== t2) {
+    const F = b.frames[t];
+    texA.image.data = F.dens; texA.needsUpdate = true;
+    texB.image.data = b.frames[t2].dens; texB.needsUpdate = true;
+    const sd = texStatus.image.data, gd = texGlow.image.data;
+    for (let i = 0; i < NN; i++) {
+      const f = F.flags[i];
+      sd[i * 4] = (f & 4) ? 255 : 0; sd[i * 4 + 1] = (f & 8) ? 255 : 0;
+      const src = f >> 4, a = F.dens[i * 4 + 3] / 255;
+      if (src && a > 0) {
+        const c = SRC_RGB[src], k = Math.min(1, a * 1.2);
+        gd[i * 4] = c[0] * k; gd[i * 4 + 1] = c[1] * k; gd[i * 4 + 2] = c[2] * k;
+      } else { gd[i * 4] = gd[i * 4 + 1] = gd[i * 4 + 2] = 0; }
+    }
+    texStatus.needsUpdate = true; texGlow.needsUpdate = true;
+    applyMatter(F.matter);
+    for (const s of [1, 2]) cores[s].visible = (F.flags[s === 1 ? CORE_P : CORE_E] & 3) === s;
+    shown = { battle: b, t, t2 };
+  }
+  surfUniforms.uMix.value = t2 > t ? clamp(frac, 0, 1) : 0;
+}
+const SRC_RGB = SRC_COL.map(h => { const c = new THREE.Color(h); return [c.r * 200, c.g * 200, c.b * 200]; });
+
+// --- FX: rings & spores ---
+const fxGroup = new THREE.Group(); scene.add(fxGroup);
+const ringGeo = new THREE.RingGeometry(0.85, 1, 48); ringGeo.rotateX(-Math.PI / 2);
+const sporeGeo = new THREE.SphereGeometry(0.05, 10, 8);
+const fx = [];
+function fxRing(cell, color, size) {
+  const m = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+  const [x, z] = cellXZ(cell); m.position.set(x, 0.18, z); fxGroup.add(m);
+  fx.push({ m, age: 0, life: 1.1, kind: 'ring', size: size || 1 });
+}
+function fxSpore(from, to, color) {
+  const m = new THREE.Mesh(sporeGeo, new THREE.MeshBasicMaterial({ color }));
+  fxGroup.add(m);
+  const a = cellXZ(from), b = cellXZ(to);
+  fx.push({ m, age: 0, life: 0.9, kind: 'spore', a, b });
+}
+function updateFx(dt) {
+  for (let i = fx.length - 1; i >= 0; i--) {
+    const f = fx[i]; f.age += dt; const k = f.age / f.life;
+    if (k >= 1) { fxGroup.remove(f.m); f.m.material.dispose(); fx.splice(i, 1); continue; }
+    if (f.kind === 'ring') { const s = (0.15 + k * 0.9) * f.size; f.m.scale.set(s, 1, s); f.m.material.opacity = (1 - k) * 0.9; }
+    else { f.m.position.set(f.a[0] + (f.b[0] - f.a[0]) * k, 0.15 + Math.sin(k * Math.PI) * 1.4, f.a[1] + (f.b[1] - f.a[1]) * k); }
+  }
+}
+function clearFx() { for (const f of fx) { fxGroup.remove(f.m); f.m.material.dispose(); } fx.length = 0; }
+
+// --- camera control ---
+function updateCamera() {
+  const w = stage.clientWidth || 1, h = stage.clientHeight || 1;
+  camera.aspect = w / h;
+  const vHalf = THREE.MathUtils.degToRad(camera.fov / 2);
+  const hHalf = Math.atan(Math.tan(vHalf) * camera.aspect);
+  const R = DISH_W + 0.45;
+  cam.base = R / Math.sin(Math.min(vHalf, hHalf)) * (S.mode === 'battle' ? 1.0 : 1.04);
+  const d = cam.base * cam.zoom;
+  const sp = Math.sin(cam.phi);
+  camera.position.set(cam.target.x + d * sp * Math.sin(cam.theta), cam.target.y + d * Math.cos(cam.phi), cam.target.z + d * sp * Math.cos(cam.theta));
+  camera.lookAt(cam.target);
+  camera.updateProjectionMatrix();
+}
+function resize() {
+  if (!renderer) return;
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (w < 2 || h < 2) return;
+  renderer.setSize(w, h, false);
+  updateCamera();
+}
+if (window.ResizeObserver) new ResizeObserver(resize).observe(stage); else window.addEventListener('resize', resize);
+
+const pointers = new Map(); let gesture = null, lastTouch = 0;
+const hint = $('hint');
+function hideHint() { hint.style.opacity = 0; }
+stage.addEventListener('pointerdown', e => {
+  if (e.target !== canvas) return;
+  canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now() });
+  cam.auto = false; lastTouch = performance.now();
+  if (pointers.size === 2) { const [a, b] = [...pointers.values()]; gesture = { dist: Math.hypot(a.x - b.x, a.y - b.y), zoom: cam.zoom }; }
+});
+stage.addEventListener('pointermove', e => {
+  const p = pointers.get(e.pointerId); if (!p) return;
+  const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+  if (pointers.size === 1) {
+    cam.theta -= dx * 0.007; cam.phi = clamp(cam.phi - dy * 0.006, 0.12, 1.25); updateCamera();
+    if (Math.hypot(p.x - p.sx, p.y - p.sy) > 8) hideHint();
+  } else if (pointers.size === 2 && gesture) {
+    const [a, b] = [...pointers.values()];
+    cam.zoom = clamp(gesture.zoom * gesture.dist / Math.max(20, Math.hypot(a.x - b.x, a.y - b.y)), 0.35, 1.6); updateCamera(); hideHint();
+  }
+});
+function endPointer(e) {
+  const p = pointers.get(e.pointerId); if (!p) return;
+  pointers.delete(e.pointerId);
+  if (pointers.size < 2) gesture = null;
+  const moved = Math.hypot(p.x - p.sx, p.y - p.sy), dur = performance.now() - p.t;
+  if (moved < 8 && dur < 400 && pointers.size === 0 && e.type === 'pointerup') onTap(e.clientX, e.clientY);
+}
+stage.addEventListener('pointerup', endPointer); stage.addEventListener('pointercancel', endPointer);
+stage.addEventListener('wheel', e => { e.preventDefault(); cam.zoom = clamp(cam.zoom * Math.exp(e.deltaY * 0.0012), 0.35, 1.6); cam.auto = false; updateCamera(); hideHint(); }, { passive: false });
+
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.08), hit = new THREE.Vector3();
+function onTap(cx, cy) {
+  if (S.mode !== 'battle' || !S.battle) return;
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  if (!ray.ray.intersectPlane(plane, hit)) return;
+  const u = (hit.x + SIZE / 2) / SIZE, v = (SIZE / 2 - hit.z) / SIZE;
+  const x = Math.floor(u * N), y = Math.floor(v * N);
+  if (x < 0 || y < 0 || x >= N || y >= N || S.battle.dish.terrain[y * N + x] === T_VOID) { selectCell(-1); return; }
+  selectCell(y * N + x);
+}
+
+// ===================== UI: Rack =====================
+const app = $('app');
+function setMode(m) {
+  S.mode = m;
+  app.className = 'mode-' + m;
+  $('rack').hidden = m !== 'rack'; $('lab').hidden = m !== 'lab';
+  $('hud').hidden = m !== 'battle'; $('transport').hidden = m !== 'battle';
+  if (m !== 'battle') { $('result').hidden = true; $('inspect').hidden = true; $('log').hidden = true; $('toast').style.opacity = 0; selectCell(-1); }
+  cam.auto = m !== 'battle'; cam.zoom = 1; cam.phi = m === 'battle' ? 0.72 : 0.82;
+  hint.textContent = m === 'battle' ? 'Drag to orbit · tap a cell to inspect' : 'Drag to orbit · pinch or scroll to zoom';
+  hint.style.opacity = 1;
+  requestAnimationFrame(resize);
+}
+function renderProgress() {
+  const n = prog.cleared.filter(Boolean).length;
+  $('progress').innerHTML = `<span class="dots">${prog.cleared.map(c => `<i class="${c ? 'on' : ''}"></i>`).join('')}</span><span>${n}/6</span>`;
+  $('progress').setAttribute('aria-label', `${n} of 6 dishes conquered`);
+}
+function thumb(levelIdx) {
+  const c = document.createElement('canvas'); c.width = c.height = 112;
+  const g = c.getContext('2d'), d = makeDish(levelIdx), k = 112 / N;
+  g.fillStyle = '#0d1214'; g.fillRect(0, 0, 112, 112);
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const i = y * N + x, t = d.terrain[i]; if (t === T_VOID) continue;
+    let col = '#5c5644';
+    if (t === T_ROCK) col = '#2b2a2a'; else if (t === T_SALT) col = '#cfd6da'; else if (t === T_LIGHT) col = '#9b8a55';
+    if (d.food0[i] > 0) col = FOOD_COL[d.foodType[i]];
+    if (i === CORE_P) col = COL.p; if (i === CORE_E) col = COL.e;
+    g.fillStyle = col; g.fillRect(x * k, (N - 1 - y) * k, k + 0.5, k + 0.5);
+  }
+  return c;
+}
+function renderRack() {
+  const R = $('rack');
+  R.innerHTML = `<div class="eyebrow">Culture rack · 6 plates</div><h1>Breed a slime mould. Take the dish.</h1>
+  <p class="lede">Each plate holds a rival plasmodium. Write your strain's genome, inoculate, then watch the two organisms grow, feed and fight for the agar. Every win isolates new genes for the next plate.</p>`;
+  const ol = el('ol', 'dishes');
+  LEVELS.forEach((L, i) => {
+    const li = el('li'); const ok = playable(i);
+    const b = el('button', 'dish' + (i === S.level ? ' sel' : ''));
+    b.disabled = !ok;
+    b.appendChild(thumb(i));
+    const st = prog.cleared[i] ? '<span class="chip won">Conquered</span>' : ok ? '<span class="chip ready">Ready</span>' : '<span class="chip">Sealed</span>';
+    b.insertAdjacentHTML('beforeend', `<div class="meta"><span class="code">${L.code}</span><b>${esc(L.name)}</b><span class="rv">vs. ${esc(L.rival.name)}</span></div>${st}`);
+    b.addEventListener('click', () => openLab(i));
+    b.addEventListener('pointerenter', () => { if (ok && S.mode === 'rack') previewLevel(i); });
+    li.appendChild(b); ol.appendChild(li);
+  });
+  R.appendChild(ol);
+  R.insertAdjacentHTML('beforeend', `<details class="howto"><summary>How a culture plays out</summary><ol>
+    <li><b>Feed.</b> Energy (ATP) comes from food your enzymes can digest. Every living cell costs upkeep, so a strain that grows faster than it eats will starve and wither from the edges.</li>
+    <li><b>Grow.</b> Vigor sets how fast new cells spread. Behaviour weights decide where: toward food, toward the rival, or wherever.</li>
+    <li><b>Fight.</b> Touching cells engulf each other each minute. Density, acids, rinds and slimes decide who gives ground.</li>
+    <li><b>Stay connected.</b> Cells cut off from a nucleus wither. Lose every nucleus and the whole strain collapses.</li>
+    <li><b>Win.</b> Wipe out the rival, or hold more of the dish when the 12-hour incubation ends.</li>
+    <li><b>Study.</b> Every battle is recorded minute by minute. Rewind, step and tap cells to see why it went the way it did.</li>
+  </ol></details>
+  <button class="linkbtn" id="resetProg">Reset all progress</button>`);
+  $('resetProg').addEventListener('click', e => {
+    const b = e.currentTarget;
+    if (b.dataset.armed) { prog = { cleared: [false, false, false, false, false, false], genomes: {}, name: 'Strain P-01' }; save(); S.level = 0; renderProgress(); renderRack(); previewLevel(0); }
+    else { b.dataset.armed = '1'; b.textContent = 'Tap again to erase every conquered dish and saved genome'; }
+  });
+}
+function previewLevel(i) {
+  if (!renderer) return;
+  const b = new Battle(i, S.mode === 'lab' ? S.genome : (prog.genomes[i] || DEFAULT_GENOME), LEVELS[i].rival);
+  if (!world || world.dish.level !== i) { buildWorld(b.dish); }
+  S.preview = b; shown.battle = null;
+  showFrame(b, 0, 0);
+}
+
+// ===================== UI: Lab =====================
+const GLYPH = {
+  Metabolism: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg>',
+  Defense: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg>',
+  Offense: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2c3 4 5 7 5 11a5 5 0 0 1-10 0c0-4 2-7 5-11z"/></svg>',
+  Network: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="5" cy="6" r="2"/><circle cx="19" cy="6" r="2"/><circle cx="12" cy="19" r="2"/><path d="M6.5 7.5l4.5 9.5M17.5 7.5L13 17M7 6h10"/></svg>',
+};
+const CAT_NOTE = { Metabolism: 'what it can eat', Defense: 'what it shrugs off', Offense: 'how it hurts rivals', Network: 'how it manages its veins' };
+function dishFacts(i) {
+  const d = makeDish(i);
+  const foods = [0, 0, 0, 0]; let rock = 0, salt = 0, light = 0;
+  for (let k = 0; k < NN; k++) { if (d.food0[k] > 0) foods[d.foodType[k]] += d.food0[k]; const t = d.terrain[k]; if (t === T_ROCK) rock++; if (t === T_SALT) salt++; if (t === T_LIGHT) light++; }
+  return { foods, rock, salt, light };
+}
+function openLab(i) {
+  if (!playable(i)) return;
+  S.level = i;
+  const saved = prog.genomes[i] || prog.lastGenome || DEFAULT_GENOME;
+  S.genome = cloneG(saved);
+  S.genome.genes = S.genome.genes.filter(id => GENE_BY_ID[id] && isolated(GENE_BY_ID[id]));
+  setMode('lab');
+  renderLab();
+  previewLevel(i);
+  $('panel').scrollTop = 0;
+}
+function renderLab() {
+  const i = S.level, L = LEVELS[i], g = S.genome, facts = dishFacts(i);
+  const Lab = $('lab');
+  const foodTags = [1, 2, 3].filter(f => facts.foods[f] > 0).map(f => {
+    const can = g.genes.includes(FOOD_ENZ[f]);
+    return `<span class="tag ${can ? 'yes' : 'no'}"><i class="sw" style="background:${FOOD_COL[f]}"></i>${FOOD_NAMES[f]} <span class="mk">${can ? 'digests' : 'can’t digest'}</span></span>`;
+  }).join('');
+  const hz = [];
+  if (facts.rock) hz.push(`<span class="tag"><i class="sw" style="background:#4d4848"></i>Granite walls</span>`);
+  if (facts.salt) hz.push(`<span class="tag ${g.genes.includes('osmo') ? 'yes' : 'no'}"><i class="sw" style="background:#cfd6da"></i>Salt crust <span class="mk">${g.genes.includes('osmo') ? 'immune' : '−1.1 HP/min'}</span></span>`);
+  if (facts.light) hz.push(`<span class="tag ${g.genes.includes('chloro') ? 'yes' : 'no'}"><i class="sw" style="background:#e9cf86"></i>Sunlit agar <span class="mk">${g.genes.includes('chloro') ? 'feeds' : 'UV burns'}</span></span>`);
+  const rv = L.rival;
+  const sideD = deriveSide(g);
+  Lab.innerHTML = `<div class="lab-body">
+    <div><button class="back" id="labBack"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 5l-7 7 7 7"/></svg>Culture rack</button></div>
+    <div class="lab-title"><span class="eyebrow">${L.code} · Gene lab</span><h2>${esc(L.name)}</h2><p>${esc(L.blurb)}</p></div>
+    <div class="intel">
+      <div class="row"><span class="lbl">Food on the plate</span><div class="chips">${foodTags}</div></div>
+      ${hz.length ? `<div class="row"><span class="lbl">Terrain</span><div class="chips">${hz.join('')}</div></div>` : ''}
+      <div class="row"><span class="lbl">Rival specimen</span><span class="rival-name">${esc(rv.name)}</span>
+        <span class="rival-stats">Vigor ${rv.vigor} · Density ${rv.density} · Food ${rv.taxis.food} / Hunt ${rv.taxis.hunt} / Wander ${rv.taxis.wander}</span>
+        <div class="chips">${rv.genes.map(id => `<span class="tag">${esc(GENE_BY_ID[id].name)}</span>`).join('')}</div></div>
+    </div>
+    <div class="sec"><div class="sec-h"><h3>Strain</h3><small>your plasmodium’s name</small></div><input class="name-in" id="strainName" maxlength="20" value="${esc(prog.name)}" aria-label="Strain name"></div>
+    <div class="sec"><div class="sec-h"><h3>Traits</h3><small>costs rise steeply</small></div>
+      ${traitRow('vigor', 'Vigor', 'How many new cells it can push out each minute. Fast growth burns energy.')}
+      ${traitRow('density', 'Density', 'Thicker cytoplasm: more HP and stronger engulfing, but pricier growth and upkeep.')}
+      <div class="derived"><span>Cell HP <b>${sideD.maxHP}</b></span><span>Growth <b>${sideD.growCost.toFixed(1)}</b> ATP/cell</span><span>Upkeep <b>${(sideD.upkeep * 100).toFixed(2)}</b> ATP per 100 cells/min</span><span>Engulf <b>${sideD.engulf.toFixed(1)}</b> dmg</span></div>
+    </div>
+    <div class="sec"><div class="sec-h"><h3>Behaviour</h3><small>where new growth goes</small></div>
+      ${slider('food', 'Seek food')}${slider('hunt', 'Hunt rival')}${slider('wander', 'Wander')}
+    </div>
+    ${['Metabolism', 'Defense', 'Offense', 'Network'].map(cat => `<div class="sec"><div class="sec-h"><h3>${cat}</h3><small>${CAT_NOTE[cat]}</small></div><div class="genes">${GENES.filter(x => x.cat === cat).map(geneCard).join('')}</div></div>`).join('')}
+  </div>
+  <div class="lab-foot"><div class="budget" id="budget"></div><button class="btn primary" id="inoc">Inoculate</button></div>`;
+  $('labBack').addEventListener('click', () => { setMode('rack'); renderRack(); previewLevel(S.level); });
+  $('strainName').addEventListener('input', e => { prog.name = e.target.value.trim() || 'Strain P-01'; save(); });
+  Lab.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => {
+    const [k, d] = b.dataset.step.split(':'); const v = clamp(g[k] + (+d), 1, 5); if (v !== g[k]) { g[k] = v; refreshLab(); }
+  }));
+  Lab.querySelectorAll('input[type=range]').forEach(r => r.addEventListener('input', () => { g.taxis[r.dataset.k] = +r.value; r.nextElementSibling.value = r.value; persistGenome(); }));
+  Lab.querySelectorAll('.gene').forEach(b => b.addEventListener('click', () => {
+    const id = b.dataset.id, G = GENE_BY_ID[id]; if (!isolated(G)) return;
+    const k = g.genes.indexOf(id); if (k >= 0) g.genes.splice(k, 1); else g.genes.push(id);
+    refreshLab();
+  }));
+  $('inoc').addEventListener('click', startBattle);
+  updateBudget();
+}
+function refreshLab() { const st = $('panel').scrollTop; renderLab(); $('panel').scrollTop = st; persistGenome(); previewLevel(S.level); }
+function persistGenome() { prog.genomes[S.level] = cloneG(S.genome); prog.lastGenome = cloneG(S.genome); save(); }
+function traitRow(k, name, desc) {
+  const v = S.genome[k];
+  return `<div class="trait"><span class="tn">${name} <span class="cost">${TRAIT_COST[v]} kb</span></span>
+    <div class="stepper"><button data-step="${k}:-1" aria-label="Lower ${name}" ${v <= 1 ? 'disabled' : ''}>−</button><span class="pips" aria-label="${name} ${v} of 5">${[1, 2, 3, 4, 5].map(n => `<i class="${n <= v ? 'on' : ''}"></i>`).join('')}</span><button data-step="${k}:1" aria-label="Raise ${name}" ${v >= 5 ? 'disabled' : ''}>+</button></div>
+    <span class="td">${desc}</span></div>`;
+}
+function slider(k, label) {
+  const v = S.genome.taxis[k];
+  return `<div class="slider"><label for="tx-${k}">${label}</label><input type="range" id="tx-${k}" data-k="${k}" min="0" max="10" step="1" value="${v}"><output>${v}</output></div>`;
+}
+function geneCard(G) {
+  const on = S.genome.genes.includes(G.id), iso = isolated(G);
+  const desc = iso ? esc(G.desc) : `Not yet isolated. Conquer ${LEVELS[G.unlock - 2].code} ${esc(LEVELS[G.unlock - 2].name)} to unlock.`;
+  return `<button class="gene${iso ? '' : ' locked'}" data-id="${G.id}" aria-pressed="${on}" ${iso ? '' : 'aria-disabled="true"'}>
+    <span class="glyph">${iso ? GLYPH[G.cat] : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>'}</span>
+    <span class="gn">${esc(G.name)}</span><span class="gc">${G.cost} kb</span><span class="gd">${desc}</span></button>`;
+}
+function updateBudget() {
+  const c = genomeCost(S.genome), B = LEVELS[S.level].budget, over = c > B;
+  const bud = $('budget');
+  bud.className = 'budget' + (over ? ' over' : '');
+  bud.innerHTML = `<div class="bl"><span>Genome</span><span><b>${c}</b> / ${B} kb${over ? ' · over budget' : ''}</span></div><div class="meter"><i style="width:${Math.min(100, c / B * 100)}%"></i></div>`;
+  $('inoc').disabled = over;
+}
+
+// ===================== Battle =====================
+function startBattle() {
+  const g = cloneG(S.genome);
+  if (genomeCost(g) > LEVELS[S.level].budget) return;
+  persistGenome();
+  S.battle = new Battle(S.level, g, LEVELS[S.level].rival);
+  S.battle.pname = prog.name || 'Strain P-01';
+  S.playhead = 0; S.playing = true; S.resultShown = false; S.shownEvt = -1; S.sel = -1;
+  clearFx();
+  buildWorld(S.battle.dish); shown.battle = null;
+  setMode('battle');
+  cam.theta = 0;
+  $('hPName').textContent = S.battle.pname; $('hEName').textContent = LEVELS[S.level].rival.name;
+  setPlayIcon(); renderLog();
+}
+function stepSim(budgetMs) {
+  const b = S.battle; if (!b || b.done) return;
+  const t0 = performance.now();
+  while (!b.done && performance.now() - t0 < budgetMs) b.step();
+  if (b.events.length !== S.logN) { S.logN = b.events.length; renderLog(); S.shownEvt = -1; }
+}
+function lastTick() { return S.battle ? S.battle.frames.length - 1 : 0; }
+function setPlayIcon() {
+  $('playIcon').innerHTML = S.playing ? '<path d="M6 4h4v16H6zM14 4h4v16h-4z"/>' : '<path d="M7 4v16l13-8z"/>';
+  $('bPlay').setAttribute('aria-label', S.playing ? 'Pause' : 'Play');
+}
+function seek(t, fxOn) {
+  const prev = S.playhead;
+  S.playhead = clamp(t, 0, lastTick());
+  if (fxOn) fireEvents(prev, S.playhead);
+}
+function fireEvents(a, b) {
+  if (!S.battle || b <= a) return;
+  for (const ev of S.battle.events) {
+    if (ev.t > a && ev.t <= b) {
+      const col = ev.side === 1 ? 0xf4c53c : ev.side === 2 ? 0xe2508a : 0xffffff;
+      if (ev.type === 'spores') { for (const [f, to] of ev.shots) fxSpore(f, to, col); }
+      else if (ev.type !== 'recover') fxRing(ev.cell, col, ev.type === 'core' || ev.type === 'end' ? 2.2 : ev.type === 'contact' ? 1.6 : 1.1);
+    }
+  }
+}
+function sideName(s) { return s === 1 ? S.battle.pname : LEVELS[S.level].rival.name.split(' ')[0]; }
+function evText(ev) {
+  const n = ev.side ? sideName(ev.side) : '';
+  switch (ev.type) {
+    case 'food': return `${n} reached ${FOOD_NAMES[ev.food].toLowerCase()}`;
+    case 'contact': return 'First contact between the strains';
+    case 'breach': return `${n} dissolved a granite wall`;
+    case 'sever': return `${n} cut off: ${ev.n} cells severed from a nucleus`;
+    case 'starve': return `${n} is starving and withering`;
+    case 'dormant': return `${n} formed sclerotia and went dormant`;
+    case 'recover': return `${n} recovered its energy`;
+    case 'core': return `${n} lost its main nucleus`;
+    case 'spores': return `${n} fired ${ev.shots.length} spore${ev.shots.length > 1 ? 's' : ''}`;
+    case 'end': return `${n} holds the dish`;
+  }
+  return ev.type;
+}
+function evColor(ev) { return ev.side === 1 ? COL.p : ev.side === 2 ? COL.e : COL.n; }
+function renderLog() {
+  if (!S.battle) return;
+  const ul = $('logList');
+  ul.innerHTML = S.battle.events.map((ev, k) => `<li><button data-k="${k}"><span class="tt">${fmt(ev.t)}</span><i class="dot" style="background:${evColor(ev)}"></i><span>${esc(evText(ev))}</span></button></li>`).join('');
+  ul.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { const ev = S.battle.events[+b.dataset.k]; S.playing = false; setPlayIcon(); seek(ev.t - 6); seek(ev.t, true); if (ev.cell >= 0) selectCell(ev.cell); }));
+}
+function updateToast() {
+  const b = S.battle, t = S.playhead, toast = $('toast');
+  let cur = -1;
+  for (let k = b.events.length - 1; k >= 0; k--) if (b.events[k].t <= t + 0.001) { cur = k; break; }
+  if (cur >= 0 && t - b.events[cur].t < 50) {
+    if (cur !== S.shownEvt) {
+      const ev = b.events[cur];
+      toast.innerHTML = `<span class="tt">${fmt(ev.t)}</span><i class="dot" style="background:${evColor(ev)}"></i><span>${esc(evText(ev))}</span>`;
+      S.shownEvt = cur;
+      $('logList').querySelectorAll('button').forEach((x, k) => x.classList.toggle('cur', k === cur));
+    }
+    toast.style.opacity = 1;
+  } else toast.style.opacity = 0;
+}
+function updateHud() {
+  const b = S.battle, t = Math.floor(S.playhead);
+  const cp = b.stats.cells[1][t] || 0, ce = b.stats.cells[2][t] || 0;
+  $('hPCells').textContent = cp; $('hECells').textContent = ce;
+  $('hPE').textContent = Math.round(b.stats.energy[1][t] || 0); $('hEE').textContent = Math.round(b.stats.energy[2][t] || 0);
+  $('hClock').textContent = fmt(t); $('tNow').textContent = fmt(t);
+  const tot = cp + ce || 1;
+  $('tugP').style.width = (cp / tot * 100) + '%'; $('tugE').style.width = (ce / tot * 100) + '%';
+  $('tEnd').textContent = b.done ? fmt(b.frames.length - 1) : fmt(MAXT);
+}
+
+// --- scrubber ---
+const scrub = $('scrub'); const sg = scrub.getContext('2d');
+let scrubDrag = null;
+function drawScrub() {
+  const b = S.battle; if (!b) return;
+  const dpr = Math.min(window.devicePixelRatio || 1, 2), w = scrub.clientWidth, h = scrub.clientHeight;
+  if (scrub.width !== Math.round(w * dpr) || scrub.height !== Math.round(h * dpr)) { scrub.width = Math.round(w * dpr); scrub.height = Math.round(h * dpr); }
+  sg.setTransform(dpr, 0, 0, dpr, 0, 0); sg.clearRect(0, 0, w, h);
+  const total = b.done ? b.frames.length - 1 : MAXT, n = b.frames.length;
+  const X = t => 6 + (t / Math.max(total, 1)) * (w - 12);
+  const top = 10, bot = h - 6, H = bot - top;
+  // uncomputed
+  sg.fillStyle = 'rgba(255,255,255,0.03)'; sg.fillRect(X(n - 1), top, X(total) - X(n - 1), H);
+  // share area: gold bottom, rival top
+  sg.beginPath(); sg.moveTo(X(0), bot);
+  for (let t = 0; t < n; t++) { const p = b.stats.cells[1][t], e = b.stats.cells[2][t]; sg.lineTo(X(t), bot - H * (p / Math.max(p + e, 1))); }
+  sg.lineTo(X(n - 1), bot); sg.closePath(); sg.fillStyle = 'rgba(244,197,60,0.55)'; sg.fill();
+  sg.beginPath(); sg.moveTo(X(0), top);
+  for (let t = 0; t < n; t++) { const p = b.stats.cells[1][t], e = b.stats.cells[2][t]; sg.lineTo(X(t), bot - H * (p / Math.max(p + e, 1))); }
+  sg.lineTo(X(n - 1), top); sg.closePath(); sg.fillStyle = 'rgba(226,80,138,0.45)'; sg.fill();
+  sg.strokeStyle = 'rgba(255,255,255,0.15)'; sg.lineWidth = 1; sg.beginPath(); sg.moveTo(X(0), top + H / 2); sg.lineTo(X(total), top + H / 2); sg.stroke();
+  // hour ticks
+  sg.fillStyle = 'rgba(255,255,255,0.18)';
+  for (let hr = 1; hr * 60 < total; hr++) sg.fillRect(Math.round(X(hr * 60)), bot - 3, 1, 3);
+  // events
+  for (const ev of b.events) {
+    sg.fillStyle = evColor(ev);
+    const big = ev.type === 'core' || ev.type === 'end' || ev.type === 'contact';
+    sg.beginPath(); sg.arc(X(ev.t), 5, big ? 3.2 : 2, 0, Math.PI * 2); sg.fill();
+  }
+  // playhead
+  const px = X(S.playhead);
+  sg.fillStyle = '#ece5d3'; sg.fillRect(px - 1, 2, 2, h - 4);
+  sg.beginPath(); sg.arc(px, h / 2, 5, 0, Math.PI * 2); sg.fill();
+}
+function scrubAt(clientX) {
+  const b = S.battle, r = scrub.getBoundingClientRect();
+  const total = b.done ? b.frames.length - 1 : MAXT;
+  const t = clamp((clientX - r.left - 6) / (r.width - 12), 0, 1) * total;
+  seek(t);
+}
+scrub.addEventListener('pointerdown', e => { scrub.setPointerCapture(e.pointerId); scrubDrag = { was: S.playing }; S.playing = false; setPlayIcon(); scrubAt(e.clientX); });
+scrub.addEventListener('pointermove', e => { if (scrubDrag) scrubAt(e.clientX); });
+const endScrub = () => { if (scrubDrag) { S.playing = scrubDrag.was && S.playhead < lastTick(); scrubDrag = null; setPlayIcon(); } };
+scrub.addEventListener('pointerup', endScrub); scrub.addEventListener('pointercancel', endScrub);
+
+// --- transport buttons ---
+function togglePlay() {
+  if (!S.battle) return;
+  if (!S.playing && S.battle.done && S.playhead >= lastTick() - 0.01) seek(0);
+  S.playing = !S.playing; setPlayIcon();
+}
+function stepBy(d) { if (!S.battle) return; S.playing = false; setPlayIcon(); const t = Math.round(S.playhead) + d; seek(t, d > 0); }
+function jumpEvent(dir) {
+  if (!S.battle) return;
+  S.playing = false; setPlayIcon();
+  const evs = S.battle.events, t = Math.round(S.playhead);
+  const ev = dir > 0 ? evs.find(e => e.t > t) : [...evs].reverse().find(e => e.t < t);
+  if (ev) { seek(ev.t); fireEvents(ev.t - 1, ev.t); if (ev.cell >= 0 && ev.type !== 'end') selectCell(ev.cell); }
+  else if (dir < 0) seek(0); else seek(lastTick());
+}
+$('bPlay').addEventListener('click', togglePlay);
+$('bBack').addEventListener('click', () => stepBy(-1));
+$('bFwd').addEventListener('click', () => stepBy(1));
+$('bPrevEv').addEventListener('click', () => jumpEvent(-1));
+$('bNextEv').addEventListener('click', () => jumpEvent(1));
+$('bSpeed').addEventListener('click', () => { const k = (SPEEDS.indexOf(S.speed) + 1) % SPEEDS.length; S.speed = SPEEDS[k]; $('bSpeed').textContent = (S.speed < 1 ? (S.speed === 0.5 ? '½' : '¼') : S.speed) + '×'; });
+$('bLog').addEventListener('click', () => { $('log').hidden = !$('log').hidden; });
+$('logX').addEventListener('click', () => { $('log').hidden = true; });
+$('bLab').addEventListener('click', () => { S.playing = false; openLab(S.level); });
+document.addEventListener('keydown', e => {
+  if (S.mode !== 'battle' || e.target.tagName === 'INPUT') return;
+  if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); stepBy(e.shiftKey ? -10 : -1); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); stepBy(e.shiftKey ? 10 : 1); }
+  else if (e.key === '[') jumpEvent(-1); else if (e.key === ']') jumpEvent(1);
+});
+
+// --- inspector ---
+function selectCell(i) {
+  S.sel = i;
+  surfUniforms.uSel.value.set(0, 0, 0);
+  if (i < 0) { $('inspect').hidden = true; return; }
+  surfUniforms.uSel.value.set(((i % N) + 0.5) / N, (Math.floor(i / N) + 0.5) / N, 1);
+  $('inspect').hidden = false; S.inspT = -1; hideHint(); updateInspect();
+}
+const TERR_NAMES = ['', 'Agar', 'Granite', 'Salt crust', 'Sunlit agar'];
+function updateInspect() {
+  if (S.sel < 0 || !S.battle) return;
+  const b = S.battle, t = clamp(Math.floor(S.playhead), 0, lastTick());
+  if (S.inspT === t) return; S.inspT = t;
+  const F = b.frames[t], i = S.sel, f = F.flags[i], o = f & 3;
+  let terr = TERR_NAMES[b.dish.terrain[i]];
+  if (b.dish.terrain[i] === T_ROCK) terr = F.matter[i] > 0 ? `Granite · ${Math.round(F.matter[i] / 255 * 100)}% intact` : 'Granite (dissolved)';
+  const food = b.dish.food0[i] > 0 ? `${FOOD_NAMES[b.dish.foodType[i]]} · ${Math.round(F.matter[i] / 255 * 100)}% left` : 'None';
+  let occ = '<dd>Empty agar</dd>';
+  if (o) {
+    const Sd = b.sides[o], v = F.dens[i * 4 + o - 1] / 255, hpv = Math.max(0, (v - 0.3) / 0.7) * Sd.maxHP;
+    const status = [(f & 4) ? 'dormant' : '', (f & 8) ? 'severed' : '', i === Sd.core ? 'main nucleus' : ''].filter(Boolean).join(', ');
+    occ = `<dd><span style="color:${o === 1 ? COL.p : COL.e};font-weight:600">${esc(sideName(o))}</span>${status ? ' · ' + status : ''}<div>${hpv.toFixed(1)} / ${Sd.maxHP} HP</div><div class="hpbar"><i style="width:${hpv / Sd.maxHP * 100}%;background:${o === 1 ? COL.p : COL.e}"></i></div></dd>`;
+  }
+  const src = f >> 4, dm = F.dens[i * 4 + 3] / 70;
+  const hurt = src ? `<dt>This minute</dt><dd><span style="color:${SRC_COL[src]}">●</span> ${SRC_NAMES[src]} · −${dm.toFixed(1)} HP</dd>` : '';
+  $('inspect').innerHTML = `<header><b>Cell ${i % N}, ${Math.floor(i / N)} <span class="tt" style="font-family:var(--f-mono);font-size:11px;color:var(--faint);font-weight:400">at ${fmt(t)}</span></b><button class="x" id="inspX" aria-label="Close inspector">✕</button></header>
+    <dl><dt>Ground</dt><dd>${terr}</dd><dt>Food</dt><dd>${food}</dd><dt>Occupant</dt>${occ}${hurt}</dl>`;
+  $('inspX').addEventListener('click', () => selectCell(-1));
+}
+
+// --- result ---
+function analyze(b) {
+  const P = b.sides[1], E = b.sides[2], g = P.g, notes = [], has = id => g.genes.includes(id);
+  const iso = id => isolated(GENE_BY_ID[id]);
+  const dmgTot = P.dmgTaken.reduce((a, x) => a + x, 0) || 1;
+  const share = k => P.dmgTaken[k] / dmgTot;
+  const uneaten = [0, 0, 0, 0];
+  for (let i = 0; i < NN; i++) if (b.dish.food0[i] > 0 && !P.eat[b.dish.foodType[i]]) uneaten[b.dish.foodType[i]] += b.dish.food0[i];
+  for (const f of [3, 2, 1]) if (uneaten[f] > 250) {
+    const G = GENE_BY_ID[FOOD_ENZ[f]];
+    notes.push(`${FOOD_NAMES[f]} sat untouched: about ${Math.round(uneaten[f] * YIELD[f])} ATP your strain couldn’t digest. ${iso(G.id) ? G.name + ' would unlock it.' : 'You’ll need an enzyme you haven’t isolated yet.'}`);
+  }
+  if (P.starveTicks > 30) notes.push(`Your strain starved for ${P.starveTicks} min. It grew faster than it could feed: lower Vigor or Density, add Vein Pruning, or raise Seek food.`);
+  if (share(S_ACID) > 0.3 && !has('mucus')) notes.push(`Acid did ${Math.round(share(S_ACID) * 100)}% of your damage. ${iso('mucus') ? 'Alkaline Slime neutralises most of it.' : 'A slime gene against acid is coming.'}`);
+  if (share(S_ENGULF) > 0.45 && !has('chitin') && P.lost[S_ENGULF] > 40) notes.push(`Engulfing did ${Math.round(share(S_ENGULF) * 100)}% of your damage. Chitin Rind halves it; more Density makes cells tougher.`);
+  if (share(S_TOXIN) > 0.2 && !has('mucus')) notes.push('The rival’s antibiotic haze ate your front line. Alkaline Slime blunts it.');
+  if (P.lost[S_SALT] > 15 && !has('osmo')) notes.push(`${P.lost[S_SALT]} cells died on salt crust. ${iso('osmo') ? 'Osmotic Pumps make you immune.' : 'Lower Wander so growth avoids the crust.'}`);
+  if (P.lost[S_UV] > 15 && !has('chloro')) notes.push(`${P.lost[S_UV]} cells burned under the lamp. ${iso('chloro') ? 'An Algal Symbiont turns that light into food.' : 'Lower Wander to keep out of the light.'}`);
+  if (P.lost[S_SEVER] > 25 && !has('fragment')) notes.push(`${P.lost[S_SEVER]} cells withered after being cut off from a nucleus. A broader front resists being severed${iso('fragment') ? ', and Autonomy keeps fragments alive' : ''}.`);
+  const rocks = b.dish.terrain.some(t => t === T_ROCK);
+  if (rocks && !has('acid') && b.result.winner !== 1 && E.acid) notes.push(`${LEVELS[b.level].rival.name.split(' ')[0]} burned through granite you had to walk around. ${iso('acid') ? 'Oxalic Acid opens the same shortcuts.' : ''}`);
+  if (b.result.winner !== 1 && b.result.reason === 'time') notes.push('Territory decides at 12:00. Raise Hunt rival to press the attack, or Vigor to claim agar sooner.');
+  if (b.result.winner === 1 && !notes.length) notes.push(b.result.reason === 'elim' ? `Clean kill at ${fmt(b.result.tick)}. Try a cheaper genome to see how lean a winning strain can be.` : 'You won on territory. A harder-hitting front could finish the rival outright.');
+  return notes.slice(0, 3);
+}
+function showResult() {
+  const b = S.battle, P = b.sides[1], E = b.sides[2], win = b.result.winner === 1;
+  const rv = LEVELS[b.level].rival.name;
+  let newGenes = [];
+  if (win && !prog.cleared[b.level]) {
+    prog.cleared[b.level] = true; save(); renderProgress();
+    newGenes = GENES.filter(G => G.unlock === b.level + 2);
+  }
+  const why = b.result.reason === 'elim'
+    ? (win ? `${rv} was wiped from the plate at ${fmt(b.result.tick)}.` : `${rv} consumed your strain at ${fmt(b.result.tick)}.`)
+    : (win ? `You held ${P.cells} cells to ${E.cells} when incubation ended.` : `${rv} held ${E.cells} cells to your ${P.cells} when incubation ended.`);
+  const lostTot = P.lost.reduce((a, x) => a + x, 0);
+  const lossBar = lostTot ? [1, 2, 3, 4, 5, 6, 7].filter(k => P.lost[k]).map(k => `<i style="width:${P.lost[k] / lostTot * 100}%;background:${SRC_COL[k]}" title="${SRC_NAMES[k]}"></i>`).join('') : '';
+  const legend = [1, 2, 3, 4, 5, 6, 7].filter(k => P.lost[k]).map(k => `<span><i style="background:${SRC_COL[k]}"></i>${SRC_NAMES[k]} ${P.lost[k]}</span>`).join('');
+  const notes = analyze(b);
+  const next = b.level + 1 < LEVELS.length && playable(b.level + 1);
+  const R = $('result');
+  R.innerHTML = `<div class="card" role="dialog" aria-label="Battle result">
+    <div><div class="eyebrow">${LEVELS[b.level].code} · ${esc(LEVELS[b.level].name)}</div><div class="verdict ${win ? 'win' : 'lose'}">${win ? 'Dish conquered' : 'Overrun'}</div><div class="why">${esc(why)}</div></div>
+    <div class="stats">
+      <div class="stat"><small>Peak cells</small><b>${P.peak}</b> <span class="vs">/ ${E.peak}</span></div>
+      <div class="stat"><small>ATP eaten</small><b>${Math.round(P.eaten)}</b> <span class="vs">/ ${Math.round(E.eaten)}</span></div>
+      <div class="stat"><small>Kills</small><b>${P.kills}</b> <span class="vs">/ ${E.kills}</span></div>
+    </div>
+    ${lostTot ? `<div class="losses"><div class="sub-h">Your ${lostTot} lost cells, by cause</div><div class="bar2">${lossBar}</div><div class="legend">${legend}</div></div>` : ''}
+    ${newGenes.length ? `<div class="unlock">New genes isolated: <b>${newGenes.map(G => G.name).join(', ')}</b></div>` : ''}
+    ${win && b.level === LEVELS.length - 1 ? '<div class="unlock">Every plate on the rack is yours. Try beating each dish with a smaller genome.</div>' : ''}
+    <div><div class="sub-h">Field notes</div><ul class="notes">${notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul></div>
+    <div class="acts">
+      <button class="btn" id="rReplay">Watch replay</button>
+      <button class="btn${win && next ? '' : ' primary'}" id="rLab">Revise genome</button>
+      ${win && next ? '<button class="btn primary" id="rNext">Next dish</button>' : ''}
+    </div></div>`;
+  R.hidden = false;
+  $('rReplay').addEventListener('click', () => { R.hidden = true; seek(0); S.playing = true; S.resultShown = false; setPlayIcon(); });
+  $('rLab').addEventListener('click', () => openLab(b.level));
+  if ($('rNext')) $('rNext').addEventListener('click', () => openLab(b.level + 1));
+}
+
+// ===================== Loop =====================
+let lastT = performance.now();
+function frame(now) {
+  const dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
+  const time = now / 1000;
+  surfUniforms.uTime.value = time; beamMat.uniforms.uTime.value = time;
+  if (S.mode === 'battle' && S.battle) {
+    const b = S.battle;
+    stepSim(b.frames.length - S.playhead < 60 ? 14 : 6);
+    if (S.playing) {
+      const prev = S.playhead;
+      S.playhead = Math.min(lastTick(), S.playhead + dt * TPS * S.speed);
+      fireEvents(prev, S.playhead);
+      if (b.done && S.playhead >= lastTick()) {
+        S.playing = false; setPlayIcon();
+        if (!S.resultShown) { S.resultShown = true; setTimeout(() => { if (S.mode === 'battle' && S.battle === b) showResult(); }, 700); }
+      }
+    }
+    const t = Math.floor(S.playhead);
+    showFrame(b, t, S.playhead - t);
+    updateHud(); updateToast(); drawScrub(); updateInspect();
+  } else if (S.preview) {
+    showFrame(S.preview, 0, 0);
+  }
+  if (cam.auto && !pointers.size) { cam.theta += dt * 0.08; updateCamera(); }
+  const pulse = 1 + 0.18 * Math.sin(time * 3.2);
+  cores[1].scale.setScalar(pulse); cores[2].scale.setScalar(1 + 0.18 * Math.sin(time * 3.2 + 1.3));
+  updateFx(dt);
+  if (renderer) renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+
+// ===================== Boot =====================
+renderProgress();
+S.level = Math.max(0, prog.cleared.findIndex(c => !c)); if (prog.cleared.every(Boolean)) S.level = LEVELS.length - 1;
+setMode('rack'); renderRack(); previewLevel(S.level);
+resize();
+requestAnimationFrame(frame);
+})();
+
+</script>
+
+</body></html>
