@@ -174,6 +174,15 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 
 .toast .tt { font-family: var(--f-mono); font-size: 11px; color: var(--faint); }
 .toast .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .hint { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); font-family: var(--f-mono); font-size: 11px; color: var(--faint); pointer-events: none; transition: opacity .6s; white-space: nowrap; }
+.corner { position: absolute; right: 12px; bottom: 12px; display: flex; align-items: center; gap: 8px; pointer-events: none; }
+.corner .ib { pointer-events: auto; }
+.keys { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px 10px; padding: 7px 11px; border-radius: 999px; background: rgba(13,18,20,.82); border: 1px solid var(--line); font-family: var(--f-mono); font-size: 10.5px; color: var(--dim); letter-spacing: .06em; text-transform: uppercase; max-width: 360px; }
+.keys span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+.keys i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.keys i.two { background: linear-gradient(90deg, var(--gold) 50%, var(--rival) 50%); border-radius: 2px; }
+.vbtn { width: 38px; height: 38px; border-radius: 10px; font-size: 17px; }
+.vbtn[aria-pressed="true"] { border-color: var(--gold); color: var(--gold); }
+@media (max-width: 600px) { .keys { display: none; } }
 .inspect { position: absolute; left: 12px; bottom: 12px; width: min(270px, calc(100% - 24px)); padding: 12px 14px; border-radius: var(--r-md); background: rgba(16,22,24,.94); border: 1px solid var(--line); display: grid; gap: 6px; font-size: 13px; }
 .inspect header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .inspect header b { font-family: var(--f-display); font-size: 15px; }
@@ -253,6 +262,11 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 
       </div>
       <div class="toast" id="toast" style="opacity:0"></div>
       <div class="hint" id="hint">Drag to orbit · pinch or scroll to zoom</div>
+      <div class="corner" id="corner">
+        <div class="keys" id="keys" hidden aria-label="Close-up legend"><span><i style="background:#ff6a2e"></i>engulf</span><span><i style="background:#c6ff3d"></i>acid</span><span><i style="background:#a98bff"></i>antibiotic</span><span><i style="background:#f2f6f8"></i>salt</span><span><i style="background:#fff3a8"></i>UV</span><span><i class="two"></i>contested</span></div>
+        <button class="ib vbtn" id="bProbes" hidden aria-label="Show exploration probes" aria-pressed="false" title="Show exploration probes (P)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="7" cy="17" r="2.5"/><path d="M9 15l10-10M14 5h5v5"/></svg></button>
+        <button class="ib vbtn" id="bView" hidden aria-label="Reset view" title="Reset view (Home)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg></button>
+      </div>
       <div class="inspect" id="inspect" hidden></div>
       <div class="log" id="log" hidden><header><b>Battle log</b><button class="ib" id="logX" aria-label="Close log" style="width:34px;height:34px">✕</button></header><ol id="logList"></ol></div>
       <div class="result" id="result" hidden></div>
@@ -334,22 +348,40 @@ const GENES = [
 ];
 const GENE_BY_ID = Object.fromEntries(GENES.map(g => [g.id, g]));
 const TRAIT_COST = [0, 0, 1, 2, 4, 6]; // index by level 1..5
+const DRIVE_COST = [0, 0, 1, 2, 3, 5]; // index by level 0..5: a drive at 0 is free and switched off
+const SENSE_RANGE = [0, 5, 9, 13, 18, 26]; // cells a strain can sense from any cell it owns, by Sensor range level 1..5
+const PROBE_EVERY = 10, PROBE_TTL = 30, PROBE_REACH = 22; // exploration spikes: refill interval, lifetime, length (cells)
+const cl01 = (v, a, b) => Math.max(a, Math.min(b, v));
 
-function genomeCost(g) {
-  let c = TRAIT_COST[g.vigor] + TRAIT_COST[g.density];
+// Genomes: { vigor 1-5, density 1-5, sense 1-5, genes [], taxis { food 0-5, hunt 0-5, explore 0-5 } }.
+// Older saves carried free 0-10 food/hunt/wander ratios; they are folded into the new absolute drives here.
+function normGenome(g) {
+  const t = (g && g.taxis) || {};
+  const old = 'wander' in t || t.food > 5 || t.hunt > 5;
+  const lv = v => cl01(Math.floor((v || 0) / 2), 0, 5);
+  const drive = (v, dflt) => cl01(Math.round(v == null ? dflt : v), 0, 5);
+  return {
+    vigor: cl01(Math.round(g.vigor || 2), 1, 5), density: cl01(Math.round(g.density || 2), 1, 5), sense: cl01(Math.round(g.sense || 2), 1, 5),
+    genes: (g.genes || []).slice(),
+    taxis: old ? { food: lv(t.food), hunt: lv(t.hunt), explore: lv(t.wander) } : { food: drive(t.food, 3), hunt: drive(t.hunt, 1), explore: drive(t.explore, 2) },
+  };
+}
+
+function genomeCost(g0) {
+  const g = normGenome(g0);
+  let c = TRAIT_COST[g.vigor] + TRAIT_COST[g.density] + TRAIT_COST[g.sense] + DRIVE_COST[g.taxis.food] + DRIVE_COST[g.taxis.hunt] + DRIVE_COST[g.taxis.explore];
   for (const id of g.genes) c += GENE_BY_ID[id] ? GENE_BY_ID[id].cost : 0;
   return c;
 }
 
-function deriveSide(g) {
+function deriveSide(g0) {
+  const g = normGenome(g0);
   const G = new Set(g.genes);
   const has = id => G.has(id);
   const v = g.vigor, d = g.density;
-  let tf = g.taxis.food, th = g.taxis.hunt, tw = g.taxis.wander;
-  let sum = tf + th + tw; if (sum <= 0) { tw = 1; sum = 1; }
   let costly = 0; for (const id of g.genes) if (GENE_BY_ID[id] && GENE_BY_ID[id].cost >= 2) costly++;
   return {
-    g, has, vigor: v, density: d,
+    g, has, vigor: v, density: d, sense: g.sense, range: SENSE_RANGE[g.sense],
     acid: has('acid'), chitin: has('chitin'), mucus: has('mucus'), osmo: has('osmo'), sclero: has('sclero'),
     regen: has('regen'), toxin: has('toxin'), spores: has('spores'), prune: has('prune'), fragment: has('fragment'),
     chloro: has('chloro'), necro: has('necro'),
@@ -359,16 +391,16 @@ function deriveSide(g) {
     engulf: (0.8 + d * 0.4) * (has('crush') ? 1.6 : 1),
     k0: 0.4 + v * 0.45, k1: 0.035 * v,
     upkeep: Math.max(0.002, 0.0035 + d * 0.0018 + v * 0.0016 + costly * 0.0004 - (has('prune') ? 0.0012 : 0)),
-    wF: tf / sum, wH: th / sum, wW: tw / sum,
+    wF: g.taxis.food / 5, wH: g.taxis.hunt / 5, explore: g.taxis.explore,
   };
 }
 
 // ---------------- Levels ----------------
 const LEVELS = [
   {
-    name: 'Oat Flake Plate', code: 'D-01', seed: 101, budget: 8,
+    name: 'Oat Flake Plate', code: 'D-01', seed: 101, budget: 12,
     blurb: 'Plain 2% agar scattered with rolled oats. A gentle first culture.',
-    rival: { name: 'Fuligo minor', vigor: 2, density: 2, genes: ['amylase', 'protease', 'crush'], taxis: { food: 8, hunt: 2, wander: 4 } },
+    rival: { name: 'Fuligo minor', vigor: 2, density: 2, sense: 2, genes: ['amylase', 'protease', 'crush'], taxis: { food: 4, hunt: 1, explore: 2 } },
     gen(D, r) {
       D.pile(F_SUGAR, CXf, CXf, 2.4, 110);
       D.pile(F_SUGAR, 15, 17, 1.8, 90); D.pile(F_SUGAR, 14, 35, 1.7, 90);
@@ -377,9 +409,9 @@ const LEVELS = [
     }
   },
   {
-    name: 'Granite Maze', code: 'D-02', seed: 202, budget: 10,
+    name: 'Granite Maze', code: 'D-02', seed: 202, budget: 14,
     blurb: 'Crushed granite walls split the plate. Bark chips sit sealed in the centre ring.',
-    rival: { name: 'Lycogala corrodens', vigor: 2, density: 2, genes: ['amylase', 'acid', 'ligninase'], taxis: { food: 6, hunt: 5, wander: 2 } },
+    rival: { name: 'Lycogala corrodens', vigor: 2, density: 2, sense: 3, genes: ['amylase', 'acid', 'ligninase'], taxis: { food: 3, hunt: 3, explore: 1 } },
     gen(D, r) {
       D.line(14, 12, 14, 40, 0.9, D.rock);
       D.ring(CXf, CXf, 7.5, 1.0, [0.6, 2.2, 3.7, 5.3], D.rock);
@@ -390,9 +422,9 @@ const LEVELS = [
     }
   },
   {
-    name: 'Salt Pan', code: 'D-03', seed: 303, budget: 12,
+    name: 'Salt Pan', code: 'D-03', seed: 303, budget: 16,
     blurb: 'Brine has dried into crusts. The best food lies inside the salt.',
-    rival: { name: 'Stemonitis lorica', vigor: 2, density: 3, genes: ['amylase', 'protease', 'ligninase', 'chitin', 'osmo', 'regen', 'prune'], taxis: { food: 7, hunt: 3, wander: 2 } },
+    rival: { name: 'Stemonitis lorica', vigor: 2, density: 3, sense: 3, genes: ['amylase', 'protease', 'ligninase', 'chitin', 'osmo', 'regen', 'prune'], taxis: { food: 4, hunt: 2, explore: 1 } },
     gen(D, r) {
       D.line(17, 3, 21, 48, 2.6, D.salt);
       D.disc(CXf, CXf, 6.5, D.salt);
@@ -403,9 +435,9 @@ const LEVELS = [
     }
   },
   {
-    name: 'Sunlit Shallows', code: 'D-04', seed: 404, budget: 13,
+    name: 'Sunlit Shallows', code: 'D-04', seed: 404, budget: 17,
     blurb: 'A thin film of agar under a lamp. Little food, lots of light, harsh UV.',
-    rival: { name: 'Ceratiomyxa lumina', vigor: 3, density: 3, genes: ['chloro', 'amylase', 'sclero', 'prune'], taxis: { food: 6, hunt: 3, wander: 3 } },
+    rival: { name: 'Ceratiomyxa lumina', vigor: 3, density: 3, sense: 3, genes: ['chloro', 'amylase', 'sclero', 'prune'], taxis: { food: 3, hunt: 2, explore: 2 } },
     gen(D, r) {
       D.light(CXf, CXf, 6.5); D.light(15, 12, 4.5); D.light(15, 40, 4.0);
       D.pile(F_SUGAR, 12, 30, 1.1, 50); D.pile(F_SUGAR, 22, 18, 1.1, 50);
@@ -414,9 +446,9 @@ const LEVELS = [
     }
   },
   {
-    name: 'Bacterial Bloom', code: 'D-05', seed: 505, budget: 15,
+    name: 'Bacterial Bloom', code: 'D-05', seed: 505, budget: 19,
     blurb: 'A lawn of bacteria has bloomed overnight. Your rival is fast and hungry.',
-    rival: { name: 'Badhamia vorax', vigor: 4, density: 2, genes: ['protease', 'amylase', 'acid', 'crush'], taxis: { food: 5, hunt: 7, wander: 1 } },
+    rival: { name: 'Badhamia vorax', vigor: 4, density: 2, sense: 4, genes: ['protease', 'amylase', 'acid', 'crush'], taxis: { food: 3, hunt: 4, explore: 1 } },
     gen(D, r) {
       const spots = [[13, 14], [19, 21], [12, 33], [21, 37], [24, 10], [16, 44], [26, 27], [10, 22]];
       for (const [x, y] of spots) D.pile(F_PROT, x, y, 1.3 + r() * 0.5, 80 + r() * 40);
@@ -425,9 +457,9 @@ const LEVELS = [
     }
   },
   {
-    name: 'The Elder Plasmodium', code: 'D-06', seed: 606, budget: 17,
+    name: 'The Elder Plasmodium', code: 'D-06', seed: 606, budget: 21,
     blurb: 'An ancient strain holds this plate. Granite, brine and light, all at once.',
-    rival: { name: 'Physarum senex', vigor: 3, density: 3, genes: ['amylase', 'protease', 'ligninase', 'acid', 'mucus', 'chitin', 'regen', 'osmo', 'prune', 'chloro'], taxis: { food: 6, hunt: 5, wander: 1 } },
+    rival: { name: 'Physarum senex', vigor: 3, density: 3, sense: 5, genes: ['amylase', 'protease', 'ligninase', 'acid', 'mucus', 'chitin', 'regen', 'osmo', 'prune', 'chloro'], taxis: { food: 3, hunt: 3, explore: 2 } },
     gen(D, r) {
       D.ring(CXf, CXf, 8.0, 1.0, [1.2, 2.8, 4.4, 6.0], D.rock);
       D.light(CXf, CXf, 5.0);
@@ -513,6 +545,12 @@ function makeDish(levelIdx) {
 }
 
 // ---------------- Battle ----------------
+// Every occupied cell also carries a *mass* (0..1): how much cytoplasm has been laid down there. New growth is a
+// sparse tendril (mass ~0.1); a cell thickens as it matures, as its own strain surrounds it, and when it sits on a
+// vein that routes energy back to a nucleus. Thin cells are cheap to keep but weak, and a rival's tendrils can creep
+// into them (contest) and push the occupant out. Veins come from the BFS tree in connect(): each cell routes its
+// intake to its parent, so flow accumulates along a few trunks that fatten over time (Physarum-style adaptation).
+const MASS_RATE = 0.025, MASS_DECAY = 0.02, MASS_COST = 0.25;
 function Battle(levelIdx, genomeP, genomeE) {
   const dish = makeDish(levelIdx);
   this.dish = dish; this.level = levelIdx;
@@ -522,15 +560,19 @@ function Battle(levelIdx, genomeP, genomeE) {
   this.owner = new Uint8Array(NN);
   this.hp = new Float32Array(NN);
   this.dorm = new Uint8Array(NN);
+  this.mass = new Float32Array(NN); this.contest = new Float32Array(NN);
+  this.parent = new Int32Array(NN).fill(-1); this.flow = new Float32Array(NN); this.flowPrev = new Float32Array(NN);
+  this.vein = new Float32Array(NN); this.intake = new Float32Array(NN); this.cflag = new Uint8Array(NN);
   this.dist = [null, new Int16Array(NN), new Int16Array(NN)];
   this.fd = [null, new Uint16Array(NN), new Uint16Array(NN)];
   this.ed = [null, new Uint16Array(NN), new Uint16Array(NN)];
+  this.bd = [null, new Uint16Array(NN), new Uint16Array(NN)];
   this.dmg = new Float32Array(NN); this.dsrc = new Uint8Array(NN); this.dsrcAmt = new Float32Array(NN);
   this.dby = new Uint8Array(NN);
   this.queue = new Int32Array(NN);
   this.stamp = new Int32Array(NN); this.stampId = 1;
   this.tmpA = new Uint8Array(NN); this.tmpB = new Uint8Array(NN);
-  this.candJ = new Int32Array(NN); this.candS = new Float32Array(NN);
+  this.candJ = new Int32Array(NN); this.candS = new Float32Array(NN); this.candK = new Uint8Array(NN);
   this.rnd = rng(9001 + levelIdx * 131);
   const mk = (g, core) => {
     const s = deriveSide(g);
@@ -538,7 +580,8 @@ function Battle(levelIdx, genomeP, genomeE) {
       energy: 100, roots: [core], core, cells: 0, connected: 0, alive: true, growAcc: 0,
       starving: false, starveTicks: 0, dmgTaken: new Float32Array(8), lost: new Int32Array(8),
       kills: 0, eaten: 0, peak: 0, coreLost: -1, pilesSeen: new Set(), lastBreach: -99, lastSever: -99, wasDormant: false,
-      prevDisc: 0, spent: 0,
+      prevDisc: 0, spent: 0, flowMax: 1, massSum: 0, massDorm: 0, contested: 0, pushes: 0, captures: 0,
+      known: new Set(), probes: [], probesSent: 0, probeFinds: 0, scouts: 0,
     });
     return s;
   };
@@ -546,8 +589,8 @@ function Battle(levelIdx, genomeP, genomeE) {
   for (const s of [1, 2]) {
     const S = this.sides[s];
     const c = S.core;
-    this.setCell(c, s, S.maxHP);
-    for (let k = 0; k < 8; k++) { const j = NB[c * 8 + k]; if (j >= 0 && this.passable(j, S)) this.setCell(j, s, S.maxHP); }
+    this.setCell(c, s, S.maxHP, 1.0);
+    for (let k = 0; k < 8; k++) { const j = NB[c * 8 + k]; if (j >= 0 && this.passable(j, S)) this.setCell(j, s, S.maxHP, 0.6); }
   }
   this.tick = 0; this.done = false; this.result = null;
   this.frames = []; this.events = [];
@@ -555,42 +598,55 @@ function Battle(levelIdx, genomeP, genomeE) {
   this.contact = false;
   this.connect(1); this.connect(2);
   this.scent(1); this.scent(2);
+  this.mature();
   this.count();
   this.record();
 }
 
-Battle.prototype.setCell = function (i, s, hp) { this.owner[i] = s; this.hp[i] = hp; this.dorm[i] = 0; };
+Battle.prototype.setCell = function (i, s, hp, mass) { this.owner[i] = s; this.hp[i] = hp; this.dorm[i] = 0; this.mass[i] = mass == null ? 0.12 : mass; this.contest[i] = 0; this.parent[i] = -1; this.flow[i] = 0; };
 Battle.prototype.passable = function (i, S) {
   const t = this.terrain[i];
   return t !== T_VOID && t !== T_ROCK;
 };
+Battle.prototype.hpCap = function (i, S) { return S.maxHP * (0.4 + 0.6 * this.mass[i]); };
 Battle.prototype.event = function (side, type, cell, extra) {
   this.events.push(Object.assign({ t: this.tick, side, type, cell }, extra || {}));
 };
 
+// Connectivity BFS from the nuclei. Also builds the routing tree: among equal-distance candidates a cell attaches to
+// the neighbour that carried the most flow last tick, so trunks that carry food keep attracting more (positive
+// feedback), and accumulates subtree flow (1 per cell + food intake) up the tree.
 Battle.prototype.connect = function (s) {
-  const S = this.sides[s], dist = this.dist[s], owner = this.owner, q = this.queue;
+  const S = this.sides[s], dist = this.dist[s], owner = this.owner, q = this.queue, par = this.parent, flow = this.flow, fp = this.flowPrev, intake = this.intake;
   dist.fill(-1);
   S.roots = S.roots.filter(r => owner[r] === s);
   let h = 0, t = 0;
-  for (const r of S.roots) { dist[r] = 0; q[t++] = r; }
+  for (const r of S.roots) { if (dist[r] >= 0) continue; dist[r] = 0; par[r] = -1; q[t++] = r; }
   while (h < t) {
-    const i = q[h++], d = dist[i] + 1;
+    const i = q[h++], d = dist[i] + 1, fi = fp[i] + ((i * 2654435761) >>> 29) * 0.07;
     for (let k = 0; k < 8; k++) {
       const j = NB[i * 8 + k];
-      if (j < 0 || owner[j] !== s || dist[j] >= 0) continue;
-      dist[j] = d; q[t++] = j;
+      if (j < 0 || owner[j] !== s) continue;
+      if (dist[j] < 0) { dist[j] = d; par[j] = i; q[t++] = j; }
+      else if (dist[j] === d) { const p = par[j]; if (fi > fp[p] + ((p * 2654435761) >>> 29) * 0.07) par[j] = i; }
     }
   }
   S.connected = t;
+  for (let k = 0; k < t; k++) flow[q[k]] = 0;
+  for (let k = t - 1; k >= 0; k--) { const i = q[k]; flow[i] += 1 + intake[i] * 6; const p = par[i]; if (p >= 0) flow[p] += flow[i]; }
+  let fmax = 8; for (const r of S.roots) if (flow[r] > fmax) fmax = flow[r];
+  S.flowMax = fmax;
+  for (let i = 0; i < NN; i++) if (owner[i] === s && dist[i] < 0) { flow[i] = 0; par[i] = -1; }
 };
 
-Battle.prototype.bfsFrom = function (out, isSource, canPass) {
+Battle.prototype.bfsFrom = function (out, isSource, canPass, maxDepth) {
   const q = this.queue; let h = 0, t = 0;
+  const lim = maxDepth == null ? 65534 : maxDepth;
   out.fill(65535);
   for (let i = 0; i < NN; i++) if (isSource(i)) { out[i] = 0; q[t++] = i; }
   while (h < t) {
     const i = q[h++], d = out[i] + 1;
+    if (d > lim) continue;
     for (let k = 0; k < 8; k++) {
       const j = NB[i * 8 + k];
       if (j < 0 || out[j] !== 65535 || !canPass(j)) continue;
@@ -599,11 +655,66 @@ Battle.prototype.bfsFrom = function (out, isSource, canPass) {
   }
 };
 
+// Sensing. A strain only perceives what lies within its sensor range of some cell it owns (walking distance, so
+// granite hides things unless the strain can dissolve it). Food piles it has sensed stay remembered; the rival is
+// only felt while in range. Growth then follows distance fields toward remembered food and sensed rival tissue.
 Battle.prototype.scent = function (s) {
-  const S = this.sides[s], o = 3 - s, terr = this.terrain, food = this.food, ft = this.dish.foodType, owner = this.owner;
+  const S = this.sides[s], o = 3 - s, terr = this.terrain, food = this.food, ft = this.dish.foodType, owner = this.owner, pile = this.dish.pile, bd = this.bd[s];
   const canPass = j => { const t = terr[j]; return t !== T_VOID && (t !== T_ROCK || S.acid); };
-  this.bfsFrom(this.fd[s], i => (food[i] > 0.5 && S.eat[ft[i]] && terr[i] !== T_ROCK && owner[i] !== o) || (S.chloro && terr[i] === T_LIGHT && owner[i] === 0), canPass);
-  this.bfsFrom(this.ed[s], i => owner[i] === o, canPass);
+  this.bfsFrom(bd, i => owner[i] === s && (this.dist[s][i] >= 0 || S.fragment), canPass, S.range);
+  for (let i = 0; i < NN; i++) {
+    const pid = pile[i];
+    if (pid < 0 || bd[i] > S.range || !S.eat[ft[i]] || S.known.has(pid)) continue;
+    S.known.add(pid);
+    if (bd[i] > 1 && S.probes.length) S.probeFinds++;
+    if (bd[i] > 2 && S.scouts < 3 && this.tick > 0) { S.scouts++; this.event(s, 'scout', i, { food: ft[i] }); }
+  }
+  this.bfsFrom(this.fd[s], i => (food[i] > 0.5 && pile[i] >= 0 && S.known.has(pile[i]) && terr[i] !== T_ROCK && owner[i] !== o) || (S.chloro && terr[i] === T_LIGHT && owner[i] === 0 && bd[i] <= S.range), canPass);
+  this.bfsFrom(this.ed[s], i => owner[i] === o && bd[i] <= S.range, canPass);
+};
+
+// Exploration. Instead of wandering at random, a strain with Explore sends out up to that many probes at a time:
+// each picks a sparse frontier cell and an outward direction with a long free run of open agar, and for a while
+// growth along that ray gets a bonus, so a thin spike reaches out. Whatever the spike brings into sensor range is
+// then handled by the Food and Hunt drives.
+Battle.prototype.probe = function (s) {
+  const S = this.sides[s], owner = this.owner, terr = this.terrain, rnd = this.rnd, dist = this.dist[s], T = this.tick;
+  S.probes = S.probes.filter(p => T - p.t0 < PROBE_TTL);
+  if (S.starving || S.probes.length >= S.explore) return;
+  const canPass = j => { const t = terr[j]; return t !== T_VOID && (t !== T_ROCK || S.acid); };
+  // body centroid and frontier candidates
+  let cx = 0, cy = 0, n = 0; const front = [];
+  for (let i = 0; i < NN; i++) {
+    if (owner[i] !== s || dist[i] < 0 || this.dorm[i]) continue;
+    const x = i % N, y = (i - x) / N; cx += x; cy += y; n++;
+    let own = 0, open = 0;
+    for (let k = 0; k < 8; k++) { const j = NB[i * 8 + k]; if (j < 0) continue; if (owner[j] === s) own++; else if (owner[j] === 0 && canPass(j)) open++; }
+    if (own <= 5 && open >= 2) front.push(i);
+  }
+  if (!n || !front.length) return;
+  cx /= n; cy /= n;
+  const want = S.explore - S.probes.length;
+  for (let w = 0; w < want; w++) {
+    let best = null, bs = -1;
+    for (let a = 0; a < 24; a++) {
+      const i = front[Math.floor(rnd() * front.length)];
+      const x = i % N, y = (i - x) / N;
+      let ang = Math.atan2(y - cy, x - cx); if (!(Math.hypot(x - cx, y - cy) > 1)) ang = rnd() * Math.PI * 2;
+      ang += (rnd() - 0.5) * 1.4;
+      const dx = Math.cos(ang), dy = Math.sin(ang);
+      // free run: how far open agar continues along the ray
+      let run = 0;
+      for (let r = 1; r <= PROBE_REACH; r++) {
+        const xx = Math.round(x + dx * r), yy = Math.round(y + dy * r);
+        if (xx < 0 || yy < 0 || xx >= N || yy >= N) break;
+        const j = yy * N + xx; if (owner[j] || !canPass(j)) break; run++;
+      }
+      let sc = run + rnd() * 2;
+      for (const p of S.probes) { const sep = Math.abs(((ang - p.ang + Math.PI * 3) % (Math.PI * 2)) - Math.PI); if (sep < 0.9) sc -= (0.9 - sep) * 14; }
+      if (sc > bs) { bs = sc; best = { x, y, dx, dy, ang, t0: T, run }; }
+    }
+    if (best && best.run >= 3) { S.probes.push(best); S.probesSent++; }
+  }
 };
 
 Battle.prototype.addDmg = function (j, amt, src, by) {
@@ -613,17 +724,46 @@ Battle.prototype.addDmg = function (j, amt, src, by) {
 };
 
 Battle.prototype.count = function () {
-  for (const s of [1, 2]) { const S = this.sides[s]; S.cells = 0; S.dormCells = 0; }
-  for (let i = 0; i < NN; i++) { const o = this.owner[i]; if (o) { this.sides[o].cells++; if (this.dorm[i]) this.sides[o].dormCells++; } }
+  for (const s of [1, 2]) { const S = this.sides[s]; S.cells = 0; S.dormCells = 0; S.massSum = 0; S.massDorm = 0; S.contested = 0; }
+  for (let i = 0; i < NN; i++) {
+    const o = this.owner[i]; if (!o) continue;
+    const S = this.sides[o]; S.cells++;
+    if (this.dorm[i]) { S.dormCells++; S.massDorm += this.mass[i]; } else S.massSum += this.mass[i];
+    if (this.contest[i] > 0) S.contested++;
+  }
   for (const s of [1, 2]) { const S = this.sides[s]; if (S.cells > S.peak) S.peak = S.cells; }
+};
+
+// Cells mature: mass drifts toward a target set by how surrounded the cell is, how much flow its vein carries,
+// whether it is feeding or fighting. Thickening costs ATP; starving or severed cells thin out.
+Battle.prototype.mature = function () {
+  const owner = this.owner, mass = this.mass, flow = this.flow, vein = this.vein, intake = this.intake, cf = this.cflag, dorm = this.dorm;
+  for (let i = 0; i < NN; i++) {
+    const o = owner[i]; if (!o) { vein[i] = 0; continue; }
+    const S = this.sides[o], d = this.dist[o][i];
+    const v = d < 0 ? 0 : Math.log(1 + flow[i]) / Math.log(1 + S.flowMax);
+    vein[i] = v;
+    let own = 0; for (let k = 0; k < 8; k++) { const j = NB[i * 8 + k]; if (j >= 0 && owner[j] === o) own++; }
+    let target = 0.1 + 0.42 * Math.pow(own / 8, 1.5) + 0.5 * v * v + (intake[i] > 0 ? 0.25 : 0) + ((cf[i] & 2) ? 0.15 : 0);
+    if (d < 0 && !S.fragment) target = 0.05;
+    if (S.starving) target *= 0.5;
+    if (dorm[i]) target = Math.max(target, 0.6);
+    if (target > 1) target = 1;
+    const m = mass[i];
+    if (m < target) {
+      const dm = Math.min(target - m, MASS_RATE), cost = dm * MASS_COST * S.growCost;
+      if (!S.starving && S.energy > cost + 2) { S.energy -= cost; S.spent += cost; mass[i] = m + dm; }
+    } else if (m > target) mass[i] = Math.max(target, m - MASS_DECAY);
+  }
 };
 
 Battle.prototype.step = function () {
   if (this.done) return;
   this.tick++;
-  const T = this.tick, rnd = this.rnd, owner = this.owner, hp = this.hp, terr = this.terrain, food = this.food;
+  const T = this.tick, rnd = this.rnd, owner = this.owner, hp = this.hp, terr = this.terrain, food = this.food, mass = this.mass, contest = this.contest, cf = this.cflag;
   const ft = this.dish.foodType, dorm = this.dorm;
-  this.dmg.fill(0); this.dsrc.fill(0); this.dsrcAmt.fill(0); this.dby.fill(0);
+  this.dmg.fill(0); this.dsrc.fill(0); this.dsrcAmt.fill(0); this.dby.fill(0); cf.fill(0);
+  this.flowPrev.set(this.flow);
 
   // 1. connectivity
   for (const s of [1, 2]) {
@@ -636,6 +776,7 @@ Battle.prototype.step = function () {
   if (T % 5 === 1) { this.scent(1); this.scent(2); }
 
   // 3. income
+  const intake = this.intake; intake.fill(0);
   for (const s of [1, 2]) this.sides[s].income = 0.5;
   for (let i = 0; i < NN; i++) {
     const o = owner[i]; if (!o) continue;
@@ -643,18 +784,18 @@ Battle.prototype.step = function () {
     const f = ft[i];
     if (f && food[i] > 0 && S.eat[f]) {
       const take = Math.min(food[i], EAT_RATE[f] * (dorm[i] ? 0.5 : 1));
-      food[i] -= take; S.income += take * YIELD[f]; S.eaten += take * YIELD[f];
+      food[i] -= take; S.income += take * YIELD[f]; S.eaten += take * YIELD[f]; intake[i] = take * YIELD[f];
       const pid = this.dish.pile[i];
       if (pid >= 0 && !S.pilesSeen.has(pid)) { S.pilesSeen.add(pid); this.event(o, 'food', i, { food: f }); }
     }
-    if (terr[i] === T_LIGHT && S.chloro) S.income += 0.2;
+    if (terr[i] === T_LIGHT && S.chloro) { S.income += 0.2; intake[i] += 0.2; }
   }
   for (let i = 0; i < NN; i++) if (ft[i] === F_PROT && food[i] < this.dish.food0[i]) food[i] = Math.min(this.dish.food0[i], food[i] + 0.03);
-  // 4. upkeep & starvation state
+  // 4. upkeep & starvation state (thin tendrils are cheaper to maintain than thick sheets)
   for (const s of [1, 2]) {
     const S = this.sides[s];
     const active = S.cells - S.dormCells;
-    const cost = active * S.upkeep + S.dormCells * S.upkeep * 0.15;
+    const cost = (active * 0.55 + S.massSum * 0.7) * S.upkeep + S.dormCells * S.upkeep * 0.15;
     S.energy += S.income - cost;
     S.lastIncome = S.income; S.lastUpkeep = cost;
     if (S.energy <= 0) {
@@ -681,13 +822,14 @@ Battle.prototype.step = function () {
     const d = this.dist[o][i];
     if (d < 0 && !S.fragment) this.addDmg(i, S.roots.length ? 0.45 : 1.6, S_SEVER);
     if (S.starving && !S.sclero && d > maxD[o] * 0.5) this.addDmg(i, 0.35, S_STARVE);
-    if (!S.starving && (d >= 0 || S.fragment) && !dorm[i] && hp[i] < S.maxHP) {
-      const h = Math.min(S.maxHP - hp[i], 0.15 + (S.regen ? 1.0 : 0));
-      hp[i] += h; if (S.regen) S.energy -= h * 0.02;
-    }
+    const cap = this.hpCap(i, S);
+    if (!S.starving && (d >= 0 || S.fragment) && !dorm[i] && hp[i] < cap) {
+      const h = Math.min(cap - hp[i], 0.15 + (S.regen ? 1.0 : 0));
+      hp[i] += h; if (S.regen) { S.energy -= h * 0.02; if (h > 0.3) cf[i] |= 1; }
+    } else if (hp[i] > cap) hp[i] -= Math.min(hp[i] - cap, 0.25);
   }
 
-  // 6. combat
+  // 6. combat: engulfing across cell borders
   for (let i = 0; i < NN; i++) {
     const s = owner[i]; if (!s || dorm[i]) continue;
     const S = this.sides[s], o = 3 - s;
@@ -695,9 +837,33 @@ Battle.prototype.step = function () {
     for (let k = 0; k < 4; k++) { const j = NB[i * 8 + k]; if (j >= 0 && owner[j] === o && hp[j] < bh) { bh = hp[j]; best = j; } }
     if (best < 0) continue;
     if (!this.contact) { this.contact = true; this.event(0, 'contact', i); }
+    cf[i] |= 2;
     const O = this.sides[o], vigour = 0.5 + 0.5 * Math.min(1, hp[i] / S.maxHP), dm = dorm[best] ? 0.4 : 1;
     this.addDmg(best, S.engulf * vigour * (O.chitin ? 0.5 : 1) * dm, S_ENGULF, s);
     if (S.acid && S.energy > 1) { this.addDmg(best, 2.4 * vigour * (O.mucus ? 0.35 : 1) * dm, S_ACID, s); S.energy -= 0.03; }
+  }
+  // 6b. contested cells: rival tendrils inside a thin cell push against the occupant
+  for (let i = 0; i < NN; i++) {
+    const c = contest[i]; if (c <= 0) continue;
+    const o = owner[i]; if (!o) { contest[i] = 0; continue; }
+    const k = 3 - o, K = this.sides[k], O = this.sides[o];
+    let sup = 0, supHp = 0;
+    for (let q = 0; q < 8; q++) { const j = NB[i * 8 + q]; if (j >= 0 && owner[j] === k && !dorm[j]) { sup++; supHp += hp[j] / K.maxHP; } }
+    if (!sup) { contest[i] = Math.max(0, c - 0.2); continue; }
+    cf[i] |= 2;
+    const push = K.engulf * (0.4 + 0.6 * supHp / sup) * Math.min(1, sup / 3) * (O.chitin ? 0.6 : 1) * (K.acid && !O.mucus ? 1.3 : 1);
+    const hold = (hp[i] / O.maxHP) * (0.5 + 1.0 * mass[i]) * O.engulf * (dorm[i] ? 2.5 : 1) * 0.85;
+    const dc = 0.1 * (push - hold) / (push + hold + 0.01) + (rnd() - 0.5) * 0.03;
+    this.addDmg(i, K.engulf * c * 0.5 * (O.chitin ? 0.5 : 1) * (dorm[i] ? 0.4 : 1), S_ENGULF, k);
+    if (K.acid && K.energy > 1) { this.addDmg(i, 1.2 * c * (O.mucus ? 0.35 : 1), S_ACID, k); K.energy -= 0.02; }
+    let nc = c + dc;
+    if (nc >= 1) {
+      O.lost[S_ENGULF]++; K.kills++; K.captures++;
+      if (i === O.core) this.event(o, 'core', i);
+      const ri = O.roots.indexOf(i); if (ri >= 0) O.roots.splice(ri, 1);
+      this.setCell(i, k, K.maxHP * 0.4, 0.2); contest[i] = 0.3;
+      if (K.necro) { K.energy += 6; K.eaten += 6; }
+    } else contest[i] = nc < 0.02 ? 0 : nc;
   }
   for (const s of [1, 2]) {
     const S = this.sides[s]; if (!S.toxin || S.energy < 2) continue;
@@ -737,7 +903,8 @@ Battle.prototype.step = function () {
     hp[i] -= d;
     if (hp[i] <= 0) {
       S.lost[src]++;
-      owner[i] = 0; hp[i] = 0; dorm[i] = 0;
+      const hadRival = contest[i] > 0.15;
+      owner[i] = 0; hp[i] = 0; dorm[i] = 0; mass[i] = 0; contest[i] = 0;
       const isRoot = S.roots.indexOf(i);
       if (i === S.core) { this.event(o, 'core', i); }
       if (isRoot >= 0) S.roots.splice(isRoot, 1);
@@ -746,14 +913,17 @@ Battle.prototype.step = function () {
         const K = this.sides[k]; K.kills++;
         if (K.necro) { K.energy += 6; K.eaten += 6; }
         if ((src === S_ENGULF || src === S_ACID) && K.energy > K.growCost) {
-          // capture if adjacent
-          let adj = false; for (let q = 0; q < 8; q++) { const j = NB[i * 8 + q]; if (j >= 0 && owner[j] === k) { adj = true; break; } }
-          if (adj) { this.setCell(i, k, K.maxHP * 0.35); K.energy -= K.growCost * 0.6; }
+          // capture if adjacent, or if the killer's tendrils were already inside
+          let adj = hadRival; for (let q = 0; q < 8 && !adj; q++) { const j = NB[i * 8 + q]; if (j >= 0 && owner[j] === k) adj = true; }
+          if (adj) { this.setCell(i, k, K.maxHP * 0.35, 0.15); K.energy -= K.growCost * 0.6; }
         }
       }
     }
   }
-  // 9. growth
+  // 8b. maturation
+  this.mature();
+  // 9. exploration and growth
+  if (T % PROBE_EVERY === 0) for (const s of [1, 2]) if (this.sides[s].explore) this.probe(s);
   for (const s of [1, 2]) this.grow(s);
   // 10. pruning
   if (T % 5 === 0) for (const s of [1, 2]) if (this.sides[s].prune) this.prune(s);
@@ -784,39 +954,56 @@ Battle.prototype.step = function () {
 
 Battle.prototype.grow = function (s) {
   const S = this.sides[s]; if (S.starving || !S.cells) return;
-  const owner = this.owner, terr = this.terrain, rnd = this.rnd, dist = this.dist[s], fd = this.fd[s], ed = this.ed[s];
+  const owner = this.owner, terr = this.terrain, rnd = this.rnd, dist = this.dist[s], fd = this.fd[s], ed = this.ed[s], mass = this.mass, contest = this.contest, dorm = this.dorm, o = 3 - s;
   S.growAcc += S.k0 + S.k1 * Math.sqrt(S.cells);
   let n = Math.floor(S.growAcc); S.growAcc -= n;
   const reserve = 4 + S.cells * S.upkeep * 60;
   if (n <= 0 || S.energy < S.growCost + reserve) return;
-  const sid = ++this.stampId, stamp = this.stamp, CJ = this.candJ, CS = this.candS;
+  const sid = ++this.stampId, stamp = this.stamp, CJ = this.candJ, CS = this.candS, CK = this.candK;
+  const probes = S.probes, np = probes.length, T = this.tick;
   let m = 0;
   for (let i = 0; i < NN; i++) {
-    if (owner[i] !== s || this.dorm[i]) continue;
+    if (owner[i] !== s || dorm[i]) continue;
     if (dist[i] < 0 && !S.fragment) continue;
     for (let k = 0; k < 8; k++) {
       const j = NB[i * 8 + k];
-      if (j < 0 || owner[j] !== 0 || stamp[j] === sid) continue;
+      if (j < 0 || stamp[j] === sid) continue;
+      const oj = owner[j];
+      // a rival's thin tendril can be infiltrated; anything thicker must be engulfed from outside
+      const infil = oj === o && mass[j] < 0.5 && !dorm[j] && contest[j] < 0.7;
+      if (oj !== 0 && !infil) continue;
       const t = terr[j]; if (t === T_VOID || t === T_ROCK) continue;
       stamp[j] = sid;
       let own = 0;
       if (S.prune) { for (let q = 0; q < 8; q++) { const jj = NB[j * 8 + q]; if (jj >= 0 && owner[jj] === s) own++; } }
       const f = fd[j], e = ed[j];
-      let sc = S.wF * (f >= 65535 ? 0 : Math.max(0, 40 - f) * 0.25) + S.wH * (e >= 65535 ? 0 : Math.max(0, 60 - e) * 0.2) + S.wW * rnd() * 1.6 + rnd() * 0.05;
+      let sc = S.wF * (f >= 65535 ? 0 : Math.max(0, 40 - f) * 0.25) + S.wH * (e >= 65535 ? 0 : Math.max(0, 60 - e) * 0.2) + rnd() * 0.08;
+      if (np) {
+        const x = j % N, y = (j - x) / N;
+        for (let p = 0; p < np; p++) {
+          const P = probes[p], rx = x - P.x, ry = y - P.y, along = rx * P.dx + ry * P.dy;
+          if (along < 0.5 || along > PROBE_REACH) continue;
+          const perp = Math.abs(rx * P.dy - ry * P.dx);
+          if (perp > 0.9) continue;
+          sc += (2.6 - perp * 1.4) * (1 - 0.35 * (T - P.t0) / PROBE_TTL);
+        }
+      }
       if (t === T_SALT && !S.osmo) sc -= 0.5;
       if (t === T_LIGHT) sc += S.chloro ? 0.12 : -0.25;
       if (S.prune && own >= 6 && f > 1) sc -= 0.6;
       if (k >= 4) sc -= 0.02;
-      CJ[m] = j; CS[m] = sc; m++;
+      if (infil) sc += S.wH * 2.0 - 0.9 - mass[j];
+      CJ[m] = j; CS[m] = sc; CK[m] = infil ? 1 : 0; m++;
     }
   }
   for (let c = 0; c < n && m > 0; c++) {
     let bi = 0; for (let q = 1; q < m; q++) if (CS[q] > CS[bi]) bi = q;
-    const j = CJ[bi]; CJ[bi] = CJ[m - 1]; CS[bi] = CS[m - 1]; m--;
-    const cost = S.growCost * (terr[j] === T_SALT && !S.osmo ? 1.4 : 1);
+    const j = CJ[bi], infil = CK[bi]; CJ[bi] = CJ[m - 1]; CS[bi] = CS[m - 1]; CK[bi] = CK[m - 1]; m--;
+    const cost = S.growCost * (infil ? 0.5 : (terr[j] === T_SALT && !S.osmo ? 1.4 : 1));
     if (S.energy < cost + reserve) break;
     S.energy -= cost; S.spent += cost;
-    this.setCell(j, s, S.maxHP * 0.5);
+    if (infil) { contest[j] = Math.min(0.95, contest[j] + 0.3 + rnd() * 0.15); S.pushes++; }
+    else this.setCell(j, s, S.maxHP * 0.5, 0.12);
   }
 };
 
@@ -828,12 +1015,13 @@ Battle.prototype.prune = function (s) {
     if (this.ed[s][i] <= 3) continue;
     if (ft[i] && food[i] > 0.5 && S.eat[ft[i]]) continue;
     if (S.chloro && this.terrain[i] === T_LIGHT) continue;
+    if (this.vein[i] > 0.45) continue;
     let own = 0;
     for (let q = 0; q < 8; q++) { const j = NB[i * 8 + q]; if (j >= 0 && owner[j] === s) own++; }
     let p = 0;
     if (own === 8 && this.fd[s][i] > 2) p = 0.14;
     else if (own <= 1 && this.fd[s][i] > 4) p = 0.2;
-    if (p && rnd() < p) { owner[i] = 0; this.hp[i] = 0; S.energy += S.growCost * 0.5; }
+    if (p && rnd() < p) { owner[i] = 0; this.hp[i] = 0; this.mass[i] = 0; this.contest[i] = 0; S.energy += S.growCost * 0.5; }
   }
 };
 
@@ -858,16 +1046,21 @@ Battle.prototype.sporulate = function (s) {
       if (sc < bs) { bs = sc; best = j; from = src; }
     }
     if (best >= 0) {
-      this.setCell(best, s, S.maxHP * 0.7); S.roots.push(best); S.energy -= 12;
+      this.setCell(best, s, S.maxHP * 0.7, 0.5); S.roots.push(best); S.energy -= 12;
       shots.push([from, best]);
     }
   }
   if (shots.length) this.event(s, 'spores', shots[0][1], { shots });
 };
 
+// Frame layout (all per cell):
+//  dens  RGBA: R side-1 density, G side-2 density (0.3..1 by HP), B distance from nucleus ×3, A damage this minute
+//  flags: bits 0-1 owner, 2 dormant, 3 severed, 4-7 damage source
+//  matter: food or granite remaining
+//  aux   RGBA: R mass, G vein strength, B routing (low nibble: parent offset code 0..8, 4 = none; bit 4 healed, bit 5 fighting), A contest
 Battle.prototype.record = function () {
-  const dens = new Uint8Array(NN * 4), flags = new Uint8Array(NN), matter = new Uint8Array(NN);
-  const owner = this.owner, d0 = this.dish.food0, terr = this.terrain;
+  const dens = new Uint8Array(NN * 4), flags = new Uint8Array(NN), matter = new Uint8Array(NN), aux = new Uint8Array(NN * 4);
+  const owner = this.owner, d0 = this.dish.food0, terr = this.terrain, par = this.parent, mass = this.mass, vein = this.vein, contest = this.contest, cf = this.cflag;
   for (let i = 0; i < NN; i++) {
     const o = owner[i];
     if (o) {
@@ -877,17 +1070,23 @@ Battle.prototype.record = function () {
       const d = this.dist[o][i];
       dens[i * 4 + 2] = d < 0 ? 0 : Math.min(255, d * 3);
       flags[i] = o | (this.dorm[i] ? 4 : 0) | (d < 0 ? 8 : 0);
-    }
+      aux[i * 4] = Math.round(mass[i] * 255); aux[i * 4 + 1] = Math.round(vein[i] * 255);
+      let code = 4;
+      const p = par[i];
+      if (p >= 0 && d >= 0) { const dx = (p % N) - (i % N), dy = Math.floor(p / N) - Math.floor(i / N); code = (dx + 1) + 3 * (dy + 1); }
+      aux[i * 4 + 2] = code | ((cf[i] & 1) ? 16 : 0) | ((cf[i] & 2) ? 32 : 0);
+      aux[i * 4 + 3] = Math.round(Math.min(1, contest[i]) * 255);
+    } else aux[i * 4 + 2] = 4;
     const dm = this.dmg[i];
     if (dm > 0) { dens[i * 4 + 3] = Math.min(255, Math.round(dm * 70)); flags[i] |= (this.dsrc[i] << 4); }
     if (d0[i] > 0) matter[i] = Math.round(Math.max(0, this.food[i] / d0[i]) * 255);
     else if (terr[i] === T_ROCK) matter[i] = Math.max(1, Math.round(this.rockHP[i] / ROCK_HP * 255));
   }
-  this.frames.push({ dens, flags, matter });
+  const probes = [null, this.sides[1].probes.map(p => [p.x, p.y, p.dx, p.dy]), this.sides[2].probes.map(p => [p.x, p.y, p.dx, p.dy])];
+  this.frames.push({ dens, flags, matter, aux, probes });
   for (const s of [1, 2]) { this.stats.cells[s].push(this.sides[s].cells); this.stats.energy[s].push(this.sides[s].energy); }
 };
-
-if (typeof module !== 'undefined') module.exports = { Battle, LEVELS, GENES, genomeCost, MAXT, N, NN, makeDish };
+if (typeof module !== 'undefined') module.exports = { Battle, LEVELS, GENES, genomeCost, normGenome, deriveSide, SENSE_RANGE, DRIVE_COST, TRAIT_COST, MAXT, N, NN, makeDish };
 
 // ===================== MYXO APP =====================
 (function () {
@@ -904,17 +1103,17 @@ const FOOD_ENZ = ['', 'amylase', 'protease', 'ligninase'];
 
 // ---------------- Progress ----------------
 const KEY = 'myxo.petri.v1';
-const DEFAULT_GENOME = { vigor: 2, density: 2, genes: ['amylase', 'protease', 'chitin', 'crush'], taxis: { food: 7, hunt: 3, wander: 3 } };
+const DEFAULT_GENOME = { vigor: 2, density: 2, sense: 2, genes: ['amylase', 'protease', 'chitin', 'crush'], taxis: { food: 3, hunt: 1, explore: 2 } };
 let prog = { cleared: [false, false, false, false, false, false], genomes: {}, name: 'Strain P-01' };
 try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && Array.isArray(s.cleared)) prog = Object.assign(prog, s); } catch (e) { }
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(prog)); } catch (e) { } };
 const isolated = g => g.unlock <= 1 || !!prog.cleared[g.unlock - 2];
 const playable = i => i === 0 || !!prog.cleared[i - 1];
-const cloneG = g => ({ vigor: g.vigor, density: g.density, genes: g.genes.slice(), taxis: Object.assign({}, g.taxis) });
+const cloneG = g => normGenome(g);
 
 // ---------------- App state ----------------
-const S = { mode: 'rack', level: 0, genome: cloneG(DEFAULT_GENOME), battle: null, playhead: 0, playing: false, speed: 1, sel: -1, resultShown: false, shownEvt: -1, lastFx: 0 };
-const SPEEDS = [0.25, 0.5, 1, 2, 4];
+const S = { mode: 'rack', level: 0, genome: cloneG(DEFAULT_GENOME), battle: null, playhead: 0, revealed: 0, playing: false, speed: 1, sel: -1, resultShown: false, shownEvt: -1, lastFx: 0, logN: 0, showProbes: false };
+const SPEEDS = [0.125, 0.25, 0.5, 1, 2, 4], SPEED_LBL = { 0.125: '⅛', 0.25: '¼', 0.5: '½', 1: '1', 2: '2', 4: '4' };
 const TPS = 24; // ticks per second at 1x
 
 // ===================== 3D =====================
@@ -979,34 +1178,42 @@ function dataTex(filter) {
   t.magFilter = filter; t.minFilter = filter; t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.needsUpdate = true; return t;
 }
 const texA = dataTex(THREE.LinearFilter), texB = dataTex(THREE.LinearFilter);
-const texStatus = dataTex(THREE.LinearFilter), texGlow = dataTex(THREE.LinearFilter), texTerr = dataTex(THREE.LinearFilter);
+const texAuxA = dataTex(THREE.NearestFilter), texAuxB = dataTex(THREE.NearestFilter);
+const texStatus = dataTex(THREE.NearestFilter), texTerr = dataTex(THREE.LinearFilter);
 
 const surfUniforms = {
-  uDensA: { value: texA }, uDensB: { value: texB }, uStatus: { value: texStatus }, uGlow: { value: texGlow }, uTerr: { value: texTerr },
+  uDensA: { value: texA }, uDensB: { value: texB }, uAuxA: { value: texAuxA }, uAuxB: { value: texAuxB }, uStatus: { value: texStatus }, uTerr: { value: texTerr },
   uNoise: { value: noiseRT ? noiseRT.texture : null }, uMix: { value: 0 }, uTime: { value: 0 }, uSize: { value: SIZE }, uDishR: { value: DISH_UV },
   uPCol: { value: new THREE.Color(0xf6c52e) }, uECol: { value: new THREE.Color(0xe0457f) }, uAgar: { value: new THREE.Color(0x6f6650) },
-  uSel: { value: new THREE.Vector3(0, 0, 0) }, uGridN: { value: N },
+  uSel: { value: new THREE.Vector3(0, 0, 0) }, uGridN: { value: N }, uGenes: { value: new THREE.Vector4(0, 0, 0, 0) },
 };
-const DENS_FN = `
+// Shared sampling. Frame textures: dens (bilinear) carries per-side density, nucleus distance and damage; aux (nearest)
+// carries mass, vein strength, routing code and contest. Frames t and t+1 are blended by uMix for smooth playback.
+const SURF_COMMON = `
+    uniform sampler2D uDensA, uDensB, uAuxA, uAuxB, uNoise, uTerr;
+    uniform float uMix, uTime, uSize, uGridN;
     vec4 densAt(vec2 uv){ return mix(texture2D(uDensA,uv),texture2D(uDensB,uv),uMix); }
-    vec4 dens(vec2 uv, vec4 nz){
-      float tx=1.0/uGridN;
-      vec2 w=uv+vec2(nz.r-0.5, texture2D(uNoise,uv.yx*0.93+0.31).r-0.5)*tx*1.6;
-      float o=tx*0.6;
-      return (densAt(w+vec2(o,o))+densAt(w+vec2(-o,o))+densAt(w+vec2(o,-o))+densAt(w+vec2(-o,-o)))*0.25;
-    }`;
+    vec4 auxAt(vec2 uv){ return mix(texture2D(uAuxA,uv),texture2D(uAuxB,uv),uMix); }
+    vec2 warpAt(vec2 uv, vec4 nz){ return vec2(nz.r-0.5, texture2D(uNoise,uv.yx*0.93+0.31).r-0.5)*0.9; }`;
 const surfMat = new THREE.ShaderMaterial({
   uniforms: surfUniforms,
-  vertexShader: `
-    uniform sampler2D uDensA, uDensB, uNoise, uTerr; uniform float uMix, uTime, uSize, uGridN;
+  extensions: { derivatives: true },
+  vertexShader: SURF_COMMON + `
     varying vec2 vUv; varying vec3 vN; varying vec3 vPos;
-    DENS_FN
+    vec2 auxBi(vec2 uv){
+      float tx=1.0/uGridN; vec2 g=uv*uGridN-0.5; vec2 f=fract(g); vec2 c=(floor(g)+0.5)*tx;
+      vec2 a=auxAt(c).rg, b=auxAt(c+vec2(tx,0.0)).rg, cc=auxAt(c+vec2(0.0,tx)).rg, d=auxAt(c+vec2(tx,tx)).rg;
+      return mix(mix(a,b,f.x),mix(cc,d,f.x),f.y);
+    }
     float hAt(vec2 uv){
-      vec4 nz=texture2D(uNoise,uv); vec4 d=dens(uv,nz);
-      float m=max(d.r,d.g);
-      float body=smoothstep(0.12,0.32,m+(nz.r-0.5)*0.18);
-      float pulse=0.5+0.5*sin(d.b*255.0*0.55-uTime*3.2);
-      float h=body*(0.03+0.10*m)+body*nz.g*(0.045+0.03*pulse)*(0.85+0.15*sin(uTime*1.3+d.b*40.0));
+      vec4 nz=texture2D(uNoise,uv);
+      vec2 w=uv+warpAt(uv,nz)*(0.5/uGridN);
+      vec4 d=densAt(w); float m=max(d.r,d.g);
+      vec2 mv=auxBi(w);
+      vec4 dc=densAt((floor(w*uGridN)+0.5)/uGridN);
+      float body=smoothstep(0.10,0.30,m+(nz.r-0.5)*0.15)*step(0.004,max(dc.r,dc.g));
+      float ph=d.b*255.0*0.55+3.5*sin(uTime*0.7); float pulse=0.5+0.5*sin(ph-uTime*2.2);
+      float h=body*(0.004+0.085*mv.x*mv.x)*(0.92+0.08*pulse)+body*mv.y*mv.y*0.10*(0.85+0.15*pulse);
       vec4 t=texture2D(uTerr,uv);
       h+=t.r*0.035*nz.b;
       return h;
@@ -1021,51 +1228,134 @@ const surfMat = new THREE.ShaderMaterial({
       vec3 p=position; p.y+=h; vPos=p;
       gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);
     }`,
-  fragmentShader: `
-    uniform sampler2D uDensA, uDensB, uNoise, uTerr, uStatus, uGlow;
-    uniform float uMix, uTime, uDishR, uGridN; uniform vec3 uPCol, uECol, uAgar, uSel;
+  fragmentShader: SURF_COMMON + GLSL_NOISE + `
+    uniform sampler2D uStatus; uniform float uDishR; uniform vec3 uPCol, uECol, uAgar, uSel; uniform vec4 uGenes;
     varying vec2 vUv; varying vec3 vN; varying vec3 vPos;
-    DENS_FN
+    vec2 hash2(vec2 p){ p=vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3))); return fract(sin(p)*43758.5453); }
+    float hash1(vec2 p){ return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453); }
+    // cellular noise: distance to nearest and second-nearest feature point, plus the nearest point's id
+    vec3 worley(vec2 p){
+      vec2 ip=floor(p), fp=fract(p); float f1=8.0, f2=8.0, id=0.0;
+      for(int y=-1;y<=1;y++) for(int x=-1;x<=1;x++){
+        vec2 o=vec2(float(x),float(y)); vec2 h=hash2(ip+o); vec2 r=o+h-fp; float d=dot(r,r);
+        if(d<f1){ f2=f1; f1=d; id=hash1(ip+o); } else if(d<f2){ f2=d; }
+      }
+      return vec3(sqrt(f1),sqrt(f2),id);
+    }
+    float segDist(vec2 p, vec2 a, vec2 b){ vec2 ab=b-a; float t=clamp(dot(p-a,ab)/max(dot(ab,ab),1e-4),0.0,1.0); return length(p-(a+ab*t)); }
+    vec3 bump(vec3 n, vec3 pos, float h){
+      vec3 sx=dFdx(pos), sy=dFdy(pos); vec3 r1=cross(sy,n), r2=cross(n,sx); float det=dot(sx,r1);
+      vec3 grad=sign(det)*(dFdx(h)*r1+dFdy(h)*r2); return normalize(abs(det)*n-grad);
+    }
     void main(){
       vec2 uv=vUv; float rr=length(uv-0.5);
       if(rr>uDishR) discard;
-      vec4 nz=texture2D(uNoise,uv);
-      vec4 d=dens(uv,nz);
-      vec4 st=texture2D(uStatus,uv); vec4 gl=texture2D(uGlow,uv); vec4 tr=texture2D(uTerr,uv);
-      float m=max(d.r,d.g);
-      float body=smoothstep(0.14,0.25,m+(nz.r-0.5)*0.18+(nz.b-0.5)*0.05);
-      float vein=nz.g;
-      float pulse=0.5+0.5*sin(d.b*255.0*0.55-uTime*3.2);
-      float share=d.r/max(d.r+d.g,0.001);
-      vec3 base=mix(uECol,uPCol,smoothstep(0.35,0.65,share));
-      // normal with fine vein bump
-      float ee=1.0/1024.0;
-      float gx=texture2D(uNoise,uv+vec2(ee,0.0)).g-texture2D(uNoise,uv-vec2(ee,0.0)).g;
-      float gz=texture2D(uNoise,uv+vec2(0.0,ee)).g-texture2D(uNoise,uv-vec2(0.0,ee)).g;
-      vec3 N=normalize(vN+body*vec3(-gx,0.0,gz)*1.6);
+      vec4 nz=texture2D(uNoise,uv); vec4 tr=texture2D(uTerr,uv);
+      float tx=1.0/uGridN;
+      vec2 g=uv*uGridN; vec2 warp=warpAt(uv,nz); vec2 gw=g+warp;
+      float px=(fwidth(gw.x)+fwidth(gw.y))*0.5+1e-5;
+      // the cell this fragment belongs to (warped, so borders wobble)
+      vec2 c0=floor(gw); vec2 c0uv=(c0+0.5)*tx;
+      vec4 d0=densAt(c0uv); vec4 a0=auxAt(c0uv); vec4 st=texture2D(uStatus,c0uv);
+      float o0=d0.r>0.004?1.0:(d0.g>0.004?2.0:0.0);
+      float occ=o0>0.5?1.0:0.0;
+      float code0=floor(texture2D(uAuxA,c0uv).b*255.0+0.5);
+      float heal=mod(floor(code0/16.0),2.0), fight=floor(code0/32.0);
+      // neighbourhood pass: smoothed mass, vein tubes along the routing tree, direction of the nearest rival
+      float massS=0.0, wS=0.0, tube=0.0, tubeV=0.0, rival=0.0; vec2 atk=vec2(0.0);
+      for(int dy=-1;dy<=1;dy++) for(int dx=-1;dx<=1;dx++){
+        vec2 off=vec2(float(dx),float(dy)); vec2 cc=c0+off; vec2 cuv=(cc+0.5)*tx;
+        vec4 d=densAt(cuv); float own=d.r>0.004?1.0:(d.g>0.004?2.0:0.0);
+        if(own<0.5) continue;
+        vec4 a=auxAt(cuv); float code=floor(texture2D(uAuxA,cuv).b*255.0+0.5);
+        vec2 rel=gw-(cc+0.5); float dr=length(rel);
+        float same=abs(own-o0)<0.5?1.0:0.0;
+        float w=max(0.0,1.0-dr*0.7); w*=w;
+        massS+=a.r*w*same; wS+=w*same;
+        if(same<0.5 && occ>0.5){ atk+=off; rival+=1.0; }
+        float pd=mod(code,16.0);
+        if(abs(pd-4.0)>0.5 && pd<8.5){
+          vec2 dir=vec2(mod(pd,3.0)-1.0,floor(pd/3.0)-1.0);
+          float sd=segDist(gw,cc+0.5,cc+0.5+dir);
+          float rad=0.045+0.32*pow(a.g,1.6);
+          float radP=max(rad,px*0.9);
+          float t=(1.0-smoothstep(radP*0.45,radP+px,sd))*min(1.0,rad/(px*0.9))*same;
+          if(t>tube){ tube=t; tubeV=a.g; }
+        }
+      }
+      float m2=wS>0.0?massS/wS:0.0;
+      // lace: thin cells show only a few threads; the network fills in as the cell matures
+      float r1=1.0-abs(snoise(gw*0.5+3.1));
+      float r2=1.0-abs(snoise(gw*1.3+7.7));
+      vec3 wy=worley(gw*3.0);
+      float e=wy.y-wy.x;
+      float w1=0.05+0.6*m2;  float l1=smoothstep(1.0-w1-0.1,1.0-w1+0.02,r1);
+      float w2=0.03+0.5*m2*m2; float l2=smoothstep(1.0-w2-0.08,1.0-w2+0.02,r2)*smoothstep(0.1,0.45,m2);
+      float w3=0.03+0.55*m2; float aa=fwidth(e)+1e-3; float l3=(1.0-smoothstep(w3-aa,w3+aa,e))*smoothstep(0.2,0.55,m2);
+      float sheet=smoothstep(0.6,0.95,m2);
+      float lace=max(max(l1,l2),max(l3,sheet));
+      float cov=occ*max(lace,tube);
+      // relief: threads and veins are raised tubes, sheets are granular
+      float hF=cov*(0.02+0.05*m2)+tube*(0.03+0.10*tubeV)+sheet*(0.5-wy.x)*0.02+l3*0.01;
+      vec3 N=bump(normalize(vN),vPos,hF);
       vec3 L=normalize(vec3(-0.45,1.0,0.55)); vec3 V=normalize(cameraPosition-vPos); vec3 H=normalize(L+V);
-      float diff=max(dot(N,L),0.0); float spec=pow(max(dot(N,H),0.0),70.0); float fres=pow(1.0-max(dot(N,V),0.0),3.0);
-      // mold colour
-      float thick=0.55+0.45*m;
-      vec3 mold=base*thick*(0.88+0.24*nz.r);
-      float tube=smoothstep(0.25,0.75,vein);
-      mold=mix(mold,base*0.6,smoothstep(0.08,0.3,vein)*(1.0-tube)*0.35);
-      mold+=base*tube*(0.2+0.6*pulse)*0.5;
-      float edge=body*(1.0-body)*4.0; mold*=1.0-edge*0.35;
+      float diff=max(dot(N,L),0.0); float spec=pow(max(dot(N,H),0.0),60.0); float fres=pow(1.0-max(dot(N,V),0.0),3.0);
+      // colours. A contested cell shows the rival's tendrils in a growing share of its honeycomb pockets.
+      vec3 own=o0<1.5?uPCol:uECol; vec3 riv=o0<1.5?uECol:uPCol;
+      float ct=a0.a;
+      float im=step(1.0-ct,fract(wy.z+0.04*sin(uTime*2.0+wy.z*30.0)))*step(0.01,ct);
+      vec3 base=mix(own,riv,im);
+      vec4 db=densAt(uv);
+      float ph=db.b*255.0*0.55+3.5*sin(uTime*0.7); float flow=0.5+0.5*sin(ph-uTime*2.2); float flow2=0.5+0.5*sin(ph*2.3+uTime*3.1);
+      vec3 mold=base*(0.72+0.28*m2)*(0.9+0.2*nz.r);
+      mold=mix(mold,mold*0.82+vec3(0.06,0.03,0.0),sheet*0.6);
+      mold*=1.0-0.2*sheet*max(0.0,0.5-wy.x);
+      vec3 veinCol=base*(0.5+0.55*flow)+vec3(0.08)*flow2*tubeV;
+      mold=mix(mold,veinCol,tube*(0.45+0.55*tubeV));
+      float alpha=cov*(0.5+0.5*max(m2,tube*tubeV));
+      // attacks: what hurt this cell this minute
+      float src=floor(st.b*255.0/28.0+0.5); float dmg=st.a;
+      float isE=step(abs(src-1.0),0.5), isA=step(abs(src-2.0),0.5), isT=step(abs(src-3.0),0.5), isS=step(abs(src-4.0),0.5), isU=step(abs(src-5.0),0.5), isSt=step(abs(src-6.0),0.5), isSv=step(abs(src-7.0),0.5);
+      vec2 ad=rival>0.0?normalize(atk+vec2(1e-4,0.0)):vec2(1.0,0.0);
+      float wave=0.5+0.5*sin(dot(gw-(c0+0.5),ad)*8.0+uTime*7.0); wave*=wave;
+      mold+=riv*isE*dmg*(0.25+0.9*wave);
+      alpha*=1.0-isE*dmg*0.35*wave;
+      float fz=step(0.9,hash1(floor(gw*8.0)+floor(uTime*9.0)*0.37));
+      mold+=vec3(0.55,1.0,0.2)*isA*dmg*(0.3+1.4*fz);
+      alpha*=1.0-isA*dmg*0.5*fz;
+      mold=mix(mold,vec3(0.9,0.92,0.95)*(0.7+0.4*nz.b),isS*dmg*0.7);
+      mold+=vec3(1.0,0.95,0.7)*isU*dmg*(0.3+0.5*step(0.5,fract(uTime*6.0+nz.r*3.0)));
+      mold=mix(mold,vec3(0.45,0.42,0.35),isSt*dmg*0.7);
+      mold=mix(mold,vec3(0.4,0.47,0.55),isSv*dmg*0.7);
+      // sclerotia crust, severed grey
       vec3 crust=vec3(0.36,0.24,0.12)+base*0.12;
-      mold=mix(mold,crust*(0.8+0.4*nz.b),st.r*0.8);
+      mold=mix(mold,crust*(0.8+0.4*nz.b),st.r*0.8); alpha=max(alpha,st.r*occ*0.95);
       mold=mix(mold,mold*0.45+vec3(0.08,0.1,0.12),st.g*(0.55+0.15*sin(uTime*6.0)));
-      vec3 moldLit=mold*(0.42+0.7*diff)+spec*0.6*(1.0-st.r)+fres*base*0.45+base*0.18*vein*pulse;
+      // defences: chitin rind darkens the thread edges, alkaline slime films the pockets
+      float chi=o0<1.5?uGenes.x:uGenes.z; float muc=o0<1.5?uGenes.y:uGenes.w;
+      float rim=smoothstep(0.0,0.3,cov)*(1.0-smoothstep(0.3,0.7,cov));
+      mold=mix(mold,vec3(0.3,0.19,0.08),chi*rim*0.7*smoothstep(0.3,0.6,m2));
+      mold*=1.0-0.12*chi;
+      // healing shimmer and fighting throb
+      float sp=step(0.975,hash1(floor(gw*10.0)+floor(uTime*8.0)*0.61));
+      mold+=vec3(0.7,1.0,0.75)*heal*sp*0.9;
+      float throb=0.5+0.5*sin(uTime*7.0+nz.r*12.0);
+      alpha=min(1.0,alpha+fight*occ*0.12*throb*lace); mold*=1.0+0.1*fight*throb;
+      vec3 moldLit=mold*(0.4+0.7*diff)+spec*(0.5+0.4*tube)*(1.0-st.r)+fres*base*0.35+base*0.2*tube*flow;
       // agar
       vec3 agar=uAgar*(0.9+0.16*nz.r)+vec3(0.1,0.12,0.1)*nz.a*0.35;
       agar=mix(agar,vec3(0.86,0.88,0.9)*(0.65+0.45*nz.b),tr.r*0.92);
       agar+=vec3(1.0,0.84,0.52)*tr.g*(0.22+0.05*sin(uTime*0.9+uv.x*18.0));
       agar=mix(agar,vec3(0.16,0.15,0.15),tr.b*0.55);
-      float rim=smoothstep(uDishR-0.035,uDishR,rr);
-      agar=mix(agar,agar*1.35+0.05,rim);
+      float rim2=smoothstep(uDishR-0.035,uDishR,rr);
+      agar=mix(agar,agar*1.35+0.05,rim2);
       vec3 agarLit=agar*(0.7+0.35*diff)+spec*0.08;
-      vec3 col=mix(agarLit,moldLit,body);
-      col+=gl.rgb*(0.75+0.25*sin(uTime*18.0+uv.x*90.0+uv.y*70.0))*1.4;
+      float film=muc*occ*(1.0-cov)*smoothstep(0.15,0.5,m2);
+      agarLit=mix(agarLit,vec3(0.7,0.86,0.9)*(0.6+0.5*diff)+spec*0.9,film*0.4);
+      vec3 col=mix(agarLit,moldLit,alpha);
+      // antibiotic haze drifts above the surface
+      float hz=0.5+0.5*snoise(gw*0.7+vec2(uTime*0.3,-uTime*0.2));
+      col=mix(col,vec3(0.62,0.5,1.0),isT*dmg*hz*0.75);
       if(uSel.z>0.5){
         float ds=length((uv-uSel.xy)*uGridN);
         col+=vec3(1.0)*(smoothstep(0.16,0.0,abs(ds-1.15))*(0.7+0.3*sin(uTime*5.0)));
@@ -1074,8 +1364,6 @@ const surfMat = new THREE.ShaderMaterial({
       gl_FragColor=vec4(col,1.0);
     }`
 });
-surfMat.vertexShader = surfMat.vertexShader.replace('DENS_FN', DENS_FN);
-surfMat.fragmentShader = surfMat.fragmentShader.replace('DENS_FN', DENS_FN);
 const SEG = isMobile ? 130 : 190;
 const surfGeo = new THREE.PlaneGeometry(SIZE, SIZE, SEG, SEG); surfGeo.rotateX(-Math.PI / 2);
 const surface = new THREE.Mesh(surfGeo, surfMat); scene.add(surface);
@@ -1213,27 +1501,65 @@ function showFrame(b, t, frac) {
   t = clamp(t, 0, last);
   const t2 = Math.min(t + 1, last);
   if (shown.battle !== b || shown.t !== t || shown.t2 !== t2) {
-    const F = b.frames[t];
+    const F = b.frames[t], F2 = b.frames[t2];
     texA.image.data = F.dens; texA.needsUpdate = true;
-    texB.image.data = b.frames[t2].dens; texB.needsUpdate = true;
-    const sd = texStatus.image.data, gd = texGlow.image.data;
+    texB.image.data = F2.dens; texB.needsUpdate = true;
+    texAuxA.image.data = F.aux; texAuxA.needsUpdate = true;
+    texAuxB.image.data = F2.aux; texAuxB.needsUpdate = true;
+    const sd = texStatus.image.data;
     for (let i = 0; i < NN; i++) {
       const f = F.flags[i];
       sd[i * 4] = (f & 4) ? 255 : 0; sd[i * 4 + 1] = (f & 8) ? 255 : 0;
-      const src = f >> 4, a = F.dens[i * 4 + 3] / 255;
-      if (src && a > 0) {
-        const c = SRC_RGB[src], k = Math.min(1, a * 1.2);
-        gd[i * 4] = c[0] * k; gd[i * 4 + 1] = c[1] * k; gd[i * 4 + 2] = c[2] * k;
-      } else { gd[i * 4] = gd[i * 4 + 1] = gd[i * 4 + 2] = 0; }
+      sd[i * 4 + 2] = (f >> 4) * 28; sd[i * 4 + 3] = F.dens[i * 4 + 3];
     }
-    texStatus.needsUpdate = true; texGlow.needsUpdate = true;
-    applyMatter(F.matter);
+    texStatus.needsUpdate = true;
+    applyMatter(F.matter); showProbes(F);
     for (const s of [1, 2]) cores[s].visible = (F.flags[s === 1 ? CORE_P : CORE_E] & 3) === s;
     shown = { battle: b, t, t2 };
   }
   surfUniforms.uMix.value = t2 > t ? clamp(frac, 0, 1) : 0;
 }
-const SRC_RGB = SRC_COL.map(h => { const c = new THREE.Color(h); return [c.r * 200, c.g * 200, c.b * 200]; });
+function setGenes(b) {
+  const P = b.sides[1], E = b.sides[2];
+  surfUniforms.uGenes.value.set(P.chitin ? 1 : 0, P.mucus ? 1 : 0, E.chitin ? 1 : 0, E.mucus ? 1 : 0);
+}
+
+// --- exploration probes: thin ribbons with a pulse travelling outward along each active spike's ray ---
+const PROBE_MAX = 12;
+const probeGeo = new THREE.BufferGeometry();
+probeGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(PROBE_MAX * 4 * 3), 3));
+probeGeo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(PROBE_MAX * 4 * 2), 2));
+probeGeo.setAttribute('aCol', new THREE.BufferAttribute(new Float32Array(PROBE_MAX * 4 * 3), 3));
+const probeIdx = new Uint16Array(PROBE_MAX * 6);
+for (let i = 0; i < PROBE_MAX; i++) probeIdx.set([i * 4, i * 4 + 1, i * 4 + 2, i * 4 + 2, i * 4 + 1, i * 4 + 3], i * 6);
+probeGeo.setIndex(new THREE.BufferAttribute(probeIdx, 1));
+const probeMat = new THREE.ShaderMaterial({
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, uniforms: { uTime: { value: 0 } },
+  vertexShader: 'attribute vec3 aCol; varying vec2 vUv; varying vec3 vC; void main(){ vUv=uv; vC=aCol; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
+  fragmentShader: 'uniform float uTime; varying vec2 vUv; varying vec3 vC; void main(){ float u=vUv.x; float dash=smoothstep(0.3,0.6,0.5+0.5*sin(u*50.0-uTime*7.0)); float pulse=exp(-12.0*abs(fract(u-uTime*0.35)-0.5)); float edge=1.0-smoothstep(0.05,0.5,abs(vUv.y-0.5)); float a=(1.0-u)*(0.12+0.35*dash+0.6*pulse)*edge; gl_FragColor=vec4(vC*a,a); }'
+});
+const probeLines = new THREE.Mesh(probeGeo, probeMat);
+probeLines.frustumCulled = false; probeLines.visible = false; scene.add(probeLines);
+function showProbes(F) {
+  const pos = probeGeo.attributes.position.array, uv = probeGeo.attributes.uv.array, col = probeGeo.attributes.aCol.array;
+  let n = 0;
+  const hw = CELL * 0.45, L = CELL * PROBE_REACH;
+  for (const s of [1, 2]) {
+    const c = s === 1 ? [0.96, 0.77, 0.18] : [0.88, 0.31, 0.54];
+    for (const p of (F.probes ? F.probes[s] : [])) {
+      if (n >= PROBE_MAX) break;
+      const [x0, z0] = cellXZ(Math.round(p[1]) * N + Math.round(p[0]));
+      const dx = p[2], dz = -p[3], nx = -dz * hw, nz = dx * hw;
+      const x1 = x0 + dx * L, z1 = z0 + dz * L;
+      pos.set([x0 + nx, 0.14, z0 + nz, x0 - nx, 0.14, z0 - nz, x1 + nx, 0.14, z1 + nz, x1 - nx, 0.14, z1 - nz], n * 12);
+      uv.set([0, 0, 0, 1, 1, 0, 1, 1], n * 8);
+      col.set([c[0], c[1], c[2], c[0], c[1], c[2], c[0], c[1], c[2], c[0], c[1], c[2]], n * 12);
+      n++;
+    }
+  }
+  probeGeo.setDrawRange(0, n * 6);
+  probeGeo.attributes.position.needsUpdate = true; probeGeo.attributes.uv.needsUpdate = true; probeGeo.attributes.aCol.needsUpdate = true;
+}
 
 // --- FX: rings & spores ---
 const fxGroup = new THREE.Group(); scene.add(fxGroup);
@@ -1262,6 +1588,10 @@ function updateFx(dt) {
 function clearFx() { for (const f of fx) { fxGroup.remove(f.m); f.m.material.dispose(); } fx.length = 0; }
 
 // --- camera control ---
+// Left-drag (or one finger) orbits, right/middle/shift-drag (or two fingers) pans, wheel/pinch zooms toward the
+// pointer. The view target stays on the agar and inside the dish.
+const ZMIN = 0.07, ZMAX = 1.6, HOME = new THREE.Vector3(0, 0, 0.15);
+const COARSE = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
 function updateCamera() {
   const w = stage.clientWidth || 1, h = stage.clientHeight || 1;
   camera.aspect = w / h;
@@ -1284,25 +1614,60 @@ function resize() {
 }
 if (window.ResizeObserver) new ResizeObserver(resize).observe(stage); else window.addEventListener('resize', resize);
 
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), ground = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.08), hit = new THREE.Vector3();
+function groundHit(cx, cy, out) {
+  const r = canvas.getBoundingClientRect();
+  ndc.set(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
+  ray.setFromCamera(ndc, camera);
+  return ray.ray.intersectPlane(ground, out || hit);
+}
+function clampTarget() {
+  const R = DISH_W * 0.98, l = Math.hypot(cam.target.x, cam.target.z);
+  if (l > R) { cam.target.x *= R / l; cam.target.z *= R / l; }
+  cam.target.y = 0;
+}
+function panBy(dx, dy) {
+  const h = stage.clientHeight || 1, k = 2 * cam.base * cam.zoom * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / h;
+  const st = Math.sin(cam.theta), ct = Math.cos(cam.theta);
+  cam.target.x += (-ct * dx - st * dy) * k; cam.target.z += (st * dx - ct * dy) * k;
+  clampTarget();
+}
+function viewMoved() { return Math.abs(cam.zoom - 1) > 0.01 || Math.hypot(cam.target.x - HOME.x, cam.target.z - HOME.z) > 0.05; }
+function resetView() { cam.zoom = 1; cam.target.copy(HOME); cam.phi = S.mode === 'battle' ? 0.72 : 0.82; cam.theta = 0; updateCamera(); }
+
 const pointers = new Map(); let gesture = null, lastTouch = 0;
 const hint = $('hint');
 function hideHint() { hint.style.opacity = 0; }
+stage.addEventListener('contextmenu', e => e.preventDefault());
 stage.addEventListener('pointerdown', e => {
   if (e.target !== canvas) return;
-  canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
-  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now() });
+  try { canvas.setPointerCapture(e.pointerId); } catch (err) { }
+  const pan = e.pointerType !== 'touch' && (e.button === 2 || e.button === 1 || e.shiftKey);
+  const p = { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now(), pan, anchor: null, button: e.button };
+  if (pan) { const h = groundHit(e.clientX, e.clientY, new THREE.Vector3()); p.anchor = h ? h.clone() : null; }
+  pointers.set(e.pointerId, p);
   cam.auto = false; lastTouch = performance.now();
-  if (pointers.size === 2) { const [a, b] = [...pointers.values()]; gesture = { dist: Math.hypot(a.x - b.x, a.y - b.y), zoom: cam.zoom }; }
+  if (pointers.size === 2) {
+    const [a, b] = [...pointers.values()];
+    const h = groundHit((a.x + b.x) / 2, (a.y + b.y) / 2, new THREE.Vector3());
+    gesture = { dist: Math.hypot(a.x - b.x, a.y - b.y), zoom: cam.zoom, anchor: h ? h.clone() : null };
+  }
 });
 stage.addEventListener('pointermove', e => {
   const p = pointers.get(e.pointerId); if (!p) return;
   const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
   if (pointers.size === 1) {
-    cam.theta -= dx * 0.007; cam.phi = clamp(cam.phi - dy * 0.006, 0.12, 1.25); updateCamera();
+    if (p.pan) {
+      if (p.anchor && groundHit(e.clientX, e.clientY)) { cam.target.x += p.anchor.x - hit.x; cam.target.z += p.anchor.z - hit.z; clampTarget(); }
+      else panBy(dx, dy);
+    } else { cam.theta -= dx * 0.007; cam.phi = clamp(cam.phi - dy * 0.006, 0.12, 1.25); }
+    updateCamera();
     if (Math.hypot(p.x - p.sx, p.y - p.sy) > 8) hideHint();
   } else if (pointers.size === 2 && gesture) {
     const [a, b] = [...pointers.values()];
-    cam.zoom = clamp(gesture.zoom * gesture.dist / Math.max(20, Math.hypot(a.x - b.x, a.y - b.y)), 0.35, 1.6); updateCamera(); hideHint();
+    cam.zoom = clamp(gesture.zoom * gesture.dist / Math.max(20, Math.hypot(a.x - b.x, a.y - b.y)), ZMIN, ZMAX); updateCamera();
+    if (gesture.anchor && groundHit((a.x + b.x) / 2, (a.y + b.y) / 2)) { cam.target.x += gesture.anchor.x - hit.x; cam.target.z += gesture.anchor.z - hit.z; clampTarget(); updateCamera(); }
+    hideHint();
   }
 });
 function endPointer(e) {
@@ -1310,18 +1675,26 @@ function endPointer(e) {
   pointers.delete(e.pointerId);
   if (pointers.size < 2) gesture = null;
   const moved = Math.hypot(p.x - p.sx, p.y - p.sy), dur = performance.now() - p.t;
-  if (moved < 8 && dur < 400 && pointers.size === 0 && e.type === 'pointerup') onTap(e.clientX, e.clientY);
+  if (moved < 8 && dur < 400 && pointers.size === 0 && e.type === 'pointerup' && p.button === 0) onTap(e.clientX, e.clientY);
 }
 stage.addEventListener('pointerup', endPointer); stage.addEventListener('pointercancel', endPointer);
-stage.addEventListener('wheel', e => { e.preventDefault(); cam.zoom = clamp(cam.zoom * Math.exp(e.deltaY * 0.0012), 0.35, 1.6); cam.auto = false; updateCamera(); hideHint(); }, { passive: false });
+stage.addEventListener('wheel', e => {
+  if (e.target.closest && e.target.closest('.log, .inspect, .result')) return;
+  e.preventDefault();
+  const z0 = cam.zoom, z1 = clamp(z0 * Math.exp(e.deltaY * 0.0012), ZMIN, ZMAX);
+  if (z1 === z0) return;
+  const h = groundHit(e.clientX, e.clientY, new THREE.Vector3());
+  cam.zoom = z1; cam.auto = false;
+  if (h) { const s = z1 / z0; cam.target.x = h.x + (cam.target.x - h.x) * s; cam.target.z = h.z + (cam.target.z - h.z) * s; clampTarget(); }
+  updateCamera(); hideHint();
+}, { passive: false });
+$('bView').addEventListener('click', resetView);
+function toggleProbes() { S.showProbes = !S.showProbes; $('bProbes').setAttribute('aria-pressed', String(S.showProbes)); probeLines.visible = S.showProbes && S.mode === 'battle'; }
+$('bProbes').addEventListener('click', toggleProbes);
 
-const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.08), hit = new THREE.Vector3();
 function onTap(cx, cy) {
   if (S.mode !== 'battle' || !S.battle) return;
-  const r = canvas.getBoundingClientRect();
-  ndc.set(((cx - r.left) / r.width) * 2 - 1, -((cy - r.top) / r.height) * 2 + 1);
-  ray.setFromCamera(ndc, camera);
-  if (!ray.ray.intersectPlane(plane, hit)) return;
+  if (!groundHit(cx, cy)) return;
   const u = (hit.x + SIZE / 2) / SIZE, v = (SIZE / 2 - hit.z) / SIZE;
   const x = Math.floor(u * N), y = Math.floor(v * N);
   if (x < 0 || y < 0 || x >= N || y >= N || S.battle.dish.terrain[y * N + x] === T_VOID) { selectCell(-1); return; }
@@ -1335,9 +1708,12 @@ function setMode(m) {
   app.className = 'mode-' + m;
   $('rack').hidden = m !== 'rack'; $('lab').hidden = m !== 'lab';
   $('hud').hidden = m !== 'battle'; $('transport').hidden = m !== 'battle';
-  if (m !== 'battle') { $('result').hidden = true; $('inspect').hidden = true; $('log').hidden = true; $('toast').style.opacity = 0; selectCell(-1); }
-  cam.auto = m !== 'battle'; cam.zoom = 1; cam.phi = m === 'battle' ? 0.72 : 0.82;
-  hint.textContent = m === 'battle' ? 'Drag to orbit · tap a cell to inspect' : 'Drag to orbit · pinch or scroll to zoom';
+  if (m !== 'battle') { $('result').hidden = true; $('inspect').hidden = true; $('log').hidden = true; $('toast').style.opacity = 0; $('keys').hidden = true; $('bView').hidden = true; selectCell(-1); }
+  $('bProbes').hidden = m !== 'battle'; probeLines.visible = S.showProbes && m === 'battle';
+  cam.auto = m !== 'battle'; cam.zoom = 1; cam.target.copy(HOME); cam.theta = 0; cam.phi = m === 'battle' ? 0.72 : 0.82;
+  hint.textContent = m === 'battle'
+    ? (COARSE ? 'One finger orbits · two fingers pan and zoom · tap a cell' : 'Drag to orbit · right-drag to pan · scroll to zoom in close · click a cell')
+    : (COARSE ? 'Drag to orbit · pinch to zoom' : 'Drag to orbit · right-drag to pan · scroll to zoom');
   hint.style.opacity = 1;
   requestAnimationFrame(resize);
 }
@@ -1379,10 +1755,11 @@ function renderRack() {
   R.appendChild(ol);
   R.insertAdjacentHTML('beforeend', `<details class="howto"><summary>How a culture plays out</summary><ol>
     <li><b>Feed.</b> Energy (ATP) comes from food your enzymes can digest. Every living cell costs upkeep, so a strain that grows faster than it eats will starve and wither from the edges.</li>
-    <li><b>Grow.</b> Vigor sets how fast new cells spread. Behaviour weights decide where: toward food, toward the rival, or wherever.</li>
+    <li><b>Grow.</b> Vigor sets how fast new cells spread. Sensing decides where: a strain only knows about food and rivals within its sensor range, remembers food it has found, and can send out exploratory spikes to find more.</li>
     <li><b>Fight.</b> Touching cells engulf each other each minute. Density, acids, rinds and slimes decide who gives ground.</li>
     <li><b>Stay connected.</b> Cells cut off from a nucleus wither. Lose every nucleus and the whole strain collapses.</li>
     <li><b>Win.</b> Wipe out the rival, or hold more of the dish when the 12-hour incubation ends.</li>
+    <li><b>Zoom in.</b> Scroll to get close and right-drag to pan. New growth is a sparse tendril that thickens into lace, sheets and pulsing veins as it matures; rival tendrils creep into thin cells and wrestle for them, and every attack has its own look.</li>
     <li><b>Study.</b> Every battle is recorded minute by minute. Rewind, step and tap cells to see why it went the way it did.</li>
   </ol></details>
   <button class="linkbtn" id="resetProg">Reset all progress</button>`);
@@ -1396,7 +1773,7 @@ function previewLevel(i) {
   if (!renderer) return;
   const b = new Battle(i, S.mode === 'lab' ? S.genome : (prog.genomes[i] || DEFAULT_GENOME), LEVELS[i].rival);
   if (!world || world.dish.level !== i) { buildWorld(b.dish); }
-  S.preview = b; shown.battle = null;
+  S.preview = b; shown.battle = null; setGenes(b);
   showFrame(b, 0, 0);
 }
 
@@ -1445,7 +1822,7 @@ function renderLab() {
       <div class="row"><span class="lbl">Food on the plate</span><div class="chips">${foodTags}</div></div>
       ${hz.length ? `<div class="row"><span class="lbl">Terrain</span><div class="chips">${hz.join('')}</div></div>` : ''}
       <div class="row"><span class="lbl">Rival specimen</span><span class="rival-name">${esc(rv.name)}</span>
-        <span class="rival-stats">Vigor ${rv.vigor} · Density ${rv.density} · Food ${rv.taxis.food} / Hunt ${rv.taxis.hunt} / Wander ${rv.taxis.wander}</span>
+        <span class="rival-stats">Vigor ${rv.vigor} · Density ${rv.density} · Senses ${SENSE_RANGE[rv.sense]} cells · Food ${rv.taxis.food} / Hunt ${rv.taxis.hunt} / Explore ${rv.taxis.explore}</span>
         <div class="chips">${rv.genes.map(id => `<span class="tag">${esc(GENE_BY_ID[id].name)}</span>`).join('')}</div></div>
     </div>
     <div class="sec"><div class="sec-h"><h3>Strain</h3><small>your plasmodium’s name</small></div><input class="name-in" id="strainName" maxlength="20" value="${esc(prog.name)}" aria-label="Strain name"></div>
@@ -1454,8 +1831,11 @@ function renderLab() {
       ${traitRow('density', 'Density', 'Thicker cytoplasm: more HP and stronger engulfing, but pricier growth and upkeep.')}
       <div class="derived"><span>Cell HP <b>${sideD.maxHP}</b></span><span>Growth <b>${sideD.growCost.toFixed(1)}</b> ATP/cell</span><span>Upkeep <b>${(sideD.upkeep * 100).toFixed(2)}</b> ATP per 100 cells/min</span><span>Engulf <b>${sideD.engulf.toFixed(1)}</b> dmg</span></div>
     </div>
-    <div class="sec"><div class="sec-h"><h3>Behaviour</h3><small>where new growth goes</small></div>
-      ${slider('food', 'Seek food')}${slider('hunt', 'Hunt rival')}${slider('wander', 'Wander')}
+    <div class="sec"><div class="sec-h"><h3>Sensing</h3><small>what it notices, and what it does about it</small></div>
+      ${traitRow('sense', 'Sensor range', `Senses food and rival tissue up to <b>${SENSE_RANGE[g.sense]} cells</b> from any part of its body. Granite blocks it. Food it has found stays remembered.`)}
+      ${traitRow('taxis.food', 'Seek food', 'How hard growth pulls toward remembered food. At 0 it ignores food it has sensed.')}
+      ${traitRow('taxis.hunt', 'Hunt rival', 'How hard growth pushes toward rival tissue in range, and how readily it infiltrates thin rival cells.')}
+      ${traitRow('taxis.explore', 'Explore', 'How many exploratory spikes it keeps reaching into open agar to find food and the rival. At 0 it grows as a blind blob.')}
     </div>
     ${['Metabolism', 'Defense', 'Offense', 'Network'].map(cat => `<div class="sec"><div class="sec-h"><h3>${cat}</h3><small>${CAT_NOTE[cat]}</small></div><div class="genes">${GENES.filter(x => x.cat === cat).map(geneCard).join('')}</div></div>`).join('')}
   </div>
@@ -1463,9 +1843,9 @@ function renderLab() {
   $('labBack').addEventListener('click', () => { setMode('rack'); renderRack(); previewLevel(S.level); });
   $('strainName').addEventListener('input', e => { prog.name = e.target.value.trim() || 'Strain P-01'; save(); });
   Lab.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => {
-    const [k, d] = b.dataset.step.split(':'); const v = clamp(g[k] + (+d), 1, 5); if (v !== g[k]) { g[k] = v; refreshLab(); }
+    const [k, d] = b.dataset.step.split(':'), drive = k.startsWith('taxis.'), key = drive ? k.slice(6) : k, obj = drive ? g.taxis : g;
+    const v = clamp(obj[key] + (+d), drive ? 0 : 1, 5); if (v !== obj[key]) { obj[key] = v; refreshLab(); }
   }));
-  Lab.querySelectorAll('input[type=range]').forEach(r => r.addEventListener('input', () => { g.taxis[r.dataset.k] = +r.value; r.nextElementSibling.value = r.value; persistGenome(); }));
   Lab.querySelectorAll('.gene').forEach(b => b.addEventListener('click', () => {
     const id = b.dataset.id, G = GENE_BY_ID[id]; if (!isolated(G)) return;
     const k = g.genes.indexOf(id); if (k >= 0) g.genes.splice(k, 1); else g.genes.push(id);
@@ -1477,14 +1857,11 @@ function renderLab() {
 function refreshLab() { const st = $('panel').scrollTop; renderLab(); $('panel').scrollTop = st; persistGenome(); previewLevel(S.level); }
 function persistGenome() { prog.genomes[S.level] = cloneG(S.genome); prog.lastGenome = cloneG(S.genome); save(); }
 function traitRow(k, name, desc) {
-  const v = S.genome[k];
-  return `<div class="trait"><span class="tn">${name} <span class="cost">${TRAIT_COST[v]} kb</span></span>
-    <div class="stepper"><button data-step="${k}:-1" aria-label="Lower ${name}" ${v <= 1 ? 'disabled' : ''}>−</button><span class="pips" aria-label="${name} ${v} of 5">${[1, 2, 3, 4, 5].map(n => `<i class="${n <= v ? 'on' : ''}"></i>`).join('')}</span><button data-step="${k}:1" aria-label="Raise ${name}" ${v >= 5 ? 'disabled' : ''}>+</button></div>
+  const drive = k.startsWith('taxis.'), v = drive ? S.genome.taxis[k.slice(6)] : S.genome[k], lo = drive ? 0 : 1;
+  const cost = (drive ? DRIVE_COST : TRAIT_COST)[v];
+  return `<div class="trait"><span class="tn">${name} <span class="cost">${v === 0 ? 'off' : cost + ' kb'}</span></span>
+    <div class="stepper"><button data-step="${k}:-1" aria-label="Lower ${name}" ${v <= lo ? 'disabled' : ''}>−</button><span class="pips" aria-label="${name} ${v} of 5">${[1, 2, 3, 4, 5].map(n => `<i class="${n <= v ? 'on' : ''}"></i>`).join('')}</span><button data-step="${k}:1" aria-label="Raise ${name}" ${v >= 5 ? 'disabled' : ''}>+</button></div>
     <span class="td">${desc}</span></div>`;
-}
-function slider(k, label) {
-  const v = S.genome.taxis[k];
-  return `<div class="slider"><label for="tx-${k}">${label}</label><input type="range" id="tx-${k}" data-k="${k}" min="0" max="10" step="1" value="${v}"><output>${v}</output></div>`;
 }
 function geneCard(G) {
   const on = S.genome.genes.includes(G.id), iso = isolated(G);
@@ -1508,9 +1885,9 @@ function startBattle() {
   persistGenome();
   S.battle = new Battle(S.level, g, LEVELS[S.level].rival);
   S.battle.pname = prog.name || 'Strain P-01';
-  S.playhead = 0; S.playing = true; S.resultShown = false; S.shownEvt = -1; S.sel = -1;
+  S.playhead = 0; S.revealed = 0; S.playing = true; S.resultShown = false; S.shownEvt = -1; S.sel = -1; S.logN = -1;
   clearFx();
-  buildWorld(S.battle.dish); shown.battle = null;
+  buildWorld(S.battle.dish); shown.battle = null; setGenes(S.battle);
   setMode('battle');
   cam.theta = 0;
   $('hPName').textContent = S.battle.pname; $('hEName').textContent = LEVELS[S.level].rival.name;
@@ -1520,7 +1897,12 @@ function stepSim(budgetMs) {
   const b = S.battle; if (!b || b.done) return;
   const t0 = performance.now();
   while (!b.done && performance.now() - t0 < budgetMs) b.step();
-  if (b.events.length !== S.logN) { S.logN = b.events.length; renderLog(); S.shownEvt = -1; }
+}
+// Events are only listed once the playhead has reached them, so the log never gives away the ending.
+function visibleEvents() {
+  const evs = S.battle ? S.battle.events : [];
+  let n = 0; while (n < evs.length && evs[n].t <= S.revealed + 0.001) n++;
+  return n;
 }
 function lastTick() { return S.battle ? S.battle.frames.length - 1 : 0; }
 function setPlayIcon() {
@@ -1538,7 +1920,7 @@ function fireEvents(a, b) {
     if (ev.t > a && ev.t <= b) {
       const col = ev.side === 1 ? 0xf4c53c : ev.side === 2 ? 0xe2508a : 0xffffff;
       if (ev.type === 'spores') { for (const [f, to] of ev.shots) fxSpore(f, to, col); }
-      else if (ev.type !== 'recover') fxRing(ev.cell, col, ev.type === 'core' || ev.type === 'end' ? 2.2 : ev.type === 'contact' ? 1.6 : 1.1);
+      else if (ev.type !== 'recover' && ev.type !== 'scout') fxRing(ev.cell, col, ev.type === 'core' || ev.type === 'end' ? 2.2 : ev.type === 'contact' ? 1.6 : 1.1);
     }
   }
 }
@@ -1547,6 +1929,7 @@ function evText(ev) {
   const n = ev.side ? sideName(ev.side) : '';
   switch (ev.type) {
     case 'food': return `${n} reached ${FOOD_NAMES[ev.food].toLowerCase()}`;
+    case 'scout': return `${n} sensed ${FOOD_NAMES[ev.food].toLowerCase()}`;
     case 'contact': return 'First contact between the strains';
     case 'breach': return `${n} dissolved a granite wall`;
     case 'sever': return `${n} cut off: ${ev.n} cells severed from a nucleus`;
@@ -1562,8 +1945,10 @@ function evText(ev) {
 function evColor(ev) { return ev.side === 1 ? COL.p : ev.side === 2 ? COL.e : COL.n; }
 function renderLog() {
   if (!S.battle) return;
-  const ul = $('logList');
-  ul.innerHTML = S.battle.events.map((ev, k) => `<li><button data-k="${k}"><span class="tt">${fmt(ev.t)}</span><i class="dot" style="background:${evColor(ev)}"></i><span>${esc(evText(ev))}</span></button></li>`).join('');
+  const ul = $('logList'), n = visibleEvents();
+  S.logN = n;
+  ul.innerHTML = S.battle.events.slice(0, n).map((ev, k) => `<li><button data-k="${k}"><span class="tt">${fmt(ev.t)}</span><i class="dot" style="background:${evColor(ev)}"></i><span>${esc(evText(ev))}</span></button></li>`).join('')
+    + (S.battle.done && n >= S.battle.events.length ? '' : '<li><span class="tt" style="display:block;padding:8px;color:var(--faint)">… still incubating</span></li>');
   ul.querySelectorAll('button').forEach(b => b.addEventListener('click', () => { const ev = S.battle.events[+b.dataset.k]; S.playing = false; setPlayIcon(); seek(ev.t - 6); seek(ev.t, true); if (ev.cell >= 0) selectCell(ev.cell); }));
 }
 function updateToast() {
@@ -1588,35 +1973,49 @@ function updateHud() {
   $('hClock').textContent = fmt(t); $('tNow').textContent = fmt(t);
   const tot = cp + ce || 1;
   $('tugP').style.width = (cp / tot * 100) + '%'; $('tugE').style.width = (ce / tot * 100) + '%';
-  $('tEnd').textContent = b.done ? fmt(b.frames.length - 1) : fmt(MAXT);
+  $('tEnd').textContent = fmt(timelineTotal());
 }
 
 // --- scrubber ---
+// The share graph is only drawn as far as the viewer has watched (S.revealed); the rest sits under fog, so a first
+// viewing never leaks the outcome. Once the end has been seen the timeline shrinks to the real battle length.
 const scrub = $('scrub'); const sg = scrub.getContext('2d');
 let scrubDrag = null;
+function endSeen() { const b = S.battle; return !!(b && b.done && S.revealed >= b.frames.length - 1 - 0.5); }
+function timelineTotal() { return endSeen() ? S.battle.frames.length - 1 : MAXT; }
 function drawScrub() {
   const b = S.battle; if (!b) return;
   const dpr = Math.min(window.devicePixelRatio || 1, 2), w = scrub.clientWidth, h = scrub.clientHeight;
   if (scrub.width !== Math.round(w * dpr) || scrub.height !== Math.round(h * dpr)) { scrub.width = Math.round(w * dpr); scrub.height = Math.round(h * dpr); }
   sg.setTransform(dpr, 0, 0, dpr, 0, 0); sg.clearRect(0, 0, w, h);
-  const total = b.done ? b.frames.length - 1 : MAXT, n = b.frames.length;
+  const total = timelineTotal();
+  const nR = Math.min(b.frames.length - 1, Math.ceil(S.revealed));
   const X = t => 6 + (t / Math.max(total, 1)) * (w - 12);
   const top = 10, bot = h - 6, H = bot - top;
-  // uncomputed
-  sg.fillStyle = 'rgba(255,255,255,0.03)'; sg.fillRect(X(n - 1), top, X(total) - X(n - 1), H);
+  // fog over what hasn't been watched yet
+  sg.fillStyle = 'rgba(255,255,255,0.03)'; sg.fillRect(X(nR), top, X(total) - X(nR), H);
+  if (nR < total) {
+    sg.save(); sg.strokeStyle = 'rgba(255,255,255,0.05)'; sg.lineWidth = 1; sg.beginPath();
+    for (let x = Math.ceil(X(nR) / 7) * 7; x < X(total); x += 7) { sg.moveTo(x, top); sg.lineTo(x - 6, bot); }
+    sg.stroke(); sg.restore();
+  }
   // share area: gold bottom, rival top
+  const share = t => { const p = b.stats.cells[1][t], e = b.stats.cells[2][t]; return p / Math.max(p + e, 1); };
   sg.beginPath(); sg.moveTo(X(0), bot);
-  for (let t = 0; t < n; t++) { const p = b.stats.cells[1][t], e = b.stats.cells[2][t]; sg.lineTo(X(t), bot - H * (p / Math.max(p + e, 1))); }
-  sg.lineTo(X(n - 1), bot); sg.closePath(); sg.fillStyle = 'rgba(244,197,60,0.55)'; sg.fill();
+  for (let t = 0; t <= nR; t++) sg.lineTo(X(t), bot - H * share(t));
+  sg.lineTo(X(nR), bot); sg.closePath(); sg.fillStyle = 'rgba(244,197,60,0.55)'; sg.fill();
   sg.beginPath(); sg.moveTo(X(0), top);
-  for (let t = 0; t < n; t++) { const p = b.stats.cells[1][t], e = b.stats.cells[2][t]; sg.lineTo(X(t), bot - H * (p / Math.max(p + e, 1))); }
-  sg.lineTo(X(n - 1), top); sg.closePath(); sg.fillStyle = 'rgba(226,80,138,0.45)'; sg.fill();
+  for (let t = 0; t <= nR; t++) sg.lineTo(X(t), bot - H * share(t));
+  sg.lineTo(X(nR), top); sg.closePath(); sg.fillStyle = 'rgba(226,80,138,0.45)'; sg.fill();
+  // reveal edge
+  if (nR < total) { sg.fillStyle = 'rgba(236,229,211,0.25)'; sg.fillRect(Math.round(X(nR)), top, 1, H); }
   sg.strokeStyle = 'rgba(255,255,255,0.15)'; sg.lineWidth = 1; sg.beginPath(); sg.moveTo(X(0), top + H / 2); sg.lineTo(X(total), top + H / 2); sg.stroke();
   // hour ticks
   sg.fillStyle = 'rgba(255,255,255,0.18)';
   for (let hr = 1; hr * 60 < total; hr++) sg.fillRect(Math.round(X(hr * 60)), bot - 3, 1, 3);
-  // events
+  // events seen so far
   for (const ev of b.events) {
+    if (ev.t > S.revealed + 0.001) break;
     sg.fillStyle = evColor(ev);
     const big = ev.type === 'core' || ev.type === 'end' || ev.type === 'contact';
     sg.beginPath(); sg.arc(X(ev.t), 5, big ? 3.2 : 2, 0, Math.PI * 2); sg.fill();
@@ -1627,9 +2026,8 @@ function drawScrub() {
   sg.beginPath(); sg.arc(px, h / 2, 5, 0, Math.PI * 2); sg.fill();
 }
 function scrubAt(clientX) {
-  const b = S.battle, r = scrub.getBoundingClientRect();
-  const total = b.done ? b.frames.length - 1 : MAXT;
-  const t = clamp((clientX - r.left - 6) / (r.width - 12), 0, 1) * total;
+  const r = scrub.getBoundingClientRect();
+  const t = clamp((clientX - r.left - 6) / (r.width - 12), 0, 1) * timelineTotal();
   seek(t);
 }
 scrub.addEventListener('pointerdown', e => { scrub.setPointerCapture(e.pointerId); scrubDrag = { was: S.playing }; S.playing = false; setPlayIcon(); scrubAt(e.clientX); });
@@ -1657,7 +2055,7 @@ $('bBack').addEventListener('click', () => stepBy(-1));
 $('bFwd').addEventListener('click', () => stepBy(1));
 $('bPrevEv').addEventListener('click', () => jumpEvent(-1));
 $('bNextEv').addEventListener('click', () => jumpEvent(1));
-$('bSpeed').addEventListener('click', () => { const k = (SPEEDS.indexOf(S.speed) + 1) % SPEEDS.length; S.speed = SPEEDS[k]; $('bSpeed').textContent = (S.speed < 1 ? (S.speed === 0.5 ? '½' : '¼') : S.speed) + '×'; });
+$('bSpeed').addEventListener('click', () => { const k = (SPEEDS.indexOf(S.speed) + 1) % SPEEDS.length; S.speed = SPEEDS[k]; $('bSpeed').textContent = SPEED_LBL[S.speed] + '×'; });
 $('bLog').addEventListener('click', () => { $('log').hidden = !$('log').hidden; });
 $('logX').addEventListener('click', () => { $('log').hidden = true; });
 $('bLab').addEventListener('click', () => { S.playing = false; openLab(S.level); });
@@ -1667,6 +2065,8 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'ArrowLeft') { e.preventDefault(); stepBy(e.shiftKey ? -10 : -1); }
   else if (e.key === 'ArrowRight') { e.preventDefault(); stepBy(e.shiftKey ? 10 : 1); }
   else if (e.key === '[') jumpEvent(-1); else if (e.key === ']') jumpEvent(1);
+  else if (e.key === 'Home' || e.key === '0') resetView();
+  else if (e.key === 'p' || e.key === 'P') toggleProbes();
 });
 
 // --- inspector ---
@@ -1686,16 +2086,20 @@ function updateInspect() {
   let terr = TERR_NAMES[b.dish.terrain[i]];
   if (b.dish.terrain[i] === T_ROCK) terr = F.matter[i] > 0 ? `Granite · ${Math.round(F.matter[i] / 255 * 100)}% intact` : 'Granite (dissolved)';
   const food = b.dish.food0[i] > 0 ? `${FOOD_NAMES[b.dish.foodType[i]]} · ${Math.round(F.matter[i] / 255 * 100)}% left` : 'None';
-  let occ = '<dd>Empty agar</dd>';
+  let occ = '<dd>Empty agar</dd>', body = '';
   if (o) {
     const Sd = b.sides[o], v = F.dens[i * 4 + o - 1] / 255, hpv = Math.max(0, (v - 0.3) / 0.7) * Sd.maxHP;
     const status = [(f & 4) ? 'dormant' : '', (f & 8) ? 'severed' : '', i === Sd.core ? 'main nucleus' : ''].filter(Boolean).join(', ');
     occ = `<dd><span style="color:${o === 1 ? COL.p : COL.e};font-weight:600">${esc(sideName(o))}</span>${status ? ' · ' + status : ''}<div>${hpv.toFixed(1)} / ${Sd.maxHP} HP</div><div class="hpbar"><i style="width:${hpv / Sd.maxHP * 100}%;background:${o === 1 ? COL.p : COL.e}"></i></div></dd>`;
+    const mass = F.aux[i * 4] / 255, vein = F.aux[i * 4 + 1] / 255, ct = F.aux[i * 4 + 3] / 255;
+    const kind = mass < 0.3 ? 'sparse tendril' : mass < 0.6 ? 'lace' : 'thick sheet';
+    body = `<dt>Body</dt><dd>${kind} · ${Math.round(mass * 100)}% mass${vein > 0.45 ? ` · <span style="color:${o === 1 ? COL.p : COL.e}">vein</span> ${Math.round(vein * 100)}%` : ''}</dd>`;
+    if (ct > 0.01) body += `<dt>Contested</dt><dd><span style="color:${o === 1 ? COL.e : COL.p};font-weight:600">${esc(sideName(3 - o))}</span> tendrils hold ${Math.round(ct * 100)}%<div class="hpbar"><i style="width:${ct * 100}%;background:${o === 1 ? COL.e : COL.p}"></i></div></dd>`;
   }
   const src = f >> 4, dm = F.dens[i * 4 + 3] / 70;
   const hurt = src ? `<dt>This minute</dt><dd><span style="color:${SRC_COL[src]}">●</span> ${SRC_NAMES[src]} · −${dm.toFixed(1)} HP</dd>` : '';
   $('inspect').innerHTML = `<header><b>Cell ${i % N}, ${Math.floor(i / N)} <span class="tt" style="font-family:var(--f-mono);font-size:11px;color:var(--faint);font-weight:400">at ${fmt(t)}</span></b><button class="x" id="inspX" aria-label="Close inspector">✕</button></header>
-    <dl><dt>Ground</dt><dd>${terr}</dd><dt>Food</dt><dd>${food}</dd><dt>Occupant</dt>${occ}${hurt}</dl>`;
+    <dl><dt>Ground</dt><dd>${terr}</dd><dt>Food</dt><dd>${food}</dd><dt>Occupant</dt>${occ}${body}${hurt}</dl>`;
   $('inspX').addEventListener('click', () => selectCell(-1));
 }
 
@@ -1711,12 +2115,15 @@ function analyze(b) {
     const G = GENE_BY_ID[FOOD_ENZ[f]];
     notes.push(`${FOOD_NAMES[f]} sat untouched: about ${Math.round(uneaten[f] * YIELD[f])} ATP your strain couldn’t digest. ${iso(G.id) ? G.name + ' would unlock it.' : 'You’ll need an enzyme you haven’t isolated yet.'}`);
   }
+  const missed = [0, 0, 0, 0];
+  b.dish.piles.forEach((pl, pid) => { if (P.eat[pl.type] && !P.known.has(pid)) for (const i of pl.cells) missed[pl.type] += b.dish.food0[i]; });
+  for (const f of [3, 2, 1]) if (missed[f] > 150) notes.push(`${FOOD_NAMES[f]} worth about ${Math.round(missed[f] * YIELD[f])} ATP was never discovered. Raise Sensor range or Explore to find it.`);
   if (P.starveTicks > 30) notes.push(`Your strain starved for ${P.starveTicks} min. It grew faster than it could feed: lower Vigor or Density, add Vein Pruning, or raise Seek food.`);
   if (share(S_ACID) > 0.3 && !has('mucus')) notes.push(`Acid did ${Math.round(share(S_ACID) * 100)}% of your damage. ${iso('mucus') ? 'Alkaline Slime neutralises most of it.' : 'A slime gene against acid is coming.'}`);
   if (share(S_ENGULF) > 0.45 && !has('chitin') && P.lost[S_ENGULF] > 40) notes.push(`Engulfing did ${Math.round(share(S_ENGULF) * 100)}% of your damage. Chitin Rind halves it; more Density makes cells tougher.`);
   if (share(S_TOXIN) > 0.2 && !has('mucus')) notes.push('The rival’s antibiotic haze ate your front line. Alkaline Slime blunts it.');
-  if (P.lost[S_SALT] > 15 && !has('osmo')) notes.push(`${P.lost[S_SALT]} cells died on salt crust. ${iso('osmo') ? 'Osmotic Pumps make you immune.' : 'Lower Wander so growth avoids the crust.'}`);
-  if (P.lost[S_UV] > 15 && !has('chloro')) notes.push(`${P.lost[S_UV]} cells burned under the lamp. ${iso('chloro') ? 'An Algal Symbiont turns that light into food.' : 'Lower Wander to keep out of the light.'}`);
+  if (P.lost[S_SALT] > 15 && !has('osmo')) notes.push(`${P.lost[S_SALT]} cells died on salt crust. ${iso('osmo') ? 'Osmotic Pumps make you immune.' : 'Lower Explore so growth stays off the crust.'}`);
+  if (P.lost[S_UV] > 15 && !has('chloro')) notes.push(`${P.lost[S_UV]} cells burned under the lamp. ${iso('chloro') ? 'An Algal Symbiont turns that light into food.' : 'Lower Explore to keep out of the light.'}`);
   if (P.lost[S_SEVER] > 25 && !has('fragment')) notes.push(`${P.lost[S_SEVER]} cells withered after being cut off from a nucleus. A broader front resists being severed${iso('fragment') ? ', and Autonomy keeps fragments alive' : ''}.`);
   const rocks = b.dish.terrain.some(t => t === T_ROCK);
   if (rocks && !has('acid') && b.result.winner !== 1 && E.acid) notes.push(`${LEVELS[b.level].rival.name.split(' ')[0]} burned through granite you had to walk around. ${iso('acid') ? 'Oxalic Acid opens the same shortcuts.' : ''}`);
@@ -1764,11 +2171,11 @@ function showResult() {
 }
 
 // ===================== Loop =====================
-let lastT = performance.now();
+let lastT = performance.now(), uiState = { keys: null, view: null };
 function frame(now) {
   const dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
   const time = now / 1000;
-  surfUniforms.uTime.value = time; beamMat.uniforms.uTime.value = time;
+  surfUniforms.uTime.value = time; beamMat.uniforms.uTime.value = time; probeMat.uniforms.uTime.value = time;
   if (S.mode === 'battle' && S.battle) {
     const b = S.battle;
     stepSim(b.frames.length - S.playhead < 60 ? 14 : 6);
@@ -1776,14 +2183,19 @@ function frame(now) {
       const prev = S.playhead;
       S.playhead = Math.min(lastTick(), S.playhead + dt * TPS * S.speed);
       fireEvents(prev, S.playhead);
-      if (b.done && S.playhead >= lastTick()) {
-        S.playing = false; setPlayIcon();
-        if (!S.resultShown) { S.resultShown = true; setTimeout(() => { if (S.mode === 'battle' && S.battle === b) showResult(); }, 700); }
-      }
+    }
+    if (S.playhead > S.revealed) S.revealed = S.playhead;
+    if (visibleEvents() !== S.logN) { renderLog(); S.shownEvt = -1; }
+    if (b.done && S.playhead >= lastTick() - 0.01 && !S.resultShown && !scrubDrag) {
+      S.playing = false; setPlayIcon(); S.resultShown = true;
+      setTimeout(() => { if (S.mode === 'battle' && S.battle === b) showResult(); }, 700);
     }
     const t = Math.floor(S.playhead);
     showFrame(b, t, S.playhead - t);
     updateHud(); updateToast(); drawScrub(); updateInspect();
+    const keys = cam.zoom < 0.55, view = viewMoved() || Math.abs(cam.theta) > 0.05;
+    if (keys !== uiState.keys) { uiState.keys = keys; $('keys').hidden = !keys; }
+    if (view !== uiState.view) { uiState.view = view; $('bView').hidden = !view; }
   } else if (S.preview) {
     showFrame(S.preview, 0, 0);
   }
