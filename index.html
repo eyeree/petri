@@ -265,6 +265,13 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 
 .ib svg { width: 20px; height: 20px; }
 .ib.play { width: 58px; background: var(--gold); border-color: var(--gold); color: var(--gold-ink); }
 .ib.txt { width: auto; padding: 0 12px; font-family: var(--f-mono); font-size: 13px; }
+.speedwrap { position: relative; display: inline-grid; }
+.speedmenu { position: absolute; left: 50%; bottom: calc(100% + 6px); transform: translateX(-50%); z-index: 20; min-width: 112px; padding: 4px; display: grid; gap: 2px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: 0 10px 30px rgba(0,0,0,.45); }
+.speedmenu button { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; padding: 7px 10px; border: 0; border-radius: var(--r-sm); background: none; text-align: left; font-family: var(--f-mono); font-size: 13px; color: var(--ink); cursor: pointer; white-space: nowrap; }
+.speedmenu button:hover, .speedmenu button:focus-visible { background: var(--raised-2); outline-offset: -2px; }
+.speedmenu button[aria-checked="true"] { color: var(--gold); }
+.speedmenu button .tick { width: 14px; text-align: right; color: var(--gold); }
+.speedmenu button:not([aria-checked="true"]) .tick { visibility: hidden; }
 .controls .gap { flex: 1 1 0; max-width: 18px; }
 .nogl { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: var(--dim); }
 @media (max-width: 420px) {
@@ -317,7 +324,10 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 
       <button class="ib" id="bFwd" aria-label="Step forward one minute" title="Step forward"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button>
       <button class="ib" id="bNextEv" aria-label="Next event" title="Next event"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l10-7z"/></svg></button>
       <span class="gap"></span>
-      <button class="ib txt" id="bSpeed" aria-label="Playback speed">1×</button>
+      <span class="speedwrap">
+        <button class="ib txt" id="bSpeed" aria-label="Playback speed" aria-haspopup="menu" aria-expanded="false" aria-controls="speedMenu" title="Playback speed">1×</button>
+        <div class="speedmenu" id="speedMenu" role="menu" aria-label="Playback speed" hidden></div>
+      </span>
       <button class="ib" id="bLog" aria-label="Battle log" title="Battle log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2" fill="currentColor"/><circle cx="4.5" cy="12" r="1.2" fill="currentColor"/><circle cx="4.5" cy="18" r="1.2" fill="currentColor"/></svg></button>
     </div>
   </footer>
@@ -384,6 +394,11 @@ const SENSE_RANGE = [0, 5, 9, 13, 18, 26]; // cells a strain can sense from any 
 const PROBE_EVERY = 10, PROBE_TTL = 30, PROBE_REACH = 22; // exploration spikes: refill interval, lifetime, length (cells)
 const DOM_SHARE = 0.9, DOM_TICKS = 30, DOM_MIN = 200; // overrun: hold 90% of living tissue for 30 min with a real body
 const RETRACT_RATE = 0.02, RETRACT_UNTIL = 20; // a starving fragment withdraws up to 2% of its cells a minute until its pool is back above 20 ATP
+const RETRACT_JITTER = 3; // cells of randomness in the withdrawal order, so a famine frays the edge instead of peeling a neat ring
+const GROW_TENSION = 0.03; // growth score per own neighbour of a candidate cell: fronts stay cohesive instead of fraying into threads
+// Walking distance: a straight step costs DW, a diagonal DD (7/5 ≈ √2). Distance fields are therefore near-Euclidean, in
+// units of 1/DW cell, and their level sets are octagons rather than the squares a plain 8-neighbour BFS produces.
+const DW = 5, DD = 7, DI = 1 / DW;
 const cl01 = (v, a, b) => Math.max(a, Math.min(b, v));
 
 // Genomes: { vigor 1-5, density 1-5, sense 1-5, genes [], taxis { food 0-5, hunt 0-5, explore 0-5 } }.
@@ -608,6 +623,7 @@ function Battle(levelIdx, genomeP, genomeE) {
   this.stamp = new Int32Array(NN); this.stampId = 1;
   this.tmpA = new Uint8Array(NN); this.tmpB = new Uint8Array(NN);
   this.candJ = new Int32Array(NN); this.candS = new Float32Array(NN); this.candK = new Uint8Array(NN); this.candF = new Int32Array(NN);
+  this.kids = new Uint8Array(NN); this.bq = Array.from({ length: 32 }, () => []); // Dial's buckets: one per distance, modulo 32 (wider than any step cost)
   this.rnd = rng(9001 + levelIdx * 131);
   const mk = (g, core) => {
     const s = deriveSide(g);
@@ -692,22 +708,33 @@ Battle.prototype.label = function (s) {
 // Routing tree from each fragment's hub. Among equal-distance candidates a cell attaches to the neighbour that
 // carried the most flow last minute (positive feedback), and subtree flow (1 per cell + food intake) accumulates.
 Battle.prototype.connect = function (s) {
-  const S = this.sides[s], dist = this.dist[s], owner = this.owner, q = this.queue, par = this.parent, flow = this.flow, fp = this.flowPrev, intake = this.intake, isRoot = this.isRoot;
+  const S = this.sides[s], dist = this.dist[s], owner = this.owner, q = this.queue, par = this.parent, flow = this.flow, fp = this.flowPrev, intake = this.intake, isRoot = this.isRoot, kids = this.kids, bq = this.bq;
   dist.fill(-1);
-  let h = 0, t = 0;
-  for (const F of S.frags) { const r = F.hub; dist[r] = 0; par[r] = -1; q[t++] = r; }
-  while (h < t) {
-    const i = q[h++], d = dist[i] + 1, fi = fp[i] + ((i * 2654435761) >>> 29) * 0.07;
-    for (let k = 0; k < 8; k++) {
-      const j = NB[i * 8 + k];
-      if (j < 0 || owner[j] !== s) continue;
-      if (dist[j] < 0) { dist[j] = d; par[j] = i; q[t++] = j; }
-      else if (dist[j] === d) { const p = par[j]; if (fi > fp[p] + ((p * 2654435761) >>> 29) * 0.07) par[j] = i; }
+  // Dial's bucket queue over the DW/DD step costs: cells settle in order of walking distance, so q lists parents before
+  // children. Each cell adds a fixed 0/1 of its own to the cost of stepping onto it, so there is rarely an exact tie and
+  // trunks wander a little instead of running dead straight along the grid's diagonals.
+  let t = 0, pending = 0;
+  for (const F of S.frags) { const r = F.hub; dist[r] = 0; par[r] = -1; bq[0].push(r); pending++; }
+  for (let d = 0; pending > 0; d++) {
+    const list = bq[d & 31]; if (!list.length) continue;
+    for (let n = 0; n < list.length; n++) {
+      const i = list[n]; pending--;
+      if (dist[i] !== d) continue; // reached by a shorter way since it was queued
+      q[t++] = i;
+      const fi = fp[i] + ((i * 2654435761) >>> 29) * 0.07;
+      for (let k = 0; k < 8; k++) {
+        const j = NB[i * 8 + k];
+        if (j < 0 || owner[j] !== s) continue;
+        const nd = d + (k < 4 ? DW : DD) + (((j * 2246822519) >>> 27) & 1), dj = dist[j];
+        if (dj < 0 || nd < dj) { dist[j] = nd; par[j] = i; bq[nd & 31].push(j); pending++; }
+        else if (dj === nd) { const p = par[j]; if (fi > fp[p] + ((p * 2654435761) >>> 29) * 0.07) par[j] = i; }
+      }
     }
+    list.length = 0;
   }
   S.connected = t;
-  for (let k = 0; k < t; k++) flow[q[k]] = 0;
-  for (let k = t - 1; k >= 0; k--) { const i = q[k]; flow[i] += 1 + intake[i] * 6; const p = par[i]; if (p >= 0) flow[p] += flow[i]; }
+  for (let k = 0; k < t; k++) { flow[q[k]] = 0; kids[q[k]] = 0; }
+  for (let k = t - 1; k >= 0; k--) { const i = q[k]; flow[i] += 1 + intake[i] * 6; const p = par[i]; if (p >= 0) { flow[p] += flow[i]; kids[p]++; } }
   let fmax = 8;
   for (const F of S.frags) { if (flow[F.hub] > fmax) fmax = flow[F.hub]; F.maxD = 0; }
   S.flowMax = fmax;
@@ -719,38 +746,49 @@ Battle.prototype.connect = function (s) {
   for (const F of S.frags) isRoot[F.hub] = 1;
 };
 
-Battle.prototype.bfsFrom = function (out, isSource, canPass, maxDepth) {
-  const q = this.queue; let h = 0, t = 0;
-  const lim = maxDepth == null ? 65534 : maxDepth;
+// Multi-source walking-distance field (Dial's bucket queue over the DW/DD step costs). `out` holds distance ×DW, 65535
+// where unreachable; maxDepth is in cells. stepCost(j) is 0 where impassable, 1 on open ground, more where going is slow.
+Battle.prototype.bfsFrom = function (out, isSource, stepCost, maxDepth) {
+  const bq = this.bq, lim = maxDepth == null ? 65000 : Math.round(maxDepth * DW);
   out.fill(65535);
-  for (let i = 0; i < NN; i++) if (isSource(i)) { out[i] = 0; q[t++] = i; }
-  while (h < t) {
-    const i = q[h++], d = out[i] + 1;
-    if (d > lim) continue;
-    for (let k = 0; k < 8; k++) {
-      const j = NB[i * 8 + k];
-      if (j < 0 || out[j] !== 65535 || !canPass(j)) continue;
-      out[j] = d; q[t++] = j;
+  let pending = 0;
+  for (let i = 0; i < NN; i++) if (isSource(i)) { out[i] = 0; bq[0].push(i); pending++; }
+  for (let d = 0; pending > 0; d++) {
+    const list = bq[d & 31]; if (!list.length) continue;
+    for (let n = 0; n < list.length; n++) {
+      const i = list[n]; pending--;
+      if (out[i] !== d) continue;
+      for (let k = 0; k < 8; k++) {
+        const j = NB[i * 8 + k]; if (j < 0) continue;
+        const c = stepCost(j); if (!c) continue;
+        const nd = d + (k < 4 ? DW : DD) * c;
+        if (nd > lim || nd >= out[j]) continue;
+        out[j] = nd; bq[nd & 31].push(j); pending++;
+      }
     }
+    list.length = 0;
   }
 };
 
 // Sensing. A strain only perceives what lies within its sensor range of some cell it owns (walking distance, so
-// granite hides things unless the strain can dissolve it). Food piles it has sensed stay remembered; the rival is
-// only felt while in range. Growth then follows distance fields toward remembered food and sensed rival tissue.
+// granite hides things unless the strain can dissolve it, and even then it counts as slow going). Food piles it has
+// sensed stay remembered; the rival is only felt while in range. Growth then follows distance fields toward remembered
+// food and sensed rival tissue.
+const ROCK_STEP = 3; // walking-distance multiplier for granite an acid strain would have to dissolve on the way
 Battle.prototype.scent = function (s) {
   const S = this.sides[s], o = 3 - s, terr = this.terrain, food = this.food, ft = this.dish.foodType, owner = this.owner, pile = this.dish.pile, bd = this.bd[s];
-  const canPass = j => { const t = terr[j]; return t !== T_VOID && (t !== T_ROCK || S.acid); };
-  this.bfsFrom(bd, i => owner[i] === s, canPass, S.range);
+  const stepCost = j => { const t = terr[j]; return t === T_VOID ? 0 : t === T_ROCK ? (S.acid ? ROCK_STEP : 0) : 1; };
+  const R = S.range * DW;
+  this.bfsFrom(bd, i => owner[i] === s, stepCost, S.range);
   for (let i = 0; i < NN; i++) {
     const pid = pile[i];
-    if (pid < 0 || bd[i] > S.range || !S.eat[ft[i]] || S.known.has(pid)) continue;
+    if (pid < 0 || bd[i] > R || !S.eat[ft[i]] || S.known.has(pid)) continue;
     S.known.add(pid);
-    if (bd[i] > 1 && S.probes.length) S.probeFinds++;
-    if (bd[i] > 2 && S.scouts < 3 && this.tick > 0) { S.scouts++; this.event(s, 'scout', i, { food: ft[i] }); }
+    if (bd[i] > DW && S.probes.length) S.probeFinds++;
+    if (bd[i] > 2 * DW && S.scouts < 3 && this.tick > 0) { S.scouts++; this.event(s, 'scout', i, { food: ft[i] }); }
   }
-  this.bfsFrom(this.fd[s], i => (food[i] > 0.5 && pile[i] >= 0 && S.known.has(pile[i]) && terr[i] !== T_ROCK && owner[i] !== o) || (S.chloro && terr[i] === T_LIGHT && owner[i] === 0 && bd[i] <= S.range), canPass);
-  this.bfsFrom(this.ed[s], i => owner[i] === o && bd[i] <= S.range, canPass);
+  this.bfsFrom(this.fd[s], i => (food[i] > 0.5 && pile[i] >= 0 && S.known.has(pile[i]) && terr[i] !== T_ROCK && owner[i] !== o) || (S.chloro && terr[i] === T_LIGHT && owner[i] === 0 && bd[i] <= R), stepCost);
+  this.bfsFrom(this.ed[s], i => owner[i] === o && bd[i] <= R, stepCost);
 };
 
 // Exploration. Instead of wandering at random, a strain with Explore sends out up to that many probes at a time:
@@ -830,31 +868,37 @@ Battle.prototype.settle = function (s) {
   }
 };
 
-// Famine response. A starving fragment does not wither in place: it pulls back from its periphery (farthest from the
-// hub first, thinnest first, never cells that feed, fight or hold the hub) and recovers the energy held in each
-// withdrawn cell. The body is the reserve. Only a fragment with nothing left to withdraw takes starvation damage.
+// Famine response. A starving fragment does not wither in place: it pulls back from its periphery and recovers the
+// energy held in each withdrawn cell. The body is the reserve. Only tips of the routing tree go (cells with no
+// children), so the body never cuts itself apart; among tips the far, thin ones go first, with some jitter so the edge
+// frays instead of peeling in a neat ring. Hub, feeding, fighting and contested cells stay. Only a fragment with
+// nothing left to withdraw takes starvation damage.
 Battle.prototype.retract = function (s) {
-  const S = this.sides[s], owner = this.owner, comp = this.comp, dist = this.dist[s], mass = this.mass, intake = this.intake, cf = this.cflag, dorm = this.dorm, isRoot = this.isRoot, cellE = this.cellE, contest = this.contest;
+  const S = this.sides[s], owner = this.owner, comp = this.comp, dist = this.dist[s], mass = this.mass, intake = this.intake, cf = this.cflag, dorm = this.dorm, isRoot = this.isRoot, cellE = this.cellE, contest = this.contest, kids = this.kids, par = this.parent, rnd = this.rnd, key = this.candS;
   let any = false; for (const F of S.frags) if (F.starving) { any = true; F.cand = []; }
   if (!any) return;
   for (let i = 0; i < NN; i++) {
     if (owner[i] !== s) continue;
     const F = S.frags[comp[i]]; if (!F || !F.starving) continue;
     if (isRoot[i] || dorm[i] || intake[i] > 0 || (cf[i] & 2) || contest[i] > 0) continue;
+    key[i] = dist[i] * DI - mass[i] * 3 + rnd() * RETRACT_JITTER;
     F.cand.push(i);
   }
   for (const F of S.frags) {
     if (!F.starving) continue;
     const cand = F.cand; F.cand = null;
     if (!cand.length) { F.exhausted = true; continue; }
-    cand.sort((a, b) => (dist[b] - mass[b] * 3) - (dist[a] - mass[a] * 3));
-    let k = Math.max(1, Math.ceil(F.cells * RETRACT_RATE));
-    for (let q = 0; q < cand.length && k > 0 && F.energy <= RETRACT_UNTIL; q++, k--) {
+    cand.sort((a, b) => key[b] - key[a]);
+    let k = Math.max(1, Math.ceil(F.cells * RETRACT_RATE)), took = 0;
+    for (let q = 0; q < cand.length && k > 0 && F.energy <= RETRACT_UNTIL; q++) {
       const i = cand[q];
+      if (kids[i] > 0) continue; // not a tip: withdrawing it would strand the cells behind it
       F.energy += cellE[i] + S.growCost * 0.5 + mass[i] * MASS_COST * S.growCost;
       owner[i] = 0; this.hp[i] = 0; mass[i] = 0; contest[i] = 0; cellE[i] = 0; comp[i] = -1; dorm[i] = 0;
-      F.cells--; S.retracted++;
+      const p = par[i]; if (p >= 0) kids[p]--;
+      F.cells--; S.retracted++; k--; took++;
     }
+    if (!took && F.energy <= RETRACT_UNTIL) F.exhausted = true;
     if (F.energy > RETRACT_UNTIL) F.starving = false;
   }
 };
@@ -1091,7 +1135,7 @@ Battle.prototype.step = function () {
 
 Battle.prototype.grow = function (s) {
   const S = this.sides[s]; if (!S.cells) return;
-  const owner = this.owner, terr = this.terrain, rnd = this.rnd, fd = this.fd[s], ed = this.ed[s], mass = this.mass, contest = this.contest, dorm = this.dorm, o = 3 - s, comp = this.comp;
+  const owner = this.owner, terr = this.terrain, rnd = this.rnd, fd = this.fd[s], ed = this.ed[s], mass = this.mass, contest = this.contest, dorm = this.dorm, o = 3 - s, comp = this.comp, food = this.food, pile = this.dish.pile;
   S.growAcc += S.k0 + S.k1 * Math.sqrt(S.cells);
   let n = Math.floor(S.growAcc); S.growAcc -= n;
   if (n <= 0) return;
@@ -1101,6 +1145,9 @@ Battle.prototype.grow = function (s) {
   if (!can.some(Boolean)) return;
   const sid = ++this.stampId, stamp = this.stamp, CJ = this.candJ, CS = this.candS, CK = this.candK, CF = this.candF;
   const probes = S.probes, np = probes.length, T = this.tick;
+  // the drives pull toward the nearest cells; jitter spanning about half a cell of that pull lets a front advance a few
+  // cells wide instead of as a single thread (under a round metric only one cell is ever exactly nearest)
+  const jit = 0.08 + 0.6 * (S.wF * 0.25 + S.wH * 0.2);
   let m = 0;
   for (let i = 0; i < NN; i++) {
     if (owner[i] !== s || dorm[i]) continue;
@@ -1115,9 +1162,10 @@ Battle.prototype.grow = function (s) {
       const t = terr[j]; if (t === T_VOID || t === T_ROCK) continue;
       stamp[j] = sid;
       let own = 0;
-      if (S.prune) { for (let q = 0; q < 8; q++) { const jj = NB[j * 8 + q]; if (jj >= 0 && owner[jj] === s) own++; } }
-      const f = fd[j], e = ed[j];
-      let sc = S.wF * (f >= 65535 ? 0 : Math.max(0, 40 - f) * 0.25) + S.wH * (e >= 65535 ? 0 : Math.max(0, 60 - e) * 0.2) + rnd() * 0.08;
+      for (let q = 0; q < 8; q++) { const jj = NB[j * 8 + q]; if (jj >= 0 && owner[jj] === s) own++; }
+      const f = fd[j] * DI, e = ed[j] * DI; // cells
+      let sc = S.wF * (fd[j] >= 65535 ? 0 : Math.max(0, 40 - f) * 0.25) + S.wH * (ed[j] >= 65535 ? 0 : Math.max(0, 60 - e) * 0.2) + rnd() * jit + own * GROW_TENSION;
+      if (fd[j] === 0 && S.wF > 0 && pile[j] >= 0 && food[j] > 0.5) sc += 1.0; // landing on food it can digest beats any mere approach (sunlit agar is not food)
       if (np) {
         const x = j % N, y = (j - x) / N;
         for (let p = 0; p < np; p++) {
@@ -1152,15 +1200,15 @@ Battle.prototype.prune = function (s) {
   const S = this.sides[s], owner = this.owner, rnd = this.rnd, ft = this.dish.foodType, food = this.food;
   for (let i = 0; i < NN; i++) {
     if (owner[i] !== s || this.dorm[i] || this.isRoot[i]) continue;
-    if (this.ed[s][i] <= 3) continue;
+    if (this.ed[s][i] <= 3 * DW) continue;
     if (ft[i] && food[i] > 0.5 && S.eat[ft[i]]) continue;
     if (S.chloro && this.terrain[i] === T_LIGHT) continue;
     if (this.vein[i] > 0.45) continue;
     let own = 0;
     for (let q = 0; q < 8; q++) { const j = NB[i * 8 + q]; if (j >= 0 && owner[j] === s) own++; }
     let p = 0;
-    if (own === 8 && this.fd[s][i] > 2) p = 0.14;
-    else if (own <= 1 && this.fd[s][i] > 4) p = 0.2;
+    if (own === 8 && this.fd[s][i] > 2 * DW) p = 0.14;
+    else if (own <= 1 && this.fd[s][i] > 4 * DW) p = 0.2;
     if (p && rnd() < p) {
       const F = this.fragOf(i); if (F) F.energy += S.growCost * 0.5 + this.cellE[i];
       owner[i] = 0; this.hp[i] = 0; this.mass[i] = 0; this.contest[i] = 0; this.cellE[i] = 0; this.comp[i] = -1;
@@ -1186,7 +1234,7 @@ Battle.prototype.sporulate = function (s) {
       if (owner[j] || t === T_VOID || t === T_ROCK || (t === T_SALT && !S.osmo) || (t === T_LIGHT && !S.chloro)) continue;
       let near = false; for (let q = 0; q < 8; q++) { const jj = NB[j * 8 + q]; if (jj >= 0 && owner[jj]) { near = true; break; } }
       if (near) continue;
-      const sc = fd[j] + rnd();
+      const sc = fd[j] * DI + rnd();
       if (sc < bs) { bs = sc; best = j; from = src; }
     }
     if (best >= 0 && MF.energy >= 12) {
@@ -1216,7 +1264,7 @@ Battle.prototype.record = function () {
       const v = Math.max(0, Math.min(1, this.hp[i] / S.maxHP));
       dens[i * 4 + o - 1] = Math.round((0.3 + 0.7 * v) * 255);
       const d = Math.max(0, this.dist[o][i]);
-      dens[i * 4 + 2] = Math.min(255, d * 3);
+      dens[i * 4 + 2] = Math.min(255, Math.round(d * 3 * DI));
       flags[i] = o | (this.dorm[i] ? 4 : 0) | (this.isRoot[i] ? 8 : 0);
       aux[i * 4] = Math.round(mass[i] * 255); aux[i * 4 + 1] = Math.round(vein[i] * 255);
       let code = 4;
@@ -1438,11 +1486,25 @@ const surfMat = new THREE.ShaderMaterial({
       float tx=1.0/uGridN;
       vec2 g=uv*uGridN; vec2 warp=warpAt(uv,nz); vec2 gw=g+warp;
       float px=(fwidth(gw.x)+fwidth(gw.y))*0.5+1e-5;
-      // the cell this fragment belongs to (warped, so borders wobble)
-      vec2 c0=floor(gw); vec2 c0uv=(c0+0.5)*tx;
-      vec4 d0=densAt(c0uv); vec4 a0=auxAt(c0uv); vec4 st=texture2D(uStatus,c0uv);
-      float o0=d0.r>0.004?1.0:(d0.g>0.004?2.0:0.0);
-      float occ=o0>0.5?1.0:0.0;
+      // soft occupancy: every occupied cell is a round bump 1.5 cells across (warped, so borders wobble); tissue is
+      // where the summed field passes 0.8, so corners round off, stair-steps become curves and a lone cell is a disc.
+      // The pixel belongs to the side with the stronger field and takes its per-cell attributes from that side's
+      // nearest cell. A cell's bump swells in and shrinks out across the tick crossfade.
+      vec2 c0=floor(gw);
+      float fP=0.0, fE=0.0, bP=0.0, bE=0.0; vec2 cP=c0, cE=c0;
+      for(int dy=-1;dy<=1;dy++) for(int dx=-1;dx<=1;dx++){
+        vec2 cc=c0+vec2(float(dx),float(dy)); vec4 d=densAt((cc+0.5)*tx);
+        vec2 rel=gw-(cc+0.5); float kk=max(0.0,1.0-dot(rel,rel)/2.25); kk*=kk;
+        float wp=kk*min(1.0,d.r/0.3), we=kk*min(1.0,d.g/0.3);
+        fP+=wp; fE+=we;
+        if(wp>bP){ bP=wp; cP=cc; } if(we>bE){ bE=we; cE=cc; }
+      }
+      float fT=fP+fE;
+      float o0=fT>0.0?(fP>=fE?1.0:2.0):0.0;
+      vec2 cA=fP>=fE?cP:cE; vec2 c0uv=(cA+0.5)*tx;
+      float ea=fwidth(fT)*0.7+1e-4;
+      float occ=smoothstep(0.8-ea,0.8+ea,fT+(nz.b-0.5)*0.25);
+      vec4 a0=auxAt(c0uv); vec4 st=texture2D(uStatus,c0uv);
       float code0=floor(texture2D(uAuxA,c0uv).b*255.0+0.5);
       float heal=mod(floor(code0/16.0),2.0), fight=floor(code0/32.0);
       // neighbourhood pass: smoothed mass, vein tubes along the routing tree, direction of the nearest rival
@@ -1476,7 +1538,7 @@ const surfMat = new THREE.ShaderMaterial({
       float lace=max(max(l1,l2),max(l3,sheet));
       float cov=occ*max(lace,tube);
       // relief: threads and veins are raised tubes, sheets are granular
-      float hF=cov*(0.02+0.05*m2)+tube*(0.03+0.10*tubeV)+sheet*(0.5-wy.x)*0.02+l3*0.01;
+      float hF=occ*(cov*(0.02+0.05*m2)+tube*(0.03+0.10*tubeV)+sheet*(0.5-wy.x)*0.02+l3*0.01);
       vec3 N=bump(normalize(vN),vPos,hF);
       vec3 L=normalize(vec3(-0.45,1.0,0.55)); vec3 V=normalize(cameraPosition-vPos); vec3 H=normalize(L+V);
       float diff=max(dot(N,L),0.0); float spec=pow(max(dot(N,H),0.0),60.0); float fres=pow(1.0-max(dot(N,V),0.0),3.0);
@@ -1509,7 +1571,8 @@ const surfMat = new THREE.ShaderMaterial({
       // sclerotia crust; the fragment's feeding hub glows softly
       vec3 crust=vec3(0.36,0.24,0.12)+base*0.12;
       mold=mix(mold,crust*(0.8+0.4*nz.b),st.r*0.8); alpha=max(alpha,st.r*occ*0.95);
-      mold+=base*st.g*(0.3+0.25*sin(uTime*3.5)); alpha=max(alpha,st.g*occ*0.9);
+      float hub=st.g*(1.0-smoothstep(0.3,0.85,length(gw-(cA+0.5)))); // a soft disc, not the whole cell
+      mold+=base*hub*(0.3+0.25*sin(uTime*3.5)); alpha=max(alpha,hub*occ*0.9);
       // defences: chitin rind darkens the thread edges, alkaline slime films the pockets
       float chi=o0<1.5?uGenes.x:uGenes.z; float muc=o0<1.5?uGenes.y:uGenes.w;
       float rim=smoothstep(0.0,0.3,cov)*(1.0-smoothstep(0.3,0.7,cov));
@@ -1903,7 +1966,7 @@ function setMode(m) {
   app.className = 'mode-' + m;
   $('rack').hidden = m !== 'rack'; $('lab').hidden = m !== 'lab';
   $('hud').hidden = m !== 'battle'; $('transport').hidden = m !== 'battle';
-  if (m !== 'battle') { $('result').hidden = true; $('inspect').hidden = true; $('log').hidden = true; $('toast').style.opacity = 0; $('keys').hidden = true; $('bView').hidden = true; selectCell(-1); }
+  if (m !== 'battle') { $('result').hidden = true; $('inspect').hidden = true; $('log').hidden = true; $('toast').style.opacity = 0; $('keys').hidden = true; $('bView').hidden = true; selectCell(-1); closeSpeedMenu(false); }
   $('bProbes').hidden = m !== 'battle'; probeLines.visible = S.showProbes && m === 'battle';
   cam.auto = m !== 'battle'; cam.zoom = 1; cam.target.copy(HOME); cam.theta = 0; cam.phi = m === 'battle' ? 0.72 : 0.82;
   hint.textContent = m === 'battle'
@@ -2350,7 +2413,42 @@ $('bBack').addEventListener('click', () => stepBy(-1));
 $('bFwd').addEventListener('click', () => stepBy(1));
 $('bPrevEv').addEventListener('click', () => jumpEvent(-1));
 $('bNextEv').addEventListener('click', () => jumpEvent(1));
-$('bSpeed').addEventListener('click', () => { const k = (SPEEDS.indexOf(S.speed) + 1) % SPEEDS.length; S.speed = SPEEDS[k]; $('bSpeed').textContent = SPEED_LBL[S.speed] + '×'; });
+// Speed dropdown: a popover listing every speed, so a specific rate is one pick away instead of a cycle.
+const speedMenu = $('speedMenu'), speedBtn = $('bSpeed');
+speedMenu.innerHTML = SPEEDS.map(v => `<button type="button" role="menuitemradio" data-v="${v}"><span>${SPEED_LBL[v]}×</span><span class="tick" aria-hidden="true">✓</span></button>`).join('');
+function setSpeed(v) {
+  S.speed = v; speedBtn.textContent = SPEED_LBL[v] + '×';
+  for (const b of speedMenu.children) b.setAttribute('aria-checked', String(+b.dataset.v === v));
+}
+function speedMenuOpen() { return !speedMenu.hidden; }
+function openSpeedMenu(focusCurrent) {
+  speedMenu.hidden = false; speedBtn.setAttribute('aria-expanded', 'true');
+  if (focusCurrent) (speedMenu.querySelector('[aria-checked="true"]') || speedMenu.firstElementChild).focus();
+}
+function closeSpeedMenu(refocus) {
+  if (!speedMenuOpen()) return;
+  speedMenu.hidden = true; speedBtn.setAttribute('aria-expanded', 'false');
+  if (refocus) speedBtn.focus();
+}
+speedBtn.addEventListener('click', () => { if (speedMenuOpen()) closeSpeedMenu(false); else openSpeedMenu(false); });
+speedBtn.addEventListener('keydown', e => {
+  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); openSpeedMenu(true); }
+});
+speedMenu.addEventListener('click', e => {
+  const b = e.target.closest('button[data-v]'); if (!b) return;
+  setSpeed(+b.dataset.v); closeSpeedMenu(true);
+});
+speedMenu.addEventListener('keydown', e => {
+  const items = [...speedMenu.children], i = items.indexOf(document.activeElement);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus(); }
+  else if (e.key === 'Home') { e.preventDefault(); items[0].focus(); }
+  else if (e.key === 'End') { e.preventDefault(); items[items.length - 1].focus(); }
+  else if (e.key === 'Escape' || e.key === 'Tab') { closeSpeedMenu(e.key === 'Escape'); }
+  e.stopPropagation();
+});
+document.addEventListener('pointerdown', e => { if (!e.target.closest('.speedwrap')) closeSpeedMenu(false); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSpeedMenu(true); }, true);
+setSpeed(S.speed);
 $('bLog').addEventListener('click', () => { $('log').hidden = !$('log').hidden; });
 $('logX').addEventListener('click', () => { $('log').hidden = true; });
 $('bLab').addEventListener('click', () => { S.playing = false; openLab(S.level); });
