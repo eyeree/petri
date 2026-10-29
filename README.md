@@ -47,6 +47,28 @@ ten minutes), `[` and `]` jump between events, Home resets the view, and P shows
 exploration probes. The timeline only reveals as far as you have watched, so a first
 viewing never gives away the ending.
 
+## Playing a friend
+
+The rack has a *Play a friend* card. It shows a connection code and a place to enter
+one: share yours with another breeder, or type in theirs, and the two browsers connect
+to each other directly over WebRTC. There is no server of ours in the way, no database
+and no account: [Trystero](https://github.com/dmotz/trystero) uses public Nostr relays
+only to carry the connection handshake, and the browsers talk to each other after that.
+
+Once connected, either player can change the plate and the kilobase cap. Each of you
+picks a saved strain that fits the cap (or saves the one in the lab) and presses Ready;
+the culture starts when both are. Both browsers run the same deterministic simulation
+from the same inputs, so nothing but the two genomes ever crosses the wire. Between
+matches you edit, save and switch strains exactly as in solo play. Every saved strain
+keeps a win and loss count against other players, and the *send* button beside a saved
+strain hands a copy to the other player, who can rename it before keeping it, or
+discard it.
+
+Sides on a plate are not symmetric, so the lobby says which corner you start in and has
+a Swap button. The code is good for the page's lifetime; reload and you get a new one.
+A direct connection needs both networks to allow WebRTC; without a TURN relay a pair
+of strict NATs may fail to connect.
+
 ## Development
 
 Everything is in `index.html`: the simulation, the three.js renderer and the interface.
@@ -57,6 +79,14 @@ set of genomes before and after a change.
 
 Serve the folder with any static server (for example `python3 -m http.server`) or just
 open `index.html`; there is no build step. The game is published with GitHub Pages.
+
+The versus code is the `Versus` section of the script. It loads Trystero from jsDelivr
+on demand, so solo play never touches the network. Messages are small JSON objects
+(`hello`, `set`, `ready`, `unready`, `name`, `share`, `verdict`, `bye`), every one
+numbered so that a copy arriving through a second shared room is dropped. The match
+inputs are the plate, the cap, which player takes the gold corner, and the two genomes;
+after the simulation each side sends a digest of its outcome and the result card notes
+if the two browsers disagreed.
 
 ## Reference material
 

@@ -254,6 +254,60 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 
 .card .acts .btn { flex: 1 1 120px; }
 .sub-h { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); }
 
+/* ---------- Versus: player vs player ---------- */
+.vs-card { margin-top: 18px; padding: 14px; border-radius: var(--r-md); background: var(--bench-2); border: 1px solid var(--line); display: grid; gap: 10px; }
+.vs-card p { margin: 0; color: var(--dim); font-size: 13px; max-width: 62ch; }
+.vs-card .btn { justify-self: start; }
+.lobby { display: grid; gap: 12px; padding: 12px; border-radius: var(--r-md); background: var(--bench-2); border: 1px solid var(--line); }
+.lobby .row { display: grid; gap: 6px; }
+.lobby .lbl { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); }
+.vcode { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.vcode b { font-family: var(--f-mono); font-size: 26px; font-weight: 500; letter-spacing: 0.14em; color: var(--gold); user-select: all; -webkit-user-select: all; }
+.vcode .btn, .join .btn, .sides .btn { min-height: 40px; padding: 0 14px; }
+.join { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.join .name-in { font-family: var(--f-mono); font-weight: 500; font-size: 17px; letter-spacing: 0.14em; text-transform: uppercase; min-height: 40px; padding: 6px 12px; }
+.join .name-in[aria-invalid="true"] { border-color: var(--bad); }
+.vstat { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 12.5px; color: var(--dim); }
+.vstat .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+.vstat.on .dot { background: var(--ok); box-shadow: 0 0 6px var(--ok); }
+.vstat.wait .dot { background: var(--gold); animation: blink 1.2s infinite; }
+.vstat.err { color: var(--bad); } .vstat.err .dot { background: var(--bad); }
+.vstat .linkbtn { margin: 0; padding: 0; }
+@keyframes blink { 50% { opacity: 0.25; } }
+.opp { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; padding: 10px 12px; border-radius: var(--r-sm); background: var(--raised); border: 1px solid var(--line); }
+.opp b { font-family: var(--f-display); font-weight: 700; font-size: 15px; color: var(--rival); font-style: italic; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.opp .sub { grid-column: 1 / -1; font-family: var(--f-mono); font-size: 11px; color: var(--dim); }
+.plates { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.plates button { padding: 5px 2px 4px; border-radius: 10px; background: var(--raised); border: 1px solid var(--line); cursor: pointer; display: grid; gap: 3px; justify-items: center; }
+.plates button img { width: 100%; max-width: 42px; aspect-ratio: 1; height: auto; border-radius: 50%; display: block; }
+.plates button span { font-family: var(--f-mono); font-size: 10px; color: var(--faint); }
+.plates button[aria-pressed="true"] { border-color: var(--gold); }
+.plates button[aria-pressed="true"] span { color: var(--gold); }
+.plates button:disabled { cursor: not-allowed; }
+.plates button:disabled:not([aria-pressed="true"]) { opacity: 0.5; }
+.cap, .sides { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
+.cap .val { font-family: var(--f-mono); font-size: 13px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.cap .val b { color: var(--ink); font-weight: 500; font-size: 17px; }
+.sides i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: -1px; margin-right: 6px; }
+.lobby .note { font-size: 12px; color: var(--faint); }
+.strain.vs { grid-template-columns: 1fr auto auto auto; }
+.strain .wl { font-family: var(--f-mono); font-size: 11px; color: var(--ok); white-space: nowrap; }
+.strain .ib.sent { width: auto; padding: 0 10px; font-family: var(--f-mono); font-size: 12px; color: var(--ok); border-color: #4a6b3c; }
+.inbox { display: grid; gap: 8px; }
+.gift { display: grid; gap: 6px; padding: 10px 12px; border-radius: var(--r-md); border: 1px dashed var(--gold-deep); background: var(--raised); }
+.gift .from { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--gold); }
+.gift .top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.gift .top b { font-family: var(--f-display); font-weight: 700; font-size: 15px; }
+.gift .kb { font-family: var(--f-mono); font-size: 11px; color: var(--dim); }
+.gift .sum { font-family: var(--f-mono); font-size: 11px; color: var(--faint); }
+.gift .warn { font-size: 12px; color: var(--dim); }
+.gift form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 4px; }
+.gift .name-in { flex: 1 1 140px; width: auto; font-size: 15px; min-height: 40px; padding: 6px 10px; }
+.gift .name-in[aria-invalid="true"] { border-color: var(--bad); }
+.gift .btn { min-height: 40px; padding: 0 14px; }
+.gift .err { flex-basis: 100%; color: var(--bad); font-size: 12.5px; }
+.hud .you { display: inline-block; font-family: var(--f-mono); font-size: 9.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink); opacity: 0.75; font-style: normal; margin: 0 6px; vertical-align: 2px; }
+
 /* ---------- Transport ---------- */
 .transport { flex: none; display: grid; gap: 8px; }
 .scrubwrap { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; }
@@ -1257,7 +1311,7 @@ const DEFAULT_GENOME = { vigor: 2, density: 2, sense: 2, genes: ['amylase', 'pro
 const DEFAULT_NAME = 'Strain P-01', NAME_MAX = 20;
 // The player breeds one strain at a time (prog.name + prog.genome) and carries it from plate to plate; plates differ only in their kb budget,
 // so a strain bred for a later plate can be loaded on an earlier one and simply shows as over budget until it is trimmed.
-// prog.strains is the rack of saved strains: { name, genome, t }, names unique ignoring case.
+// prog.strains is the rack of saved strains: { name, genome, t, w, l }, names unique ignoring case; w and l count matches against other players.
 const genomeKey = g => { const n = normGenome(g); return JSON.stringify([n.vigor, n.density, n.sense, n.taxis.food, n.taxis.hunt, n.taxis.explore, [...n.genes].sort()]); };
 const sameName = (a, b) => String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
 const freshProg = () => ({ cleared: [false, false, false, false, false, false], name: DEFAULT_NAME, genome: normGenome(DEFAULT_GENOME), strains: [] });
@@ -1269,7 +1323,7 @@ function migrateProg(s) {
   p.cleared = p.cleared.map((c, i) => !!s.cleared[i]);
   p.name = String(s.name || DEFAULT_NAME).slice(0, NAME_MAX);
   p.genome = normGenome(s.genome || s.lastGenome || old[Object.keys(old).pop()] || DEFAULT_GENOME);
-  p.strains = (Array.isArray(s.strains) ? s.strains : []).filter(x => x && x.genome).map(x => ({ name: String(x.name || DEFAULT_NAME).slice(0, NAME_MAX), genome: normGenome(x.genome), t: +x.t || 0 }));
+  p.strains = (Array.isArray(s.strains) ? s.strains : []).filter(x => x && x.genome).map(x => ({ name: String(x.name || DEFAULT_NAME).slice(0, NAME_MAX), genome: normGenome(x.genome), t: +x.t || 0, w: Math.max(0, +x.w || 0), l: Math.max(0, +x.l || 0) }));
   const seen = new Set([genomeKey(p.genome), ...p.strains.map(x => genomeKey(x.genome))]);
   for (const i of Object.keys(old)) {
     if (!LEVELS[+i] || !old[i]) continue;
@@ -1287,7 +1341,7 @@ const cloneG = g => normGenome(g);
 const strainAt = name => prog.strains.findIndex(s => sameName(s.name, name));
 
 // ---------------- App state ----------------
-const S = { mode: 'rack', level: 0, genome: cloneG(prog.genome), battle: null, libOpen: false, playhead: 0, revealed: 0, playing: false, speed: 1, sel: -1, resultShown: false, shownEvt: -1, lastFx: 0, logN: 0, showProbes: false };
+const S = { mode: 'rack', level: 0, genome: cloneG(prog.genome), battle: null, libOpen: false, playhead: 0, revealed: 0, playing: false, speed: 1, sel: -1, resultShown: false, shownEvt: -1, lastFx: 0, logN: 0, showProbes: false, pvp: null }; // pvp: the versus session (see Versus below), null when playing solo
 const SPEEDS = [0.125, 0.25, 0.5, 1, 2, 4], SPEED_LBL = { 0.125: '⅛', 0.25: '¼', 0.5: '½', 1: '1', 2: '2', 4: '4' };
 const TPS = 24; // ticks per second at 1x
 
@@ -1922,7 +1976,10 @@ function renderRack() {
     li.appendChild(b); ol.appendChild(li);
   });
   R.appendChild(ol);
-  R.insertAdjacentHTML('beforeend', `<details class="howto"><summary>How a culture plays out</summary><ol>
+  R.insertAdjacentHTML('beforeend', `<div class="vs-card"><div class="sec-h"><h3>Play a friend</h3><small>peer to peer</small></div>
+    <p>Fight your saved strains against another breeder's on any plate. Share a code, or enter theirs: the two browsers talk to each other directly, with no server, account or sign-in.</p>
+    <button class="btn" id="vsOpen">Set up a match</button></div>
+  <details class="howto"><summary>How a culture plays out</summary><ol>
     <li><b>Feed.</b> Energy (ATP) comes from food your enzymes can digest. Every living cell costs upkeep, so a strain that grows faster than it eats will starve and wither from the edges.</li>
     <li><b>Grow.</b> Vigor sets how fast new cells spread. Sensing decides where: a strain only knows about food and rivals within its sensor range, remembers food it has found, and can send out exploratory spikes to find more.</li>
     <li><b>Fight.</b> Touching cells engulf each other each minute. Density, acids, rinds and slimes decide who gives ground.</li>
@@ -1932,6 +1989,7 @@ function renderRack() {
     <li><b>Study.</b> Every battle is recorded minute by minute. Rewind, step and tap cells to see why it went the way it did.</li>
   </ol></details>
   <button class="linkbtn" id="resetProg">Reset all progress</button>`);
+  $('vsOpen').addEventListener('click', openVersus);
   $('resetProg').addEventListener('click', e => {
     const b = e.currentTarget;
     if (b.dataset.armed) { prog = freshProg(); save(); S.level = 0; S.genome = cloneG(prog.genome); renderProgress(); renderRack(); previewLevel(0); }
@@ -1961,7 +2019,8 @@ function dishFacts(i) {
   return { foods, rock, salt, light };
 }
 function openLab(i) {
-  if (!playable(i)) return;
+  if (S.pvp) { pvpLeaveBattle(); i = S.pvp.set.level; }
+  else if (!playable(i)) return;
   S.level = i;
   S.genome.genes = S.genome.genes.filter(id => GENE_BY_ID[id] && isolated(GENE_BY_ID[id]));
   setMode('lab');
@@ -1969,9 +2028,9 @@ function openLab(i) {
   previewLevel(i);
   $('panel').scrollTop = 0;
 }
-function renderLab() {
-  const i = S.level, L = LEVELS[i], g = S.genome, facts = dishFacts(i);
-  const Lab = $('lab');
+// Food and terrain chips for plate i, judged against genome g.
+function plateIntel(i, g) {
+  const facts = dishFacts(i);
   const foodTags = [1, 2, 3].filter(f => facts.foods[f] > 0).map(f => {
     const can = g.genes.includes(FOOD_ENZ[f]);
     return `<span class="tag ${can ? 'yes' : 'no'}"><i class="sw" style="background:${FOOD_COL[f]}"></i>${FOOD_NAMES[f]} <span class="mk">${can ? 'digests' : 'can’t digest'}</span></span>`;
@@ -1980,20 +2039,34 @@ function renderLab() {
   if (facts.rock) hz.push(`<span class="tag"><i class="sw" style="background:#4d4848"></i>Granite walls</span>`);
   if (facts.salt) hz.push(`<span class="tag ${g.genes.includes('osmo') ? 'yes' : 'no'}"><i class="sw" style="background:#cfd6da"></i>Salt crust <span class="mk">${g.genes.includes('osmo') ? 'immune' : '−1.1 HP/min'}</span></span>`);
   if (facts.light) hz.push(`<span class="tag ${g.genes.includes('chloro') ? 'yes' : 'no'}"><i class="sw" style="background:#e9cf86"></i>Sunlit agar <span class="mk">${g.genes.includes('chloro') ? 'feeds' : 'UV burns'}</span></span>`);
+  return `<div class="row"><span class="lbl">Food on the plate</span><div class="chips">${foodTags}</div></div>
+      ${hz.length ? `<div class="row"><span class="lbl">Terrain</span><div class="chips">${hz.join('')}</div></div>` : ''}`;
+}
+// The lab serves both solo play and versus: solo shows the plate's rival, versus shows the lobby (code, opponent, plate, cap, sides)
+// in its place and turns Inoculate into Ready. The strain, trait, sensing and gene sections are the same in both.
+function renderLab() {
+  const i = S.level, L = LEVELS[i], g = S.genome, vs = S.pvp;
+  const Lab = $('lab');
   const rv = L.rival;
   const sideD = deriveSide(g);
-  Lab.innerHTML = `<div class="lab-body">
-    <div><button class="back" id="labBack"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 5l-7 7 7 7"/></svg>Culture rack</button></div>
-    <div class="lab-title"><span class="eyebrow">${L.code} · Gene lab</span><h2>${esc(L.name)}</h2><p>${esc(L.blurb)}</p></div>
+  const head = vs
+    ? `<div class="lab-title"><span class="eyebrow">Versus · Gene lab</span><h2>${vsConnected() ? 'Set up the match' : 'Find a player'}</h2><p>${vsConnected()
+        ? 'Either of you can change the plate and the cap. Pick a saved strain that fits, then signal ready: the culture starts once you both are.'
+        : 'Share your code with another breeder, or enter theirs. The two browsers talk to each other directly; nothing is stored anywhere but your own machines.'}</p></div>
+    <div class="lobby" id="lobby"></div>`
+    : `<div class="lab-title"><span class="eyebrow">${L.code} · Gene lab</span><h2>${esc(L.name)}</h2><p>${esc(L.blurb)}</p></div>
     <div class="intel">
-      <div class="row"><span class="lbl">Food on the plate</span><div class="chips">${foodTags}</div></div>
-      ${hz.length ? `<div class="row"><span class="lbl">Terrain</span><div class="chips">${hz.join('')}</div></div>` : ''}
+      ${plateIntel(i, g)}
       <div class="row"><span class="lbl">Rival specimen</span><span class="rival-name">${esc(rv.name)}</span>
         <span class="rival-stats">Vigor ${rv.vigor} · Density ${rv.density} · Senses ${SENSE_RANGE[rv.sense]} cells · Food ${rv.taxis.food} / Hunt ${rv.taxis.hunt} / Explore ${rv.taxis.explore}</span>
         <div class="chips">${rv.genes.map(id => `<span class="tag">${esc(GENE_BY_ID[id].name)}</span>`).join('')}</div></div>
-    </div>
+    </div>`;
+  Lab.innerHTML = `<div class="lab-body">
+    <div><button class="back" id="labBack"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 5l-7 7 7 7"/></svg>${vs && vsConnected() ? 'Leave the match' : 'Culture rack'}</button></div>
+    ${head}
     <div class="sec"><div class="sec-h"><h3>Strain</h3><small id="strainStatus"></small></div>
       <div class="strain-row"><input class="name-in" id="strainName" maxlength="${NAME_MAX}" value="${esc(prog.name)}" placeholder="${DEFAULT_NAME}" aria-label="Strain name"><button class="btn" id="strainSave">Save</button></div>
+      <div class="inbox" id="inbox" hidden></div>
       <details class="lib" id="lib"${S.libOpen ? ' open' : ''}><summary>Saved strains<span class="n" id="libN"></span></summary><div id="libList"></div></details>
     </div>
     <div class="sec"><div class="sec-h"><h3>Traits</h3><small>costs rise steeply</small></div>
@@ -2009,11 +2082,12 @@ function renderLab() {
     </div>
     ${['Metabolism', 'Defense', 'Offense', 'Network'].map(cat => `<div class="sec"><div class="sec-h"><h3>${cat}</h3><small>${CAT_NOTE[cat]}</small></div><div class="genes">${GENES.filter(x => x.cat === cat).map(geneCard).join('')}</div></div>`).join('')}
   </div>
-  <div class="lab-foot"><div class="budget" id="budget"></div><button class="btn primary" id="inoc">Inoculate</button></div>`;
-  $('labBack').addEventListener('click', () => { setMode('rack'); renderRack(); previewLevel(S.level); });
-  $('strainName').addEventListener('input', e => { prog.name = e.target.value.trim() || DEFAULT_NAME; save(); renderLibrary(); });
+  <div class="lab-foot"><div class="budget" id="budget"></div><button class="btn primary" id="inoc">${vs ? 'Ready' : 'Inoculate'}</button></div>`;
+  $('labBack').addEventListener('click', () => { if (S.pvp) { leaveVersus(); return; } setMode('rack'); renderRack(); previewLevel(S.level); });
+  $('strainName').addEventListener('input', e => { prog.name = e.target.value.trim() || DEFAULT_NAME; save(); pvpTouched(); pvpNamed(); renderLibrary(); });
   $('strainSave').addEventListener('click', saveStrain);
   $('lib').addEventListener('toggle', e => { S.libOpen = e.target.open; });
+  if (vs) renderLobby();
   renderLibrary();
   Lab.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => {
     const [k, d] = b.dataset.step.split(':'), drive = k.startsWith('taxis.'), key = drive ? k.slice(6) : k, obj = drive ? g.taxis : g;
@@ -2024,10 +2098,10 @@ function renderLab() {
     const k = g.genes.indexOf(id); if (k >= 0) g.genes.splice(k, 1); else g.genes.push(id);
     refreshLab();
   }));
-  $('inoc').addEventListener('click', startBattle);
+  $('inoc').addEventListener('click', () => S.pvp ? pvpReady() : startBattle());
   updateBudget();
 }
-function refreshLab() { const st = $('panel').scrollTop; renderLab(); $('panel').scrollTop = st; persistGenome(); previewLevel(S.level); }
+function refreshLab() { pvpTouched(); const st = $('panel').scrollTop; renderLab(); $('panel').scrollTop = st; persistGenome(); previewLevel(S.level); }
 function persistGenome() { prog.genome = cloneG(S.genome); save(); }
 function traitRow(k, name, desc) {
   const drive = k.startsWith('taxis.'), v = drive ? S.genome.taxis[k.slice(6)] : S.genome[k], lo = drive ? 0 : 1;
@@ -2043,16 +2117,26 @@ function geneCard(G) {
     <span class="glyph">${iso ? GLYPH[G.cat] : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>'}</span>
     <span class="gn">${esc(G.name)}</span><span class="gc">${G.cost} kb</span><span class="gd">${desc}</span></button>`;
 }
+// Solo plates each have a budget; a versus match has the cap both players agreed on.
+const budgetNow = () => S.pvp ? S.pvp.set.cap : LEVELS[S.level].budget;
 function updateBudget() {
-  const c = genomeCost(S.genome), B = LEVELS[S.level].budget, over = c > B;
-  const bud = $('budget');
+  const bud = $('budget'); if (!bud) return;
+  const c = genomeCost(S.genome), B = budgetNow(), over = c > B;
   bud.className = 'budget' + (over ? ' over' : '');
-  bud.innerHTML = `<div class="bl"><span>Genome</span><span><b>${c}</b> / ${B} kb${over ? ' · over budget' : ''}</span></div><div class="meter"><i style="width:${Math.min(100, c / B * 100)}%"></i></div>`;
-  $('inoc').disabled = over;
+  bud.innerHTML = `<div class="bl"><span>Genome</span><span><b>${c}</b> / ${B} kb${over ? (S.pvp ? ' · over the cap' : ' · over budget') : ''}</span></div><div class="meter"><i style="width:${Math.min(100, c / B * 100)}%"></i></div>`;
+  const btn = $('inoc');
+  if (!S.pvp) { btn.disabled = over; return; }
+  const vs = S.pvp, ready = vs.me.ready, on = vsConnected();
+  btn.textContent = ready ? 'Cancel ready' : !on || strainInRack() ? 'Ready' : 'Save & ready';
+  btn.classList.toggle('primary', !ready);
+  btn.disabled = !on || (!ready && over);
+  btn.title = !on ? 'Waiting for a player to connect' : over ? 'Trim the genome to fit the cap' : ready ? 'Waiting for the other player' : '';
 }
 
 // ---------------- Strain rack: save, load, rename, delete ----------------
 const PEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L18 10l-4-4L4 16z"/><path d="M12.5 7.5l4 4"/></svg>';
+const SEND = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 3L10 14"/><path d="M21 3l-7 18-4-7-7-4z"/></svg>';
+const strainInRack = () => strainStatus() === 'saved' && strainAt(prog.name) >= 0;
 const STATUS_TXT = { saved: 'saved', dirty: 'unsaved changes', new: 'not saved' };
 // 'saved': the lab matches the strain saved under this name; 'dirty': saved under this name but edited since; 'new': nothing saved under this name.
 // The untouched default strain counts as saved: there is nothing to lose.
@@ -2069,18 +2153,22 @@ function renderLibrary() {
   const st = strainStatus(), stEl = $('strainStatus');
   stEl.textContent = STATUS_TXT[st]; stEl.className = 'st-' + st;
   $('strainSave').disabled = st === 'saved';
-  const list = $('libList'), B = LEVELS[S.level].budget, cur = strainAt(prog.name), n = prog.strains.length;
+  renderInbox();
+  const list = $('libList'), B = budgetNow(), cur = strainAt(prog.name), n = prog.strains.length, share = !!(S.pvp && vsConnected());
   $('libN').textContent = n ? ` · ${n}` : '';
   if (!n) { list.innerHTML = '<p class="lib-empty">Nothing saved yet. Save the strain above to keep it here, then load it on any plate.</p>'; return; }
   const order = prog.strains.map((s, i) => i).sort((a, b) => (prog.strains[b].t - prog.strains[a].t) || a - b);
   list.innerHTML = `<ul class="strains">${order.map(i => {
     const s = prog.strains[i], c = genomeCost(s.genome), over = c > B;
-    return `<li class="strain${i === cur ? ' cur' : ''}">
-      <button class="pick" data-i="${i}" aria-label="Load ${esc(s.name)}"><span class="top"><b>${esc(s.name)}</b><span class="kb${over ? ' over' : ''}">${c} kb${over ? ` · over this plate’s ${B}` : ''}</span></span>${strainSummary(s.genome)}</button>
+    const wl = s.w || s.l ? `<span class="wl" title="Wins and losses against other players">${s.w || 0} W · ${s.l || 0} L</span>` : '';
+    return `<li class="strain${i === cur ? ' cur' : ''}${share ? ' vs' : ''}">
+      <button class="pick" data-i="${i}" aria-label="Load ${esc(s.name)}"><span class="top"><b>${esc(s.name)}</b><span class="kb${over ? ' over' : ''}">${c} kb${over ? ` · over ${S.pvp ? 'the cap of' : 'this plate’s'} ${B}` : ''}</span>${wl}</span>${strainSummary(s.genome)}</button>
+      ${share ? `<button class="ib" data-share="${i}" aria-label="Send ${esc(s.name)} to ${esc(oppLabel())}" title="Send to ${esc(oppLabel())}">${SEND}</button>` : ''}
       <button class="ib" data-ren="${i}" aria-label="Rename ${esc(s.name)}" title="Rename">${PEN}</button>
       <button class="ib" data-del="${i}" aria-label="Delete ${esc(s.name)}" title="Delete">✕</button></li>`;
   }).join('')}</ul>`;
   list.querySelectorAll('[data-i]').forEach(b => b.addEventListener('click', () => loadStrain(+b.dataset.i)));
+  list.querySelectorAll('[data-share]').forEach(b => b.addEventListener('click', () => shareStrain(+b.dataset.share, b)));
   list.querySelectorAll('[data-ren]').forEach(b => b.addEventListener('click', () => renameUI(+b.dataset.ren)));
   list.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => {
     if (b.dataset.armed) { deleteStrain(+b.dataset.del); return; }
@@ -2089,7 +2177,8 @@ function renderLibrary() {
   }));
 }
 function saveStrain() {
-  const name = prog.name, k = strainAt(name), entry = { name, genome: cloneG(S.genome), t: Date.now() };
+  const name = prog.name, k = strainAt(name), prev = k >= 0 ? prog.strains[k] : null;
+  const entry = { name, genome: cloneG(S.genome), t: Date.now(), w: prev ? prev.w || 0 : 0, l: prev ? prev.l || 0 : 0 };
   if (k < 0) prog.strains.unshift(entry); else prog.strains[k] = entry;
   save(); renderLibrary();
 }
@@ -2144,21 +2233,340 @@ function askUnsaved(target, proceed) {
   $('mSave').focus();
 }
 
+// ===================== Versus: player vs player =====================
+// Two browsers find each other through Trystero: public Nostr relays carry only the WebRTC handshake, after which everything
+// goes over a direct data channel. No server of ours, no database, no accounts. Both sides run the same deterministic simulation
+// from the same inputs (plate, cap, sides, both genomes), so no frames are ever sent: the lobby exchanges settings, ready signals
+// carrying the genome to fight, shared strains, and a digest of the verdict once each side has simulated the match.
+// Rooms: a player's own code keeps its room open for the whole visit, so the code works even while they try someone else's.
+// Entering a code joins a second room. In your own room the first arrival is your opponent; in someone else's room only its
+// owner is (two strangers who enter the same code never get paired with each other). If two players enter each other's codes
+// they share both rooms; every message carries a sequence number so the copy that arrives through the second room is dropped.
+const TRYSTERO_URL = 'https://cdn.jsdelivr.net/npm/trystero@0.26.0/+esm';
+const VS_APP = 'myxo-petri-wars', VS_PROTO = 1, CAP_MIN = 8, CAP_MAX = 40, CAP_DEFAULT = 21, JOIN_PATIENCE = 25000;
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O or 1/I
+const normCode = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const fmtCode = c => c.slice(0, 3) + '-' + c.slice(3);
+const setKey = set => `${set.level}:${set.cap}:${set.swap ? 1 : 0}`;
+const vsConnected = () => !!(S.pvp && S.pvp.opp && S.pvp.opp.code);
+const oppLabel = () => (S.pvp && S.pvp.them.label) || 'the other player';
+function myCode() {
+  try { const c = normCode(sessionStorage.getItem('myxo.vs.code')); if (c.length === 6) return c; } catch (e) { }
+  const a = new Uint32Array(6); crypto.getRandomValues(a);
+  const c = Array.from(a, v => CODE_CHARS[v % 32]).join('');
+  try { sessionStorage.setItem('myxo.vs.code', c); } catch (e) { }
+  return c;
+}
+// Anything from the wire is untrusted: clamp settings, drop unknown genes, trim names.
+const netSet = s => { s = s && typeof s === 'object' ? s : {}; return { level: clamp(Math.round(+s.level || 0), 0, LEVELS.length - 1), cap: clamp(Math.round(+s.cap || CAP_DEFAULT), CAP_MIN, CAP_MAX), swap: !!s.swap }; };
+const netName = s => String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, NAME_MAX) || 'Unnamed strain';
+function netGenome(g) {
+  if (!g || typeof g !== 'object') return null;
+  try {
+    const n = normGenome({ ...g, genes: Array.isArray(g.genes) ? g.genes : [], taxis: g.taxis && typeof g.taxis === 'object' ? g.taxis : {} });
+    n.genes = [...new Set(n.genes.filter(id => typeof id === 'string' && GENE_BY_ID[id]))];
+    return n;
+  } catch (e) { return null; }
+}
+const freshThem = () => ({ ready: false, key: '', name: '', genome: null, label: '' });
+const THUMB_URL = [];
+const thumbURL = i => THUMB_URL[i] || (THUMB_URL[i] = thumb(i).toDataURL());
+
+function openVersus() {
+  if (S.pvp) { openLab(S.pvp.set.level); return; }
+  const vs = S.pvp = {
+    code: myCode(), lib: null, rooms: new Map(), opp: null, joining: null, seq: 0, seen: new Set(), giftN: 0, matchN: 0, soloLevel: S.level,
+    set: { level: playable(S.level) ? S.level : 0, cap: CAP_DEFAULT, swap: false }, setV: 0,
+    me: { ready: false, key: '', name: '', genome: null }, them: freshThem(), inbox: [], match: null,
+    status: { kind: 'wait', text: 'Loading the networking library…' },
+  };
+  openLab(vs.set.level);
+  import(TRYSTERO_URL).then(lib => {
+    if (S.pvp !== vs) return;
+    vs.lib = lib; joinCode(vs.code);
+    setStatus('wait', 'Waiting for a player. Share your code, or enter theirs.');
+  }).catch(err => {
+    if (S.pvp !== vs) return;
+    console.warn('trystero', err);
+    setStatus('err', 'The networking library could not be loaded. Check the connection, then go back to the rack and try again.');
+  });
+}
+function leaveVersus() {
+  const vs = S.pvp; if (!vs) return;
+  pvpLeaveBattle();
+  send({ t: 'bye' });
+  for (const R of vs.rooms.values()) { try { R.room.leave(); } catch (e) { } }
+  S.pvp = null;
+  S.level = vs.soloLevel;
+  setMode('rack'); renderRack(); previewLevel(S.level);
+}
+window.addEventListener('pagehide', () => { const vs = S.pvp; if (!vs) return; send({ t: 'bye' }); for (const R of vs.rooms.values()) { try { R.room.leave(); } catch (e) { } } });
+function setStatus(kind, text) { const vs = S.pvp; if (!vs) return; vs.status = { kind, text }; renderLobby(); }
+
+// --- rooms and messages ---
+function joinCode(code) {
+  const vs = S.pvp; if (!vs || !vs.lib || vs.rooms.has(code)) return;
+  let room;
+  try {
+    room = vs.lib.joinRoom({ appId: VS_APP }, code, { onJoinError: d => { console.warn('join', d); if (S.pvp === vs && vs.joining === code && !vsConnected()) setStatus('err', 'A direct connection to that player could not be made. One of the networks may be blocking WebRTC; try again, or from another network.'); } });
+  } catch (err) { console.warn('joinRoom', err); setStatus('err', 'The browser refused to open a peer connection (this page may need to be served over https).'); return; }
+  const R = { code, room, act: room.makeAction('myxo') };
+  vs.rooms.set(code, R);
+  room.onPeerJoin = id => peerJoined(R, id);
+  room.onPeerLeave = id => peerLeft(R, id);
+  R.act.onMessage = (data, ctx) => onMsg(R, ctx && ctx.peerId, data);
+}
+function leaveCode(code) { const vs = S.pvp, R = vs && vs.rooms.get(code); if (!R) return; vs.rooms.delete(code); try { R.room.leave(); } catch (e) { } }
+function send(m, to) {
+  const vs = S.pvp; if (!vs) return;
+  const opp = to || vs.opp; if (!opp) return;
+  m.seq = ++vs.seq;
+  for (const c of opp.rooms) { const R = vs.rooms.get(c); if (!R) continue; try { Promise.resolve(R.act.send(m, { target: opp.id })).catch(() => { }); } catch (e) { } }
+}
+function rawSend(R, id, m) { try { Promise.resolve(R.act.send(m, { target: id })).catch(() => { }); } catch (e) { } }
+function hello(R, id) { const vs = S.pvp; rawSend(R, id, { t: 'hello', v: VS_PROTO, code: vs.code, name: prog.name, set: vs.set, setV: vs.setV, seq: ++vs.seq }); }
+function peerJoined(R, id) {
+  const vs = S.pvp; if (!vs) return;
+  if (vs.opp && vs.opp.id === id) { vs.opp.rooms.add(R.code); hello(R, id); return; }
+  if (vs.opp && R.code === vs.code) { rawSend(R, id, { t: 'busy' }); return; } // my code, and I already have an opponent
+  hello(R, id); // who they are is settled by their hello
+}
+function peerLeft(R, id) {
+  const vs = S.pvp; if (!vs || !vs.opp || vs.opp.id !== id) return;
+  vs.opp.rooms.delete(R.code);
+  if (vs.opp.rooms.size) return;
+  lostOpponent(`${oppLabel()} disconnected.`);
+}
+function lostOpponent(text) {
+  const vs = S.pvp, was = vsConnected();
+  vs.opp = null; vs.them = freshThem(); vs.me.ready = false;
+  setStatus(was ? 'wait' : 'err', `${text} Your own code still works.`);
+  if (S.mode === 'lab') { renderLab(); } else if (S.mode === 'battle') { hint.textContent = text; hint.style.opacity = 1; }
+}
+function onMsg(R, id, m) {
+  const vs = S.pvp; if (!vs || !id || !m || typeof m !== 'object') return;
+  if (m.t === 'busy') { // the owner of the code I entered is already in a match
+    if (R.code !== vs.code && (!vs.opp || vs.opp.id === id)) { vs.joining = null; leaveCode(R.code); lostOpponent(`The player at ${fmtCode(R.code)} is already in a match.`); }
+    return;
+  }
+  if (m.t === 'hello') { onHello(R, id, m); return; }
+  if (!vs.opp || vs.opp.id !== id) return;
+  const k = id + ':' + m.seq; if (vs.seen.has(k)) return; vs.seen.add(k); if (vs.seen.size > 4000) vs.seen.clear();
+  switch (m.t) {
+    case 'set': {
+      const v = Math.max(0, +m.v || 0);
+      if (v < vs.setV || (v === vs.setV && vs.opp.code > vs.code)) break; // simultaneous edits: the higher version wins, then the lower code
+      vs.set = netSet(m.set); vs.setV = v; vs.me.ready = vs.them.ready = false;
+      afterSet(); break;
+    }
+    case 'ready': {
+      const genome = netGenome(m.genome); if (!genome) break;
+      vs.them = { ready: true, key: String(m.key || ''), name: netName(m.name), genome, label: netName(m.name) };
+      if (genomeCost(genome) > vs.set.cap) vs.them.ready = false;
+      renderLobby(); checkStart(); break;
+    }
+    case 'unready': vs.them.ready = false; renderLobby(); break;
+    case 'name': vs.them.label = netName(m.name); if (!vs.them.ready) vs.them.name = vs.them.label; renderLobby(); renderLibrary(); break;
+    case 'share': {
+      const genome = netGenome(m.genome); if (!genome || m.kind !== 'strain') break; // plate designs will travel the same way
+      if (vs.inbox.length >= 12) vs.inbox.shift();
+      vs.inbox.push({ id: ++vs.giftN, from: oppLabel(), name: netName(m.name), genome });
+      renderInbox(); break;
+    }
+    case 'verdict': { const mt = vs.match; if (mt && mt.key === m.key) { mt.theirs = m; checkDesync(mt); } break; }
+    case 'bye': vs.opp.rooms.clear(); lostOpponent(`${oppLabel()} left.`); break;
+  }
+}
+function onHello(R, id, m) {
+  const vs = S.pvp, code = normCode(m.code);
+  if (m.v !== VS_PROTO) { if (!vs.opp) setStatus('err', 'The other player is running a different version of the game. Reload both pages and try again.'); return; }
+  if (vs.opp && vs.opp.id !== id) { if (R.code === vs.code) rawSend(R, id, { t: 'busy' }); return; }
+  if (!vs.opp) {
+    if (R.code !== vs.code && code !== R.code) return; // another guest in a room that is not mine: not my match
+    vs.opp = { id, rooms: new Set(), code: null };
+  }
+  vs.opp.rooms.add(R.code);
+  if (vs.opp.code) return; // the second room of the cross case
+  vs.opp.code = code || R.code;
+  vs.them = freshThem(); vs.them.label = netName(m.name);
+  if (vs.opp.code < vs.code) { vs.set = netSet(m.set); vs.setV = Math.max(0, +m.setV || 0); } // the lower code hosts: its settings win the first handshake
+  if (vs.joining && !vs.opp.rooms.has(vs.joining)) leaveCode(vs.joining);
+  vs.joining = null; vs.me.ready = false;
+  setStatus('on', `Connected to ${oppLabel()}.`);
+  if (S.mode === 'lab') { S.level = vs.set.level; renderLab(); previewLevel(S.level); }
+}
+
+// --- lobby ---
+const meGold = () => { const vs = S.pvp; return (vs.code < vs.opp.code) !== vs.set.swap; };
+function renderLobby() {
+  const vs = S.pvp, L = $('lobby'); if (!vs || !L) return;
+  const prevIn = $('vsIn'), typed = prevIn ? prevIn.value : '', hadFocus = prevIn && document.activeElement === prevIn;
+  let html;
+  if (!vsConnected()) {
+    const st = vs.status;
+    html = `<div class="row"><span class="lbl">Your code</span><div class="vcode"><b>${fmtCode(vs.code)}</b><button class="btn" id="vsCopy">Copy</button></div></div>
+      <div class="row"><span class="lbl">Or enter a player's code</span><form class="join" id="vsJoin"><input class="name-in" id="vsIn" maxlength="7" placeholder="ABC-DEF" autocomplete="off" autocapitalize="characters" spellcheck="false" aria-label="Connection code" ${vs.lib ? '' : 'disabled'}><button class="btn" type="submit" ${vs.lib ? '' : 'disabled'}>Connect</button></form></div>
+      <div class="vstat ${st.kind}"><i class="dot"></i><span>${esc(st.text)}</span>${vs.joining ? '<button class="linkbtn" id="vsCancel">Stop looking</button>' : ''}</div>`;
+  } else {
+    const T = vs.them, ready = T.ready && T.key === setKey(vs.set), lock = vs.me.ready ? 'disabled' : '', gold = meGold();
+    const text = vs.me.ready && ready ? 'Both ready. Starting the culture…'
+      : vs.me.ready ? `Ready. Waiting for ${oppLabel()}…`
+      : ready ? `${oppLabel()} is ready. Pick a strain within ${vs.set.cap} kb and press Ready.`
+      : `Connected to ${oppLabel()}.`;
+    html = `<div class="row"><span class="lbl">Opponent</span><div class="opp"><b>${esc(T.label || 'Connected')}</b><span class="chip${ready ? ' ready' : ''}">${ready ? 'Ready' : 'Not ready'}</span><span class="sub">${ready ? `${esc(T.name)} · ${genomeCost(T.genome)} kb` : 'choosing a strain'}</span></div></div>
+      <div class="row"><span class="lbl">Plate</span><div class="plates">${LEVELS.map((P, i) => `<button type="button" data-plate="${i}" aria-pressed="${i === vs.set.level}" ${lock} title="${P.code} ${esc(P.name)}" aria-label="${P.code} ${esc(P.name)}"><img src="${thumbURL(i)}" alt=""><span>${P.code}</span></button>`).join('')}</div>${plateIntel(vs.set.level, S.genome)}</div>
+      <div class="row"><span class="lbl">Kilobase cap</span><div class="cap"><span class="val"><b>${vs.set.cap}</b> kb per genome</span><div class="stepper"><button type="button" data-cap="-1" aria-label="Lower the cap" ${lock || (vs.set.cap <= CAP_MIN ? 'disabled' : '')}>−</button><button type="button" data-cap="1" aria-label="Raise the cap" ${lock || (vs.set.cap >= CAP_MAX ? 'disabled' : '')}>+</button></div></div></div>
+      <div class="row"><span class="lbl">Sides</span><div class="sides"><span><i style="background:${gold ? COL.p : COL.e}"></i>You start ${gold ? 'gold, at the left' : 'pink, at the right'}</span><button type="button" class="btn" data-swap ${lock}>Swap</button></div></div>
+      <div class="vstat ${vs.me.ready && !ready ? 'wait' : 'on'}"><i class="dot"></i><span>${esc(text)}</span></div>
+      ${vs.me.ready ? '<div class="note">Cancel ready to change the plate, the cap or the sides.</div>' : ''}`;
+  }
+  L.innerHTML = html;
+  const inp = $('vsIn');
+  if (inp) {
+    inp.value = typed; if (hadFocus) inp.focus();
+    inp.addEventListener('input', () => { const c = normCode(inp.value).slice(0, 6); inp.value = c.length > 3 ? fmtCode(c) : c; inp.removeAttribute('aria-invalid'); });
+    $('vsJoin').addEventListener('submit', e => { e.preventDefault(); tryCode(normCode(inp.value), inp); });
+    $('vsCopy').addEventListener('click', e => {
+      const b = e.currentTarget, done = () => { b.textContent = 'Copied'; setTimeout(() => { if (b.isConnected) b.textContent = 'Copy'; }, 2000); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(fmtCode(vs.code)).then(done, () => { });
+      else { const sel = window.getSelection(), r = document.createRange(); r.selectNodeContents(L.querySelector('.vcode b')); sel.removeAllRanges(); sel.addRange(r); try { document.execCommand('copy'); done(); } catch (err) { } }
+    });
+    if ($('vsCancel')) $('vsCancel').addEventListener('click', () => { leaveCode(vs.joining); vs.joining = null; setStatus('wait', 'Waiting for a player. Share your code, or enter theirs.'); });
+  }
+  L.querySelectorAll('[data-plate]').forEach(b => b.addEventListener('click', () => changeSet({ level: +b.dataset.plate })));
+  L.querySelectorAll('[data-cap]').forEach(b => b.addEventListener('click', () => changeSet({ cap: vs.set.cap + (+b.dataset.cap) })));
+  const sw = L.querySelector('[data-swap]'); if (sw) sw.addEventListener('click', () => changeSet({ swap: !vs.set.swap }));
+}
+function tryCode(code, inp) {
+  const vs = S.pvp; if (!vs || !vs.lib) return;
+  if (code.length !== 6 || code === vs.code) { inp.setAttribute('aria-invalid', 'true'); setStatus('err', code === vs.code ? 'That is your own code. Enter the other player’s.' : 'A code is six letters and digits, like ABC-DEF.'); inp.focus(); return; }
+  if (vs.joining && vs.joining !== code) leaveCode(vs.joining);
+  vs.joining = code; joinCode(code);
+  setStatus('wait', `Looking for ${fmtCode(code)}…`);
+  setTimeout(() => { if (S.pvp === vs && vs.joining === code && !vsConnected()) setStatus('wait', `Nobody has answered at ${fmtCode(code)} yet. Check the code with the other player, or keep waiting.`); }, JOIN_PATIENCE);
+}
+function changeSet(patch) {
+  const vs = S.pvp; if (!vs || !vsConnected() || vs.me.ready) return;
+  const set = netSet({ ...vs.set, ...patch });
+  if (setKey(set) === setKey(vs.set)) return;
+  vs.set = set; vs.setV++; vs.them.ready = false; // the other side un-readies when the change arrives
+  send({ t: 'set', set, v: vs.setV });
+  afterSet();
+}
+function afterSet() { const vs = S.pvp; if (!vs || S.mode !== 'lab') return; S.level = vs.set.level; renderLobby(); updateBudget(); renderLibrary(); previewLevel(S.level); }
+// Any edit to the strain in the lab withdraws a ready signal: what was sent is a snapshot, so the match must wait for a new one.
+function pvpTouched() { const vs = S.pvp; if (!vs || !vs.me.ready) return; vs.me.ready = false; send({ t: 'unready' }); renderLobby(); updateBudget(); }
+// The other player sees this strain's name as who they are talking to, so a rename travels (a moment after typing stops).
+let nameTimer = 0;
+function pvpNamed() { if (!vsConnected()) return; clearTimeout(nameTimer); nameTimer = setTimeout(() => { if (vsConnected()) send({ t: 'name', name: prog.name }); }, 400); }
+function pvpReady() {
+  const vs = S.pvp; if (!vs || !vsConnected()) return;
+  if (vs.me.ready) { pvpTouched(); return; }
+  if (genomeCost(S.genome) > vs.set.cap) return;
+  if (!strainInRack()) saveStrain(); // Save & ready: the tally needs a saved strain to land on
+  vs.me = { ready: true, key: setKey(vs.set), name: prog.name, genome: cloneG(S.genome) };
+  send({ t: 'ready', key: vs.me.key, name: vs.me.name, genome: vs.me.genome });
+  renderLobby(); updateBudget(); checkStart();
+}
+function checkStart() {
+  const vs = S.pvp; if (!vs || !vsConnected() || vs.match) return;
+  const key = setKey(vs.set);
+  if (!(vs.me.ready && vs.them.ready && vs.me.key === key && vs.them.key === key)) return;
+  const gold = meGold(), G = gold ? vs.me : vs.them, P = gold ? vs.them : vs.me;
+  vs.matchN++;
+  vs.match = { key: `${key}#${vs.matchN}`, me: gold ? 1 : 2, myName: vs.me.name, myGenome: vs.me.genome, settled: false, tally: null, mine: null, theirs: null, desync: false };
+  vs.me.ready = vs.them.ready = false;
+  startBattle({ level: vs.set.level, gold: G.genome, pink: P.genome, names: [null, G.name, P.name], me: vs.match.me, match: vs.match });
+}
+// Once the simulation is through: count the result on the saved strain that was played and swap verdict digests with the other
+// side, so a browser whose maths drifted from the other's is at least noticed.
+function pvpSettle(b) {
+  const m = b.pvp; if (!m || m.settled) return; m.settled = true;
+  const win = b.result.winner === m.me, k = strainAt(m.myName);
+  if (k >= 0 && genomeKey(prog.strains[k].genome) === genomeKey(m.myGenome)) { const s = prog.strains[k]; if (win) s.w = (s.w || 0) + 1; else s.l = (s.l || 0) + 1; save(); m.tally = s; }
+  let h = 0; for (const s of [1, 2]) for (const v of b.stats.cells[s]) h = (Math.imul(h, 31) + v) >>> 0;
+  m.mine = { winner: b.result.winner, reason: b.result.reason, tick: b.result.tick, h };
+  send({ t: 'verdict', key: m.key, ...m.mine });
+  checkDesync(m);
+}
+function checkDesync(m) {
+  if (!m.mine || !m.theirs) return;
+  m.desync = m.mine.winner !== m.theirs.winner || m.mine.reason !== m.theirs.reason || m.mine.tick !== m.theirs.tick || m.mine.h !== m.theirs.h;
+  const el = $('vsNote'); if (el) el.innerHTML = pvpResultNote(m);
+}
+function pvpResultNote(m) {
+  const parts = [];
+  if (m.tally) parts.push(`<b>${esc(m.tally.name)}</b> is now ${m.tally.w || 0} W · ${m.tally.l || 0} L against other players.`);
+  else parts.push('Not counted: the strain that played is no longer saved under that name.');
+  if (m.desync) parts.push('The two browsers disagreed on how this culture went, so each of you is watching its own version.');
+  return parts.join(' ');
+}
+// Leaving a match early (back to the lobby or the rack) still settles it: the rest of the simulation runs in a moment.
+function pvpLeaveBattle() {
+  const vs = S.pvp, b = S.battle; if (!vs) return;
+  if (b && b.pvp) { while (!b.done) b.step(); pvpSettle(b); }
+  vs.match = null;
+}
+
+// --- sharing strains ---
+function shareStrain(i, btn) {
+  const s = prog.strains[i]; if (!s || !vsConnected()) return;
+  send({ t: 'share', kind: 'strain', name: s.name, genome: cloneG(s.genome) });
+  btn.classList.add('sent'); btn.textContent = 'Sent'; btn.disabled = true;
+  setTimeout(() => { if (btn.isConnected) { btn.classList.remove('sent'); btn.innerHTML = SEND; btn.disabled = false; } }, 2500);
+}
+function renderInbox() {
+  const box = $('inbox'); if (!box) return;
+  const vs = S.pvp, items = vs ? vs.inbox : [];
+  box.hidden = !items.length;
+  box.innerHTML = items.map(it => {
+    const locked = it.genome.genes.filter(id => !isolated(GENE_BY_ID[id])).map(id => GENE_BY_ID[id].name);
+    return `<div class="gift" data-gift="${it.id}"><span class="from">Sent by ${esc(it.from)}</span><div class="top"><b>${esc(it.name)}</b><span class="kb">${genomeCost(it.genome)} kb</span></div>${strainSummary(it.genome)}
+      ${locked.length ? `<span class="warn">Uses genes you haven’t isolated (${esc(locked.join(', '))}); they stay switched off until you unlock them.</span>` : ''}
+      <form><input class="name-in" maxlength="${NAME_MAX}" value="${esc(it.name)}" aria-label="Name to save ${esc(it.name)} under"><button class="btn" type="submit">Save</button><button class="btn" type="button" data-drop>Discard</button><span class="err" hidden>You already have a strain with that name. Give this one another.</span></form></div>`;
+  }).join('');
+  box.querySelectorAll('.gift').forEach(card => {
+    const id = +card.dataset.gift, inp = card.querySelector('input'), err = card.querySelector('.err');
+    const drop = () => { const k = vs.inbox.findIndex(x => x.id === id); if (k >= 0) vs.inbox.splice(k, 1); };
+    card.querySelector('form').addEventListener('submit', e => {
+      e.preventDefault();
+      const name = inp.value.trim().slice(0, NAME_MAX), it = vs.inbox.find(x => x.id === id); if (!name || !it) return;
+      if (strainAt(name) >= 0) { err.hidden = false; inp.setAttribute('aria-invalid', 'true'); inp.focus(); return; }
+      prog.strains.unshift({ name, genome: cloneG(it.genome), t: Date.now(), w: 0, l: 0 }); save(); drop();
+      S.libOpen = true; if ($('lib')) $('lib').open = true;
+      renderLibrary();
+    });
+    card.querySelector('[data-drop]').addEventListener('click', () => { drop(); renderInbox(); });
+  });
+}
+
 // ===================== Battle =====================
-function startBattle() {
-  const g = cloneG(S.genome);
-  if (genomeCost(g) > LEVELS[S.level].budget) return;
-  persistGenome();
-  S.battle = new Battle(S.level, g, LEVELS[S.level].rival);
-  S.battle.pname = prog.name || DEFAULT_NAME;
+// Solo: the lab strain against the plate's rival. Versus (opts): both readied genomes on the agreed plate, gold side first.
+// b.me is the side this player breeds, b.names labels both sides, b.pvp is the match record (null when solo).
+function startBattle(opts) {
+  let b;
+  if (opts) {
+    b = new Battle(opts.level, opts.gold, opts.pink);
+    Object.assign(b, { pname: opts.names[1], names: opts.names, me: opts.me, pvp: opts.match });
+    S.level = opts.level;
+  } else {
+    const g = cloneG(S.genome);
+    if (genomeCost(g) > LEVELS[S.level].budget) return;
+    persistGenome();
+    const name = prog.name || DEFAULT_NAME;
+    b = new Battle(S.level, g, LEVELS[S.level].rival);
+    Object.assign(b, { pname: name, names: [null, name, LEVELS[S.level].rival.name], me: 1, pvp: null });
+  }
+  S.battle = b;
   S.playhead = 0; S.revealed = 0; S.playing = true; S.resultShown = false; S.shownEvt = -1; S.sel = -1; S.logN = -1;
   clearFx();
-  buildWorld(S.battle.dish); shown.battle = null; setGenes(S.battle);
+  buildWorld(b.dish); shown.battle = null; setGenes(b);
   setMode('battle');
   cam.theta = 0;
-  $('hPName').textContent = S.battle.pname; $('hEName').textContent = LEVELS[S.level].rival.name;
+  $('hPName').innerHTML = hudName(1); $('hEName').innerHTML = hudName(2);
   setPlayIcon(); renderLog();
 }
+function hudName(s) { const b = S.battle; return esc(b.names[s]) + (b.pvp && b.me === s ? '<span class="you">you</span>' : ''); }
 function stepSim(budgetMs) {
   const b = S.battle; if (!b || b.done) return;
   const t0 = performance.now();
@@ -2190,7 +2598,8 @@ function fireEvents(a, b) {
     }
   }
 }
-function sideName(s) { return s === 1 ? S.battle.pname : LEVELS[S.level].rival.name.split(' ')[0]; }
+// Solo rivals are Latin binomials and go by their genus in the log; player strains keep their full name.
+function sideName(s) { const b = S.battle; return b.pvp || s === 1 ? b.names[s] : b.names[s].split(' ')[0]; }
 function evText(ev) {
   const n = ev.side ? sideName(ev.side) : '';
   switch (ev.type) {
@@ -2376,7 +2785,7 @@ function updateInspect() {
 
 // --- result ---
 function analyze(b) {
-  const P = b.sides[1], E = b.sides[2], g = P.g, notes = [], has = id => g.genes.includes(id);
+  const me = b.me || 1, P = b.sides[me], E = b.sides[3 - me], g = P.g, notes = [], has = id => g.genes.includes(id);
   const iso = id => isolated(GENE_BY_ID[id]);
   const dmgTot = P.dmgTaken.reduce((a, x) => a + x, 0) || 1;
   const share = k => P.dmgTaken[k] / dmgTot;
@@ -2398,16 +2807,16 @@ function analyze(b) {
   if (P.lost[S_UV] > 15 && !has('chloro')) notes.push(`${P.lost[S_UV]} cells burned under the lamp. ${iso('chloro') ? 'An Algal Symbiont turns that light into food.' : 'Lower Explore to keep out of the light.'}`);
   if (P.splits >= 2 || P.fragStarved >= 2) notes.push(`Your network was cut apart ${P.splits} time${P.splits === 1 ? '' : 's'} and ${P.fragStarved} cut-off fragment${P.fragStarved === 1 ? '' : 's'} starved. Keep fronts broad${iso('granules') && !has('granules') ? ', or take Reserve Granules so fragments can wait for food' : ''}.`);
   const rocks = b.dish.terrain.some(t => t === T_ROCK);
-  if (rocks && !has('acid') && b.result.winner !== 1 && E.acid) notes.push(`${LEVELS[b.level].rival.name.split(' ')[0]} burned through granite you had to walk around. ${iso('acid') ? 'Oxalic Acid opens the same shortcuts.' : ''}`);
-  if (b.result.winner !== 1 && b.result.reason === 'time') notes.push('Whatever is alive at 12:00 decides a plate that is not overrun. Raise Hunt rival to press the attack, hold the regrowing lawns, or lower upkeep so your body outlasts the famine.');
-  if (b.result.winner === 1 && !notes.length) notes.push(b.result.reason === 'elim' ? `Clean kill at ${fmt(b.result.tick)}. Try a cheaper genome to see how lean a winning strain can be.` : 'You won on territory. A harder-hitting front could finish the rival outright.');
+  if (rocks && !has('acid') && b.result.winner !== me && E.acid) notes.push(`${sideName(3 - me)} burned through granite you had to walk around. ${iso('acid') ? 'Oxalic Acid opens the same shortcuts.' : ''}`);
+  if (b.result.winner !== me && b.result.reason === 'time') notes.push('Whatever is alive at 12:00 decides a plate that is not overrun. Raise Hunt rival to press the attack, hold the regrowing lawns, or lower upkeep so your body outlasts the famine.');
+  if (b.result.winner === me && !notes.length) notes.push(b.result.reason === 'elim' ? `Clean kill at ${fmt(b.result.tick)}. Try a cheaper genome to see how lean a winning strain can be.` : 'You won on territory. A harder-hitting front could finish the rival outright.');
   return notes.slice(0, 3);
 }
 function showResult() {
-  const b = S.battle, P = b.sides[1], E = b.sides[2], win = b.result.winner === 1;
-  const rv = LEVELS[b.level].rival.name;
+  const b = S.battle, me = b.me || 1, P = b.sides[me], E = b.sides[3 - me], win = b.result.winner === me, vs = b.pvp;
+  const rv = b.names[3 - me];
   let newGenes = [];
-  if (win && !prog.cleared[b.level]) {
+  if (win && !vs && !prog.cleared[b.level]) {
     prog.cleared[b.level] = true; save(); renderProgress();
     newGenes = GENES.filter(G => G.unlock === b.level + 2);
   }
@@ -2421,10 +2830,10 @@ function showResult() {
   const lossBar = lostTot ? [1, 2, 3, 4, 5, 6, 7].filter(k => P.lost[k]).map(k => `<i style="width:${P.lost[k] / lostTot * 100}%;background:${SRC_COL[k]}" title="${SRC_NAMES[k]}"></i>`).join('') : '';
   const legend = [1, 2, 3, 4, 5, 6, 7].filter(k => P.lost[k]).map(k => `<span><i style="background:${SRC_COL[k]}"></i>${SRC_NAMES[k]} ${P.lost[k]}</span>`).join('');
   const notes = analyze(b);
-  const next = b.level + 1 < LEVELS.length && playable(b.level + 1);
+  const next = !vs && b.level + 1 < LEVELS.length && playable(b.level + 1);
   const R = $('result');
   R.innerHTML = `<div class="card" role="dialog" aria-label="Battle result">
-    <div><div class="eyebrow">${LEVELS[b.level].code} · ${esc(LEVELS[b.level].name)}</div><div class="verdict ${win ? 'win' : 'lose'}">${win ? 'Dish conquered' : 'Overrun'}</div><div class="why">${esc(why)}</div></div>
+    <div><div class="eyebrow">${vs ? 'Versus' : LEVELS[b.level].code} · ${esc(LEVELS[b.level].name)}</div><div class="verdict ${win ? 'win' : 'lose'}">${win ? 'Dish conquered' : 'Overrun'}</div><div class="why">${esc(why)}</div></div>
     <div class="stats">
       <div class="stat"><small>Peak cells</small><b>${P.peak}</b> <span class="vs">/ ${E.peak}</span></div>
       <div class="stat"><small>ATP eaten</small><b>${Math.round(P.eaten)}</b> <span class="vs">/ ${Math.round(E.eaten)}</span></div>
@@ -2432,11 +2841,12 @@ function showResult() {
     </div>
     ${lostTot ? `<div class="losses"><div class="sub-h">Your ${lostTot} lost cells, by cause</div><div class="bar2">${lossBar}</div><div class="legend">${legend}</div></div>` : ''}
     ${newGenes.length ? `<div class="unlock">New genes isolated: <b>${newGenes.map(G => G.name).join(', ')}</b></div>` : ''}
-    ${win && b.level === LEVELS.length - 1 ? '<div class="unlock">Every plate on the rack is yours. Try beating each dish with a smaller genome.</div>' : ''}
+    ${!vs && win && b.level === LEVELS.length - 1 ? '<div class="unlock">Every plate on the rack is yours. Try beating each dish with a smaller genome.</div>' : ''}
+    ${vs ? `<div class="unlock" id="vsNote">${pvpResultNote(vs)}</div>` : ''}
     <div><div class="sub-h">Field notes</div><ul class="notes">${notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul></div>
     <div class="acts">
       <button class="btn" id="rReplay">Watch replay</button>
-      <button class="btn${win && next ? '' : ' primary'}" id="rLab">Revise genome</button>
+      <button class="btn${win && next ? '' : ' primary'}" id="rLab">${vs ? 'Back to the match' : 'Revise genome'}</button>
       ${win && next ? '<button class="btn primary" id="rNext">Next dish</button>' : ''}
     </div></div>`;
   R.hidden = false;
@@ -2454,6 +2864,7 @@ function frame(now) {
   if (S.mode === 'battle' && S.battle) {
     const b = S.battle;
     stepSim(b.frames.length - S.playhead < 60 ? 14 : 6);
+    if (b.done && b.pvp && !b.pvp.settled) pvpSettle(b);
     if (S.playing) {
       const prev = S.playhead;
       S.playhead = Math.min(lastTick(), S.playhead + dt * TPS * S.speed);
