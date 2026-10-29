@@ -26,9 +26,12 @@ agar; whatever they bring into range is then handled by the Food and Hunt drives
 
 **Body.** New growth is a sparse tendril. Cells thicken into lace and then sheet as they
 mature, as their own strain surrounds them, and when they sit on a vein. Veins are a
-routing tree: each cell passes its intake toward its fragment's feeding hub, and the
-trunks that carry the most flow fatten over time. Thin rival cells can be infiltrated
-and fought for from the inside.
+routing tree rooted at the fragment's feeding hubs, one for every food source it is
+eating from. Each cell passes its intake toward the hub that pulls hardest on it, and
+the trunks that carry the most flow fatten over time. A hub's pull grows and fades with
+its share of the intake, so when one pile runs out and another is found the network
+shifts cell by cell from the old hub to the new, their tendrils overlapping where the
+two territories meet. Thin rival cells can be infiltrated and fought for from the inside.
 
 **No centre.** A plasmodium has no head. Energy is stored in the cells and pooled by
 connected fragment every minute: cut a network apart and each piece lives on its share,
@@ -44,7 +47,8 @@ on regrowing food can outlast a bloomer that ate the plate bare.
 Drag to orbit, right-drag (or two fingers) to pan, scroll or pinch to zoom in close.
 Click a cell to inspect it. Space plays and pauses, the arrow keys step (with Shift,
 ten minutes), `[` and `]` jump between events, Home resets the view, and P shows the
-exploration probes. The timeline only reveals as far as you have watched, so a first
+exploration probes. A freezes the surface animation (flow pulses, throb and hub glow), a
+debugging aid for judging the vein geometry on its own. The timeline only reveals as far as you have watched, so a first
 viewing never gives away the ending.
 
 ## Playing a friend

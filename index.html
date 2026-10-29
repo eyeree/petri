@@ -356,6 +356,7 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 
       <div class="corner" id="corner">
         <div class="keys" id="keys" hidden aria-label="Close-up legend"><span><i style="background:#ff6a2e"></i>engulf</span><span><i style="background:#c6ff3d"></i>acid</span><span><i style="background:#a98bff"></i>antibiotic</span><span><i style="background:#f2f6f8"></i>salt</span><span><i style="background:#fff3a8"></i>UV</span><span><i class="two"></i>contested</span></div>
         <button class="ib vbtn" id="bProbes" hidden aria-label="Show exploration probes" aria-pressed="false" title="Show exploration probes (P)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="7" cy="17" r="2.5"/><path d="M9 15l10-10M14 5h5v5"/></svg></button>
+        <button class="ib vbtn" id="bAnim" hidden aria-label="Freeze surface animation" aria-pressed="false" title="Freeze surface animation (A): judge the vein geometry without the pulses"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9M12 3l-2.5 2.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5"/></svg></button>
         <button class="ib vbtn" id="bView" hidden aria-label="Reset view" title="Reset view (Home)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg></button>
       </div>
       <div class="inspect" id="inspect" hidden></div>
@@ -654,6 +655,10 @@ function makeDish(levelIdx) {
 // with no food simply starves. Veins come from a routing tree rooted at each fragment's feeding hub: cells attach to
 // the neighbour that carried the most flow last minute, so trunks between food sources fatten over time.
 const MASS_RATE = 0.025, MASS_DECAY = 0.02, MASS_COST = 0.25;
+// Feeding hubs. A fragment roots its veins at every food source it is eating from. Each hub's weight relaxes toward
+// its share of the fragment's intake with time constant HUB_TAU (minutes), so a hub on a pile that is running out
+// fades while one on fresh food grows, and the routing shifts between them cell by cell instead of re-rooting at once.
+const HUB_TAU = 12, HUB_MIN = 0.03, HUB_EPS = 0.02, HUB_MAX = 6, HUB_K = 1 - Math.exp(-1 / HUB_TAU), HUB_SOFT = 2.5;
 function Battle(levelIdx, genomeP, genomeE) {
   const dish = makeDish(levelIdx);
   this.dish = dish; this.level = levelIdx;
@@ -666,6 +671,8 @@ function Battle(levelIdx, genomeP, genomeE) {
   this.mass = new Float32Array(NN); this.contest = new Float32Array(NN);
   this.cellE = new Float32Array(NN); this.comp = new Int32Array(NN).fill(-1); this.starv = new Uint8Array(NN); this.isRoot = new Uint8Array(NN);
   this.parent = new Int32Array(NN).fill(-1); this.flow = new Float32Array(NN); this.flowPrev = new Float32Array(NN);
+  this.parent2 = new Int32Array(NN).fill(-1); this.mix2 = new Float32Array(NN); this.lab = new Int16Array(NN).fill(-1); this.eff = new Float32Array(NN);
+  this.hubDist = []; this.hubPar = []; // one walking-distance field and parent array per hub, pooled
   this.vein = new Float32Array(NN); this.intake = new Float32Array(NN); this.cflag = new Uint8Array(NN);
   this.dist = [null, new Int16Array(NN), new Int16Array(NN)];
   this.fd = [null, new Uint16Array(NN), new Uint16Array(NN)];
@@ -679,6 +686,11 @@ function Battle(levelIdx, genomeP, genomeE) {
   this.candJ = new Int32Array(NN); this.candS = new Float32Array(NN); this.candK = new Uint8Array(NN); this.candF = new Int32Array(NN);
   this.kids = new Uint8Array(NN); this.bq = Array.from({ length: 32 }, () => []); // Dial's buckets: one per distance, modulo 32 (wider than any step cost)
   this.rnd = rng(9001 + levelIdx * 131);
+  const srcId = this.srcId = new Int16Array(NN).fill(-1);
+  for (let i = 0; i < NN; i++) {
+    if (dish.pile[i] >= 0) srcId[i] = dish.pile[i];
+    else if (dish.terrain[i] === T_LIGHT) { let best = -1, bd = 1e9; const x = i % N, y = (i - x) / N; dish.lights.forEach((L, k) => { const d = (x - L.x) ** 2 + (y - L.y) ** 2; if (d < bd) { bd = d; best = k; } }); srcId[i] = 1000 + best; }
+  }
   const mk = (g, core) => {
     const s = deriveSide(g);
     Object.assign(s, {
@@ -687,6 +699,7 @@ function Battle(levelIdx, genomeP, genomeE) {
       kills: 0, eaten: 0, peak: 0, pilesSeen: new Set(), lastBreach: -99, lastSplit: -99, lastFragStarve: -99, splits: 0, fragStarved: 0, lastLost: core,
       spent: 0, flowMax: 1, massSum: 0, massDorm: 0, contested: 0, pushes: 0, captures: 0, area: 0, retracted: 0, announcedStarve: false, okRun: 0,
       known: new Set(), probes: [], probesSent: 0, probeFinds: 0, scouts: 0,
+      hubs: [], orphan: new Map(), // feeding hubs ({cell, w, src, frag}); weights of hubs whose cell was lost, by source
     });
     return s;
   };
@@ -704,7 +717,7 @@ function Battle(levelIdx, genomeP, genomeE) {
   this.frames = []; this.events = [];
   this.stats = { cells: [null, [], []], energy: [null, [], []] };
   this.contact = false;
-  for (const s of [1, 2]) { this.label(s); this.connect(s); }
+  for (const s of [1, 2]) { this.label(s); this.hubs(s); this.connect(s); }
   this.scent(1); this.scent(2);
   this.mature();
   this.count();
@@ -738,7 +751,7 @@ Battle.prototype.label = function (s) {
   let main = 0;
   for (let i = 0; i < NN; i++) {
     if (owner[i] !== s || comp[i] >= 0) continue;
-    const id = frags.length, F = { id, cells: 0, energy: 0, income: 0, massSum: 0, dormCells: 0, starvCells: 0, feeding: 0, hub: i, hubScore: -1, starving: false, maxD: 0 };
+    const id = frags.length, F = { id, cells: 0, energy: 0, income: 0, massSum: 0, dormCells: 0, starvCells: 0, feeding: 0, hub: i, hubScore: -1, hubW: -1, starving: false, maxD: 0 };
     frags.push(F);
     let h = 0, t = 0; q[t++] = i; comp[i] = id;
     while (h < t) {
@@ -753,51 +766,127 @@ Battle.prototype.label = function (s) {
     F.starving = F.energy <= 0 || (F.energy < 20 && F.starvCells * 2 > F.cells);
     if (F.cells > frags[main].cells) main = id;
   }
+  // a fragment's named hub (for events) is its heaviest feeding hub; the score above only roots fragments that have none
+  for (const H of S.hubs) { const c = H.cell; if (owner[c] !== s) continue; const F = frags[comp[c]]; if (H.w > F.hubW) { F.hubW = H.w; F.hub = c; } }
   S.mainFrag = main;
   S.nFrags = frags.length;
   S.bigFrags = frags.filter(F => F.cells >= 10).length;
   if (frags.length) { S.hub = frags[main].hub; S.starving = frags[main].starving; }
 };
 
-// Routing tree from each fragment's hub. Among equal-distance candidates a cell attaches to the neighbour that
-// carried the most flow last minute (positive feedback), and subtree flow (1 per cell + food intake) accumulates.
-Battle.prototype.connect = function (s) {
-  const S = this.sides[s], dist = this.dist[s], owner = this.owner, q = this.queue, par = this.parent, flow = this.flow, fp = this.flowPrev, intake = this.intake, isRoot = this.isRoot, kids = this.kids, bq = this.bq;
-  dist.fill(-1);
-  // Dial's bucket queue over the DW/DD step costs: cells settle in order of walking distance, so q lists parents before
-  // children. Each cell adds a fixed 0/1 of its own to the cost of stepping onto it, so there is rarely an exact tie and
-  // trunks wander a little instead of running dead straight along the grid's diagonals.
-  let t = 0, pending = 0;
-  for (const F of S.frags) { const r = F.hub; dist[r] = 0; par[r] = -1; bq[0].push(r); pending++; }
-  for (let d = 0; pending > 0; d++) {
-    const list = bq[d & 31]; if (!list.length) continue;
-    for (let n = 0; n < list.length; n++) {
-      const i = list[n]; pending--;
-      if (dist[i] !== d) continue; // reached by a shorter way since it was queued
-      q[t++] = i;
-      const fi = fp[i] + ((i * 2654435761) >>> 29) * 0.07;
-      for (let k = 0; k < 8; k++) {
-        const j = NB[i * 8 + k];
-        if (j < 0 || owner[j] !== s) continue;
-        const nd = d + (k < 4 ? DW : DD) + (((j * 2246822519) >>> 27) & 1), dj = dist[j];
-        if (dj < 0 || nd < dj) { dist[j] = nd; par[j] = i; bq[nd & 31].push(j); pending++; }
-        else if (dj === nd) { const p = par[j]; if (fi > fp[p] + ((p * 2654435761) >>> 29) * 0.07) par[j] = i; }
-      }
+// Feeding hubs. Every food source a fragment is eating from gets a hub at its best-connected feeding cell. A hub's
+// weight relaxes toward its share of the fragment's intake (the best-fed hub tends to 1), so a hub on a pile that is
+// running out fades over HUB_TAU minutes while one on fresh food grows from nothing. A hub stays on its cell while
+// that cell feeds; one whose cell is lost passes its weight to the next hub raised on the same source. A fragment
+// eating nothing keeps the hubs it has, weights frozen, and one with no hub at all is rooted where its veins converge.
+// Faded hubs are dropped once the fragment has another.
+Battle.prototype.hubs = function (s) {
+  const S = this.sides[s], owner = this.owner, comp = this.comp, intake = this.intake, fp = this.flowPrev, src = this.srcId, frags = S.frags, T = this.tick;
+  const groups = frags.map(() => new Map()), lists = frags.map(() => []);
+  for (let i = 0; i < NN; i++) {
+    if (owner[i] !== s || intake[i] <= 0) continue;
+    const k = src[i]; if (k < 0) continue;
+    const G = groups[comp[i]]; let g = G.get(k);
+    if (!g) G.set(k, g = { intake: 0, best: i, score: -1 });
+    g.intake += intake[i];
+    if (fp[i] > g.score) { g.score = fp[i]; g.best = i; }
+  }
+  for (const H of S.hubs) {
+    if (owner[H.cell] !== s) { if (H.src >= 0) S.orphan.set(H.src, { w: H.w, t: T }); continue; }
+    H.frag = comp[H.cell]; H.target = 0; lists[H.frag].push(H);
+  }
+  const out = [];
+  for (const F of frags) {
+    const list = lists[F.id];
+    for (const [k, g] of groups[F.id]) {
+      let H = null; for (const h of list) if (h.src === k) { H = h; break; }
+      if (!H) {
+        const o = S.orphan.get(k); S.orphan.delete(k);
+        list.push(H = { cell: g.best, w: o && T - o.t < 10 ? o.w : HUB_EPS, src: k, frag: F.id, target: 0 });
+      } else if (intake[H.cell] <= 0) H.cell = g.best;
+      H.target = g.intake;
     }
-    list.length = 0;
+    // a root for a fragment eating nowhere, weighted by the body it roots so a small piece that rejoins a fed body
+    // does not claim half of it
+    if (!list.length) list.push({ cell: F.hub, w: Math.min(1, F.cells / 60), src: -1, frag: F.id, target: 0 });
+    let mx = 0; for (const H of list) if (H.target > mx) mx = H.target;
+    if (mx > 0) for (const H of list) H.w += (H.target / mx - H.w) * HUB_K;
+    list.sort((a, b) => (b.w - a.w) || (a.cell - b.cell));
+    F.hub = list[0].cell; F.hubW = list[0].w;
+    for (let q = 0; q < list.length; q++) { const H = list[q]; if (q === 0 || (q < HUB_MAX && (H.target > 0 || H.w >= HUB_MIN))) out.push(H); }
+  }
+  S.hubs = out;
+  if (frags.length) S.hub = frags[S.mainFrag].hub;
+};
+
+// Routing. Each hub gets its own walking-distance field over the strain (Dial's bucket queue over the DW/DD step
+// costs; each cell adds a fixed 0/1 of its own to the cost of stepping onto it, so there is rarely an exact tie and
+// trunks wander a little instead of running dead straight along the grid's diagonals). Among equal-distance
+// candidates a cell attaches to the neighbour that carried the most flow last minute (positive feedback). A cell then
+// belongs to the hub that is nearest in weighted distance (distance over weight), so a hub's territory grows and
+// shrinks with its weight and vanishes with it; the runner-up hub's direction is kept too, with how close the cell
+// sits to the border between the two, so the renderer can show the networks overlapping there. Subtree flow
+// (1 per cell + food intake) accumulates toward each hub along the primary tree.
+Battle.prototype.connect = function (s) {
+  const S = this.sides[s], dist = this.dist[s], owner = this.owner, comp = this.comp, par = this.parent, par2 = this.parent2, mix2 = this.mix2, lab = this.lab, eff = this.eff, flow = this.flow, fp = this.flowPrev, intake = this.intake, isRoot = this.isRoot, kids = this.kids, bq = this.bq, ord = this.queue;
+  const hubs = S.hubs, nh = hubs.length, hd = this.hubDist, hp = this.hubPar;
+  while (hd.length < nh) { hd.push(new Int16Array(NN)); hp.push(new Int32Array(NN)); }
+  for (let h = 0; h < nh; h++) {
+    const d = hd[h], p = hp[h], r = hubs[h].cell;
+    d.fill(-1); d[r] = 0; p[r] = -1; bq[0].push(r);
+    let pending = 1;
+    for (let dd = 0; pending > 0; dd++) {
+      const list = bq[dd & 31]; if (!list.length) continue;
+      for (let n = 0; n < list.length; n++) {
+        const i = list[n]; pending--;
+        if (d[i] !== dd) continue; // reached by a shorter way since it was queued
+        const fi = fp[i] + ((i * 2654435761) >>> 29) * 0.07;
+        for (let k = 0; k < 8; k++) {
+          const j = NB[i * 8 + k];
+          if (j < 0 || owner[j] !== s) continue;
+          const nd = dd + (k < 4 ? DW : DD) + (((j * 2246822519) >>> 27) & 1), dj = d[j];
+          if (dj < 0 || nd < dj) { d[j] = nd; p[j] = i; bq[nd & 31].push(j); pending++; }
+          else if (dj === nd) { const q = p[j]; if (fi > fp[q] + ((q * 2654435761) >>> 29) * 0.07) p[j] = i; }
+        }
+      }
+      list.length = 0;
+    }
+  }
+  let t = 0;
+  for (let i = 0; i < NN; i++) {
+    if (owner[i] !== s) continue;
+    const c = comp[i];
+    let b1 = -1, e1 = Infinity, b2 = -1, e2 = Infinity, w1 = 1, w2 = 1;
+    for (let h = 0; h < nh; h++) {
+      const H = hubs[h]; if (H.frag !== c) continue;
+      const dh = hd[h][i]; if (dh < 0) continue;
+      const w = H.w > HUB_EPS ? H.w : HUB_EPS, e = i === H.cell ? -1 : dh / w; // a hub is always its own
+      if (e < e1) { b2 = b1; e2 = e1; w2 = w1; b1 = h; e1 = e; w1 = w; } else if (e < e2) { b2 = h; e2 = e; w2 = w; }
+    }
+    ord[t++] = i;
+    if (b1 < 0) { lab[i] = -1; dist[i] = 0; par[i] = -1; par2[i] = -1; mix2[i] = 0; eff[i] = 0; continue; }
+    lab[i] = b1; dist[i] = hd[b1][i]; par[i] = hp[b1][i]; eff[i] = e1;
+    if (b2 < 0) { par2[i] = -1; mix2[i] = 0; continue; }
+    // one step toward hub 1 changes (e2 - e1) by DW(1/w1 + 1/w2): the overlap band is HUB_SOFT cells to either side
+    par2[i] = hp[b2][i];
+    const steps = (e2 - (e1 > 0 ? e1 : 0)) / (DW * (1 / w1 + 1 / w2));
+    mix2[i] = steps < HUB_SOFT ? 1 - steps / HUB_SOFT : 0;
   }
   S.connected = t;
-  for (let k = 0; k < t; k++) { flow[q[k]] = 0; kids[q[k]] = 0; }
-  for (let k = t - 1; k >= 0; k--) { const i = q[k]; flow[i] += 1 + intake[i] * 6; const p = par[i]; if (p >= 0) { flow[p] += flow[i]; kids[p]++; } }
+  // weighted distance strictly decreases from a cell to its parent, so sorting on it lists children before parents
+  ord.subarray(0, t).sort((a, b) => (eff[b] - eff[a]) || (a - b));
+  for (let k = 0; k < t; k++) { const i = ord[k]; flow[i] = 0; kids[i] = 0; }
+  for (let k = 0; k < t; k++) { const i = ord[k]; flow[i] += 1 + intake[i] * 6; const p = par[i]; if (p >= 0) { flow[p] += flow[i]; kids[p]++; } }
   let fmax = 8;
-  for (const F of S.frags) { if (flow[F.hub] > fmax) fmax = flow[F.hub]; F.maxD = 0; }
+  for (const H of hubs) if (flow[H.cell] > fmax) fmax = flow[H.cell];
   S.flowMax = fmax;
+  for (const F of S.frags) F.maxD = 0;
   for (let i = 0; i < NN; i++) {
     if (owner[i] !== s) continue;
     isRoot[i] = 0;
-    const F = S.frags[this.comp[i]]; if (F && dist[i] > F.maxD) F.maxD = dist[i];
+    const F = S.frags[comp[i]]; if (F && dist[i] > F.maxD) F.maxD = dist[i];
   }
-  for (const F of S.frags) isRoot[F.hub] = 1;
+  for (const H of hubs) isRoot[H.cell] = 1;
 };
 
 // Multi-source walking-distance field (Dial's bucket queue over the DW/DD step costs). `out` holds distance ×DW, 65535
@@ -988,7 +1077,7 @@ Battle.prototype.step = function () {
   this.flowPrev.set(this.flow);
 
   // 1. fragments and routing
-  for (const s of [1, 2]) { this.label(s); this.connect(s); }
+  for (const s of [1, 2]) { this.label(s); this.hubs(s); this.connect(s); }
   // 2. scent
   if (T % 5 === 1) { this.scent(1); this.scent(2); }
 
@@ -1308,9 +1397,11 @@ Battle.prototype.sporulate = function (s) {
 //  matter: food or granite remaining
 //  aux   RGBA: R mass, G vein strength, B routing (low nibble: parent offset code 0..8, 4 = none; bit 4 healed, bit 5 fighting), A contest
 //  frag: fragment index per cell; frags[side]: [cells, energy, starving] per fragment
+//  route: low nibble = parent offset code toward the second-nearest hub (4 = none), high nibble = how far into the
+//         overlap band between the two hubs' networks the cell sits (0..15); a hub cell holds 15 | its weight ×15 << 4
 Battle.prototype.record = function () {
-  const dens = new Uint8Array(NN * 4), flags = new Uint8Array(NN), matter = new Uint8Array(NN), aux = new Uint8Array(NN * 4), frag = new Uint8Array(NN);
-  const owner = this.owner, d0 = this.dish.food0, terr = this.terrain, par = this.parent, mass = this.mass, vein = this.vein, contest = this.contest, cf = this.cflag, comp = this.comp;
+  const dens = new Uint8Array(NN * 4), flags = new Uint8Array(NN), matter = new Uint8Array(NN), aux = new Uint8Array(NN * 4), frag = new Uint8Array(NN), route = new Uint8Array(NN).fill(4);
+  const owner = this.owner, d0 = this.dish.food0, terr = this.terrain, par = this.parent, par2 = this.parent2, mix2 = this.mix2, mass = this.mass, vein = this.vein, contest = this.contest, cf = this.cflag, comp = this.comp;
   for (let i = 0; i < NN; i++) {
     const o = owner[i];
     if (o) {
@@ -1327,15 +1418,18 @@ Battle.prototype.record = function () {
       aux[i * 4 + 2] = code | ((cf[i] & 1) ? 16 : 0) | ((cf[i] & 2) ? 32 : 0);
       aux[i * 4 + 3] = Math.round(Math.min(1, contest[i]) * 255);
       frag[i] = Math.min(255, Math.max(0, comp[i]));
+      const p2 = par2[i];
+      if (p2 >= 0 && !this.isRoot[i]) { const dx = (p2 % N) - (i % N), dy = Math.floor(p2 / N) - Math.floor(i / N); route[i] = ((dx + 1) + 3 * (dy + 1)) | (Math.round(Math.min(1, mix2[i]) * 15) << 4); }
     } else aux[i * 4 + 2] = 4;
     const dm = this.dmg[i];
     if (dm > 0) { dens[i * 4 + 3] = Math.min(255, Math.round(dm * 70)); flags[i] |= (this.dsrc[i] << 4); }
     if (d0[i] > 0) matter[i] = Math.round(Math.max(0, this.food[i] / d0[i]) * 255);
     else if (terr[i] === T_ROCK) matter[i] = Math.max(1, Math.round(this.rockHP[i] / ROCK_HP * 255));
   }
+  for (const s of [1, 2]) for (const H of this.sides[s].hubs) if (owner[H.cell] === s) route[H.cell] = 15 | (Math.round(Math.min(1, Math.max(0, H.w)) * 15) << 4);
   const probes = [null, this.sides[1].probes.map(p => [p.x, p.y, p.dx, p.dy]), this.sides[2].probes.map(p => [p.x, p.y, p.dx, p.dy])];
   const frags = [null, this.sides[1].frags.map(F => [F.cells, Math.round(Math.max(0, F.energy)), F.starving ? 1 : 0]), this.sides[2].frags.map(F => [F.cells, Math.round(Math.max(0, F.energy)), F.starving ? 1 : 0])];
-  this.frames.push({ dens, flags, matter, aux, probes, frag, frags });
+  this.frames.push({ dens, flags, matter, aux, probes, frag, frags, route });
   for (const s of [1, 2]) { const S = this.sides[s]; S.area += S.cells; this.stats.cells[s].push(S.cells); this.stats.energy[s].push(S.energy); }
 };
 if (typeof module !== 'undefined') module.exports = { Battle, LEVELS, GENES, genomeCost, normGenome, deriveSide, SENSE_RANGE, DRIVE_COST, TRAIT_COST, MAXT, N, NN, makeDish };
@@ -1389,7 +1483,7 @@ const cloneG = g => normGenome(g);
 const strainAt = name => prog.strains.findIndex(s => sameName(s.name, name));
 
 // ---------------- App state ----------------
-const S = { mode: 'rack', level: 0, genome: cloneG(prog.genome), battle: null, libOpen: false, playhead: 0, revealed: 0, playing: false, speed: 1, sel: -1, resultShown: false, shownEvt: -1, lastFx: 0, logN: 0, showProbes: false, pvp: null }; // pvp: the versus session (see Versus below), null when playing solo
+const S = { mode: 'rack', level: 0, genome: cloneG(prog.genome), battle: null, libOpen: false, playhead: 0, revealed: 0, playing: false, speed: 1, sel: -1, resultShown: false, shownEvt: -1, lastFx: 0, logN: 0, showProbes: false, anim: true, pvp: null }; // pvp: the versus session (see Versus below), null when playing solo
 const SPEEDS = [0.125, 0.25, 0.5, 1, 2, 4], SPEED_LBL = { 0.125: '⅛', 0.25: '¼', 0.5: '½', 1: '1', 2: '2', 4: '4' };
 const TPS = 24; // ticks per second at 1x
 
@@ -1457,20 +1551,23 @@ function dataTex(filter) {
 const texA = dataTex(THREE.LinearFilter), texB = dataTex(THREE.LinearFilter);
 const texAuxA = dataTex(THREE.NearestFilter), texAuxB = dataTex(THREE.NearestFilter);
 const texStatus = dataTex(THREE.NearestFilter), texTerr = dataTex(THREE.LinearFilter), texPhase = dataTex(THREE.LinearFilter);
+const texRouteA = dataTex(THREE.NearestFilter), texRouteB = dataTex(THREE.NearestFilter);
 
 const surfUniforms = {
-  uDensA: { value: texA }, uDensB: { value: texB }, uAuxA: { value: texAuxA }, uAuxB: { value: texAuxB }, uStatus: { value: texStatus }, uTerr: { value: texTerr }, uPhase: { value: texPhase },
+  uDensA: { value: texA }, uDensB: { value: texB }, uAuxA: { value: texAuxA }, uAuxB: { value: texAuxB }, uStatus: { value: texStatus }, uTerr: { value: texTerr }, uPhase: { value: texPhase }, uRouteA: { value: texRouteA }, uRouteB: { value: texRouteB }, uAnim: { value: 1 },
   uNoise: { value: noiseRT ? noiseRT.texture : null }, uMix: { value: 0 }, uTime: { value: 0 }, uSize: { value: SIZE }, uDishR: { value: DISH_UV },
   uPCol: { value: new THREE.Color(0xf6c52e) }, uECol: { value: new THREE.Color(0xe0457f) }, uAgar: { value: new THREE.Color(0x6f6650) },
   uSel: { value: new THREE.Vector3(0, 0, 0) }, uGridN: { value: N }, uGenes: { value: new THREE.Vector4(0, 0, 0, 0) },
 };
 // Shared sampling. Frame textures: dens (bilinear) carries per-side density, hub distance and damage; aux (nearest)
-// carries mass, vein strength, routing code and contest. Frames t and t+1 are blended by uMix for smooth playback.
+// carries mass, vein strength, routing code and contest; route (nearest) carries the direction toward the second-nearest
+// hub and how deep the cell sits in the overlap band between two hubs' networks, or a hub cell's weight. Frames t and
+// t+1 are blended by uMix for smooth playback. uAnim at 0 freezes every time-driven effect (a debugging aid).
 // phase (bilinear) is the displayed hub distance, relaxed over time by updatePhase; R holds the whole part and G the
 // fraction (both in dist×3 units), so the decode is linear and bilinear filtering stays exact.
 const SURF_COMMON = `
-    uniform sampler2D uDensA, uDensB, uAuxA, uAuxB, uNoise, uTerr, uPhase;
-    uniform float uMix, uTime, uSize, uGridN;
+    uniform sampler2D uDensA, uDensB, uAuxA, uAuxB, uNoise, uTerr, uPhase, uRouteA, uRouteB;
+    uniform float uMix, uTime, uSize, uGridN, uAnim;
     vec4 densAt(vec2 uv){ return mix(texture2D(uDensA,uv),texture2D(uDensB,uv),uMix); }
     vec4 auxAt(vec2 uv){ return mix(texture2D(uAuxA,uv),texture2D(uAuxB,uv),uMix); }
     float hubAt(vec2 uv){ vec4 p=texture2D(uPhase,uv); return p.r*255.0+p.g; }
@@ -1492,7 +1589,7 @@ const surfMat = new THREE.ShaderMaterial({
       vec2 mv=auxBi(w);
       vec4 dc=densAt((floor(w*uGridN)+0.5)/uGridN);
       float body=smoothstep(0.10,0.30,m+(nz.r-0.5)*0.15)*step(0.004,max(dc.r,dc.g));
-      float ph=hubAt(w)*0.55+3.5*sin(uTime*0.7); float pulse=0.5+0.5*sin(ph-uTime*2.2);
+      float ph=hubAt(w)*0.55+3.5*sin(uTime*0.7); float pulse=mix(0.5,0.5+0.5*sin(ph-uTime*2.2),uAnim);
       float h=body*(0.004+0.085*mv.x*mv.x)*(0.92+0.08*pulse)+body*mv.y*mv.y*0.10*(0.85+0.15*pulse);
       vec4 t=texture2D(uTerr,uv);
       h+=t.r*0.035*nz.b;
@@ -1562,7 +1659,7 @@ const surfMat = new THREE.ShaderMaterial({
       float code0=floor(texture2D(uAuxA,c0uv).b*255.0+0.5);
       float heal=mod(floor(code0/16.0),2.0), fight=floor(code0/32.0);
       // neighbourhood pass: smoothed mass, vein tubes along the routing tree, direction of the nearest rival
-      float massS=0.0, wS=0.0, tube=0.0, tubeV=0.0, rival=0.0; vec2 atk=vec2(0.0);
+      float massS=0.0, wS=0.0, tube=0.0, tubeV=0.0, tube2=0.0, tubeV2=0.0, rival=0.0; vec2 atk=vec2(0.0);
       for(int dy=-1;dy<=1;dy++) for(int dx=-1;dx<=1;dx++){
         vec2 off=vec2(float(dx),float(dy)); vec2 cc=c0+off; vec2 cuv=(cc+0.5)*tx;
         vec4 d=densAt(cuv); float own=d.r>0.004?1.0:(d.g>0.004?2.0:0.0);
@@ -1573,11 +1670,21 @@ const surfMat = new THREE.ShaderMaterial({
         float w=max(0.0,1.0-dr*0.7); w*=w;
         massS+=a.r*w*same; wS+=w*same;
         if(same<0.5 && occ>0.5){ atk+=off; rival+=1.0; }
-        // the tube towards the routing parent; when the tree re-roots between the two ticks the old tube fades into the new
+        // the tube towards the routing parent; when a cell re-roots between the two ticks the old tube fades into the new
         float rad=0.045+0.32*pow(a.g,1.6);
         float radP=max(rad,px*0.9);
         float t=mix(tubeSeg(gw,cc,mod(codeA,16.0),radP,px),tubeSeg(gw,cc,mod(codeB,16.0),radP,px),uMix)*min(1.0,rad/(px*0.9))*same;
         if(t>tube){ tube=t; tubeV=a.g; }
+        // and the tube towards the second-nearest hub, where the cell sits in the overlap band between two hubs'
+        // networks (route byte: direction in the low nibble, depth into the band in the high one; 15 marks a hub cell)
+        float rA=floor(texture2D(uRouteA,cuv).r*255.0+0.5), rB=floor(texture2D(uRouteB,cuv).r*255.0+0.5);
+        float c2A=mod(rA,16.0), c2B=mod(rB,16.0);
+        float bA=c2A>14.5?0.0:floor(rA/16.0)/15.0, bB=c2B>14.5?0.0:floor(rB/16.0)/15.0;
+        if(bA+bB>0.0){
+          float rad2=0.04+0.24*pow(a.g,1.6); float rad2P=max(rad2,px*0.9);
+          float t2=mix(tubeSeg(gw,cc,c2A,rad2P,px)*bA,tubeSeg(gw,cc,c2B,rad2P,px)*bB,uMix)*min(1.0,rad2/(px*0.9))*same;
+          if(t2>tube2){ tube2=t2; tubeV2=a.g; }
+        }
       }
       float m2=wS>0.0?massS/wS:0.0;
       // lace: thin cells show only a few threads; the network fills in as the cell matures
@@ -1590,9 +1697,9 @@ const surfMat = new THREE.ShaderMaterial({
       float w3=0.03+0.55*m2; float aa=fwidth(e)+1e-3; float l3=(1.0-smoothstep(w3-aa,w3+aa,e))*smoothstep(0.2,0.55,m2);
       float sheet=smoothstep(0.6,0.95,m2);
       float lace=max(max(l1,l2),max(l3,sheet));
-      float cov=occ*max(lace,tube);
+      float cov=occ*max(lace,max(tube,tube2));
       // relief: threads and veins are raised tubes, sheets are granular
-      float hF=occ*(cov*(0.02+0.05*m2)+tube*(0.03+0.10*tubeV)+sheet*(0.5-wy.x)*0.02+l3*0.01);
+      float hF=occ*(cov*(0.02+0.05*m2)+tube*(0.03+0.10*tubeV)+tube2*(1.0-tube)*(0.02+0.08*tubeV2)+sheet*(0.5-wy.x)*0.02+l3*0.01);
       vec3 N=bump(normalize(vN),vPos,hF);
       vec3 L=normalize(vec3(-0.45,1.0,0.55)); vec3 V=normalize(cameraPosition-vPos); vec3 H=normalize(L+V);
       float diff=max(dot(N,L),0.0); float spec=pow(max(dot(N,H),0.0),60.0); float fres=pow(1.0-max(dot(N,V),0.0),3.0);
@@ -1601,13 +1708,14 @@ const surfMat = new THREE.ShaderMaterial({
       float ct=a0.a;
       float im=step(1.0-ct,fract(wy.z+0.04*sin(uTime*2.0+wy.z*30.0)))*step(0.01,ct);
       vec3 base=mix(own,riv,im);
-      float ph=hubAt(uv)*0.55+3.5*sin(uTime*0.7); float flow=0.5+0.5*sin(ph-uTime*2.2); float flow2=0.5+0.5*sin(ph*2.3+uTime*3.1);
+      float ph=hubAt(uv)*0.55+3.5*sin(uTime*0.7); float flow=mix(0.5,0.5+0.5*sin(ph-uTime*2.2),uAnim); float flow2=mix(0.5,0.5+0.5*sin(ph*2.3+uTime*3.1),uAnim);
       vec3 mold=base*(0.72+0.28*m2)*(0.9+0.2*nz.r);
       mold=mix(mold,mold*0.82+vec3(0.06,0.03,0.0),sheet*0.6);
       mold*=1.0-0.2*sheet*max(0.0,0.5-wy.x);
       vec3 veinCol=base*(0.5+0.55*flow)+vec3(0.08)*flow2*tubeV;
+      mold=mix(mold,veinCol*0.9,tube2*(0.4+0.5*tubeV2)); // the farther hub's tendril runs underneath
       mold=mix(mold,veinCol,tube*(0.45+0.55*tubeV));
-      float alpha=cov*(0.5+0.5*max(m2,tube*tubeV));
+      float alpha=cov*(0.5+0.5*max(m2,max(tube*tubeV,tube2*tubeV2*0.8)));
       // attacks: what hurt this cell this minute
       float src=floor(st.b*255.0/28.0+0.5); float dmg=st.a;
       float isE=step(abs(src-1.0),0.5), isA=step(abs(src-2.0),0.5), isT=step(abs(src-3.0),0.5), isS=step(abs(src-4.0),0.5), isU=step(abs(src-5.0),0.5), isSt=step(abs(src-6.0),0.5), isSv=step(abs(src-7.0),0.5);
@@ -1622,11 +1730,13 @@ const surfMat = new THREE.ShaderMaterial({
       mold+=vec3(1.0,0.95,0.7)*isU*dmg*(0.3+0.5*step(0.5,fract(uTime*6.0+nz.r*3.0)));
       mold=mix(mold,vec3(0.45,0.42,0.35),isSt*dmg*0.7);
       mold=mix(mold,vec3(0.4,0.47,0.55),isSv*dmg*0.7);
-      // sclerotia crust; the fragment's feeding hub glows softly
+      // sclerotia crust; each feeding hub glows in proportion to its weight (a hub's route byte is 15 | weight×15 << 4)
       vec3 crust=vec3(0.36,0.24,0.12)+base*0.12;
       mold=mix(mold,crust*(0.8+0.4*nz.b),st.r*0.8); alpha=max(alpha,st.r*occ*0.95);
-      float hub=st.g*(1.0-smoothstep(0.3,0.85,length(gw-(cA+0.5)))); // a soft disc, not the whole cell
-      mold+=base*hub*(0.3+0.25*sin(uTime*3.5)); alpha=max(alpha,hub*occ*0.9);
+      float r0A=floor(texture2D(uRouteA,c0uv).r*255.0+0.5), r0B=floor(texture2D(uRouteB,c0uv).r*255.0+0.5);
+      float hw=mix(mod(r0A,16.0)>14.5?floor(r0A/16.0)/15.0:0.0, mod(r0B,16.0)>14.5?floor(r0B/16.0)/15.0:0.0, uMix);
+      float hub=hw*(1.0-smoothstep(0.3,0.55+0.4*hw,length(gw-(cA+0.5)))); // a soft disc, not the whole cell
+      mold+=base*hub*(0.35+0.25*mix(0.0,sin(uTime*3.5),uAnim)); alpha=max(alpha,hub*occ*0.9);
       // defences: chitin rind darkens the thread edges, alkaline slime films the pockets
       float chi=o0<1.5?uGenes.x:uGenes.z; float muc=o0<1.5?uGenes.y:uGenes.w;
       float rim=smoothstep(0.0,0.3,cov)*(1.0-smoothstep(0.3,0.7,cov));
@@ -1635,9 +1745,9 @@ const surfMat = new THREE.ShaderMaterial({
       // healing shimmer and fighting throb
       float sp=step(0.975,hash1(floor(gw*10.0)+floor(uTime*8.0)*0.61));
       mold+=vec3(0.7,1.0,0.75)*heal*sp*0.9;
-      float throb=0.5+0.5*sin(uTime*7.0+nz.r*12.0);
+      float throb=mix(0.5,0.5+0.5*sin(uTime*7.0+nz.r*12.0),uAnim);
       alpha=min(1.0,alpha+fight*occ*0.12*throb*lace); mold*=1.0+0.1*fight*throb;
-      vec3 moldLit=mold*(0.4+0.7*diff)+spec*(0.5+0.4*tube)*(1.0-st.r)+fres*base*0.35+base*0.2*tube*flow;
+      vec3 moldLit=mold*(0.4+0.7*diff)+spec*(0.5+0.4*max(tube,tube2*0.7))*(1.0-st.r)+fres*base*0.35+base*0.2*tube*flow;
       // agar
       vec3 agar=uAgar*(0.9+0.16*nz.r)+vec3(0.1,0.12,0.1)*nz.a*0.35;
       agar=mix(agar,vec3(0.86,0.88,0.9)*(0.65+0.45*nz.b),tr.r*0.92);
@@ -1817,6 +1927,9 @@ function showFrame(b, t, frac, dt) {
     texB.image.data = F2.dens; texB.needsUpdate = true;
     texAuxA.image.data = F.aux; texAuxA.needsUpdate = true;
     texAuxB.image.data = F2.aux; texAuxB.needsUpdate = true;
+    const ra = texRouteA.image.data, rb = texRouteB.image.data;
+    for (let i = 0; i < NN; i++) { ra[i * 4] = F.route[i]; rb[i * 4] = F2.route[i]; }
+    texRouteA.needsUpdate = true; texRouteB.needsUpdate = true;
     const sd = texStatus.image.data;
     for (let i = 0; i < NN; i++) {
       const f = F.flags[i];
@@ -2003,6 +2116,9 @@ stage.addEventListener('wheel', e => {
 $('bView').addEventListener('click', resetView);
 function toggleProbes() { S.showProbes = !S.showProbes; $('bProbes').setAttribute('aria-pressed', String(S.showProbes)); probeLines.visible = S.showProbes && S.mode === 'battle'; }
 $('bProbes').addEventListener('click', toggleProbes);
+// debugging aid (A): freeze the surface animation (flow pulses, throb, hub glow) so the vein geometry can be judged alone
+function toggleAnim() { S.anim = !S.anim; surfUniforms.uAnim.value = S.anim ? 1 : 0; $('bAnim').setAttribute('aria-pressed', String(!S.anim)); }
+$('bAnim').addEventListener('click', toggleAnim);
 
 function onTap(cx, cy) {
   if (S.mode !== 'battle' || !S.battle) return;
@@ -2021,7 +2137,7 @@ function setMode(m) {
   $('rack').hidden = m !== 'rack'; $('lab').hidden = m !== 'lab';
   $('hud').hidden = m !== 'battle'; $('transport').hidden = m !== 'battle';
   if (m !== 'battle') { $('result').hidden = true; $('inspect').hidden = true; $('log').hidden = true; $('toast').style.opacity = 0; $('keys').hidden = true; $('bView').hidden = true; selectCell(-1); closeSpeedMenu(false); }
-  $('bProbes').hidden = m !== 'battle'; probeLines.visible = S.showProbes && m === 'battle';
+  $('bProbes').hidden = m !== 'battle'; $('bAnim').hidden = m !== 'battle'; probeLines.visible = S.showProbes && m === 'battle';
   cam.auto = m !== 'battle'; cam.zoom = 1; cam.target.copy(HOME); cam.theta = 0; cam.phi = m === 'battle' ? 0.72 : 0.82;
   hint.textContent = m === 'battle'
     ? (COARSE ? 'One finger orbits · two fingers pan and zoom · tap a cell' : 'Drag to orbit · right-drag to pan · scroll to zoom in close · click a cell')
@@ -2869,6 +2985,7 @@ document.addEventListener('keydown', e => {
   else if (e.key === '[') jumpEvent(-1); else if (e.key === ']') jumpEvent(1);
   else if (e.key === 'Home' || e.key === '0') resetView();
   else if (e.key === 'p' || e.key === 'P') toggleProbes();
+  else if (e.key === 'a' || e.key === 'A') toggleAnim();
 });
 
 // --- inspector ---
@@ -2891,7 +3008,7 @@ function updateInspect() {
   let occ = '<dd>Empty agar</dd>', body = '';
   if (o) {
     const Sd = b.sides[o], v = F.dens[i * 4 + o - 1] / 255, hpv = Math.max(0, (v - 0.3) / 0.7) * Sd.maxHP;
-    const status = [(f & 4) ? 'dormant' : '', (f & 8) ? 'feeding hub' : ''].filter(Boolean).join(', ');
+    const status = [(f & 4) ? 'dormant' : '', (f & 8) ? `hub · ${Math.round((F.route[i] >> 4) / 15 * 100)}% weight` : ''].filter(Boolean).join(', ');
     occ = `<dd><span style="color:${o === 1 ? COL.p : COL.e};font-weight:600">${esc(sideName(o))}</span>${status ? ' · ' + status : ''}<div>${hpv.toFixed(1)} / ${Sd.maxHP} HP</div><div class="hpbar"><i style="width:${hpv / Sd.maxHP * 100}%;background:${o === 1 ? COL.p : COL.e}"></i></div></dd>`;
     const mass = F.aux[i * 4] / 255, vein = F.aux[i * 4 + 1] / 255, ct = F.aux[i * 4 + 3] / 255;
     const kind = mass < 0.3 ? 'sparse tendril' : mass < 0.6 ? 'lace' : 'thick sheet';
@@ -2984,7 +3101,8 @@ let lastT = performance.now(), uiState = { keys: null, view: null };
 function frame(now) {
   const dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
   const time = now / 1000;
-  surfUniforms.uTime.value = time; beamMat.uniforms.uTime.value = time; probeMat.uniforms.uTime.value = time;
+  if (S.anim) surfUniforms.uTime.value = time;
+  beamMat.uniforms.uTime.value = time; probeMat.uniforms.uTime.value = time;
   if (S.mode === 'battle' && S.battle) {
     const b = S.battle;
     stepSim(b.frames.length - S.playhead < 60 ? 14 : 6);
