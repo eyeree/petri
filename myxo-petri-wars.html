@@ -351,7 +351,8 @@ const TRAIT_COST = [0, 0, 1, 2, 4, 6]; // index by level 1..5
 const DRIVE_COST = [0, 0, 1, 2, 3, 5]; // index by level 0..5: a drive at 0 is free and switched off
 const SENSE_RANGE = [0, 5, 9, 13, 18, 26]; // cells a strain can sense from any cell it owns, by Sensor range level 1..5
 const PROBE_EVERY = 10, PROBE_TTL = 30, PROBE_REACH = 22; // exploration spikes: refill interval, lifetime, length (cells)
-const DOM_SHARE = 0.9, DOM_TICKS = 30, DOM_MIN = 200, BARE_GRACE = 60; // overrun: hold 90% of living tissue for 30 min with a real body; bare plate: called 60 min later
+const DOM_SHARE = 0.9, DOM_TICKS = 30, DOM_MIN = 200; // overrun: hold 90% of living tissue for 30 min with a real body
+const RETRACT_RATE = 0.02, RETRACT_UNTIL = 20; // a starving fragment withdraws up to 2% of its cells a minute until its pool is back above 20 ATP
 const cl01 = (v, a, b) => Math.max(a, Math.min(b, v));
 
 // Genomes: { vigor 1-5, density 1-5, sense 1-5, genes [], taxis { food 0-5, hunt 0-5, explore 0-5 } }.
@@ -583,7 +584,7 @@ function Battle(levelIdx, genomeP, genomeE) {
       energy: 100, core, hub: core, cells: 0, connected: 0, alive: true, growAcc: 0, frags: [], nFrags: 1, bigFrags: 1,
       starving: false, starveTicks: 0, dmgTaken: new Float32Array(8), lost: new Int32Array(8),
       kills: 0, eaten: 0, peak: 0, pilesSeen: new Set(), lastBreach: -99, lastSplit: -99, lastFragStarve: -99, splits: 0, fragStarved: 0, lastLost: core,
-      spent: 0, flowMax: 1, massSum: 0, massDorm: 0, contested: 0, pushes: 0, captures: 0, area: 0,
+      spent: 0, flowMax: 1, massSum: 0, massDorm: 0, contested: 0, pushes: 0, captures: 0, area: 0, retracted: 0, announcedStarve: false, okRun: 0,
       known: new Set(), probes: [], probesSent: 0, probeFinds: 0, scouts: 0,
     });
     return s;
@@ -653,7 +654,7 @@ Battle.prototype.label = function (s) {
   }
   S.mainFrag = main;
   S.nFrags = frags.length;
-  S.bigFrags = frags.filter(F => F.cells >= 6).length;
+  S.bigFrags = frags.filter(F => F.cells >= 10).length;
   if (frags.length) { S.hub = frags[main].hub; S.starving = frags[main].starving; }
 };
 
@@ -798,6 +799,35 @@ Battle.prototype.settle = function (s) {
   }
 };
 
+// Famine response. A starving fragment does not wither in place: it pulls back from its periphery (farthest from the
+// hub first, thinnest first, never cells that feed, fight or hold the hub) and recovers the energy held in each
+// withdrawn cell. The body is the reserve. Only a fragment with nothing left to withdraw takes starvation damage.
+Battle.prototype.retract = function (s) {
+  const S = this.sides[s], owner = this.owner, comp = this.comp, dist = this.dist[s], mass = this.mass, intake = this.intake, cf = this.cflag, dorm = this.dorm, isRoot = this.isRoot, cellE = this.cellE, contest = this.contest;
+  let any = false; for (const F of S.frags) if (F.starving) { any = true; F.cand = []; }
+  if (!any) return;
+  for (let i = 0; i < NN; i++) {
+    if (owner[i] !== s) continue;
+    const F = S.frags[comp[i]]; if (!F || !F.starving) continue;
+    if (isRoot[i] || dorm[i] || intake[i] > 0 || (cf[i] & 2) || contest[i] > 0) continue;
+    F.cand.push(i);
+  }
+  for (const F of S.frags) {
+    if (!F.starving) continue;
+    const cand = F.cand; F.cand = null;
+    if (!cand.length) { F.exhausted = true; continue; }
+    cand.sort((a, b) => (dist[b] - mass[b] * 3) - (dist[a] - mass[a] * 3));
+    let k = Math.max(1, Math.ceil(F.cells * RETRACT_RATE));
+    for (let q = 0; q < cand.length && k > 0 && F.energy <= RETRACT_UNTIL; q++, k--) {
+      const i = cand[q];
+      F.energy += cellE[i] + S.growCost * 0.5 + mass[i] * MASS_COST * S.growCost;
+      owner[i] = 0; this.hp[i] = 0; mass[i] = 0; contest[i] = 0; cellE[i] = 0; comp[i] = -1; dorm[i] = 0;
+      F.cells--; S.retracted++;
+    }
+    if (F.energy > RETRACT_UNTIL) F.starving = false;
+  }
+};
+
 // Cells mature: mass drifts toward a target set by how surrounded the cell is, how much flow its vein carries,
 // whether it is feeding or fighting. Thickening costs the fragment ATP; starving fragments thin out.
 Battle.prototype.mature = function () {
@@ -859,15 +889,17 @@ Battle.prototype.step = function () {
       F.energy += F.income - cost; inc += F.income; up += cost;
       const was = F.starving;
       if (F.energy <= 0) { F.energy = 0; F.starving = true; }
-      else if (F.starving && F.energy > 20) F.starving = false;
+      else if (F.starving && F.energy > RETRACT_UNTIL) F.starving = false;
+      F.exhausted = false;
       if (F.id === S.mainFrag) {
-        if (F.starving && !S.starving) this.event(s, S.sclero ? 'dormant' : 'starve', F.hub);
-        else if (!F.starving && S.starving) this.event(s, 'recover', F.hub);
         S.starving = F.starving;
+        if (F.starving) { S.okRun = 0; if (!S.announcedStarve) { S.announcedStarve = true; this.event(s, S.sclero ? 'dormant' : 'starve', F.hub); } }
+        else if (S.announcedStarve && ++S.okRun >= 30) { S.announcedStarve = false; this.event(s, 'recover', F.hub); }
       } else if (F.starving && !was && F.cells >= 8 && T - S.lastFragStarve > 30) { S.lastFragStarve = T; S.fragStarved++; this.event(s, 'fragstarve', F.hub, { n: F.cells }); }
     }
     S.lastIncome = inc; S.lastUpkeep = up; S.income = inc;
     if (S.starving) S.starveTicks++;
+    this.retract(s);
   }
   // dormancy toggling (sclerotia harden fragment by fragment)
   for (let i = 0; i < NN; i++) {
@@ -883,7 +915,7 @@ Battle.prototype.step = function () {
     if (t === T_SALT && !S.osmo) this.addDmg(i, 1.1 * dm, S_SALT);
     if (t === T_LIGHT && !S.chloro) this.addDmg(i, 0.55 * dm, S_UV);
     const d = this.dist[o][i], starving = F ? F.starving : false;
-    if (starving && !S.sclero && (!F || d > F.maxD * 0.5 || F.cells <= 3)) this.addDmg(i, 0.35, S_STARVE);
+    if (starving && !S.sclero && (!F || F.exhausted)) this.addDmg(i, 0.35, S_STARVE);
     const cap = this.hpCap(i, S);
     if (!starving && !dorm[i] && hp[i] < cap) {
       const h = Math.min(cap - hp[i], 0.15 + (S.regen ? 1.0 : 0));
@@ -1003,13 +1035,13 @@ Battle.prototype.step = function () {
     this.label(s);
     if (S.bigFrags > before && T - S.lastSplit > 20) {
       S.lastSplit = T; S.splits++;
-      const sizes = S.frags.map(F => F.cells).filter(c => c >= 6).sort((a, b) => b - a);
+      const sizes = S.frags.map(F => F.cells).filter(c => c >= 10).sort((a, b) => b - a);
       this.event(s, 'split', S.frags[S.mainFrag].hub, { n: S.bigFrags, piece: sizes[1] || 0 });
     }
   }
   this.record();
-  // end: wipe-out, overrun (one strain holds almost all living tissue for a sustained spell), a bare plate called
-  // after a grace period, or the 12-hour incubation; the last two are judged on coverage over the whole incubation
+  // end: wipe-out, overrun (one strain holds almost all living tissue for a sustained spell), or whoever holds more
+  // of the plate when the 12-hour incubation ends
   const p = this.sides[1], e = this.sides[2], tot = p.cells + e.cells || 1;
   for (const s of [1, 2]) { const S = this.sides[s]; this.domRun[s] = (S.cells / tot >= DOM_SHARE && S.cells >= DOM_MIN) ? this.domRun[s] + 1 : 0; }
   if (p.cells === 0 || e.cells === 0) {
@@ -1019,13 +1051,9 @@ Battle.prototype.step = function () {
     this.done = true;
     const w = this.domRun[1] >= DOM_TICKS ? 1 : 2;
     this.result = { winner: w, reason: 'dom', tick: T, share: this.sides[w].cells / tot };
-  } else if (this.bareTick > 0 && T >= this.bareTick + BARE_GRACE) {
-    this.done = true;
-    this.result = { winner: p.area >= e.area ? 1 : 2, reason: 'bare', tick: T, share: p.area / Math.max(1, p.area + e.area) };
   } else if (T >= MAXT) {
-    // a plate that goes the distance is judged on coverage over the whole incubation, not on famine remnants
     this.done = true;
-    this.result = { winner: p.area >= e.area ? 1 : 2, reason: 'time', tick: T, share: p.area / Math.max(1, p.area + e.area) };
+    this.result = { winner: p.cells >= e.cells ? 1 : 2, reason: 'time', tick: T, share: p.cells / tot };
   }
   if (this.done) { const L = this.sides[3 - this.result.winner]; this.event(this.result.winner, 'end', L.cells ? L.hub : L.lastLost); }
 };
@@ -1842,8 +1870,8 @@ function renderRack() {
     <li><b>Feed.</b> Energy (ATP) comes from food your enzymes can digest. Every living cell costs upkeep, so a strain that grows faster than it eats will starve and wither from the edges.</li>
     <li><b>Grow.</b> Vigor sets how fast new cells spread. Sensing decides where: a strain only knows about food and rivals within its sensor range, remembers food it has found, and can send out exploratory spikes to find more.</li>
     <li><b>Fight.</b> Touching cells engulf each other each minute. Density, acids, rinds and slimes decide who gives ground.</li>
-    <li><b>Stay fed.</b> A strain is one organism with no centre. Each connected fragment pools its own energy: cut a network apart and every piece lives on its share until it finds food, or starves. Pieces that touch again merge.</li>
-    <li><b>Win.</b> Wipe out the rival, or overrun it: hold nine tenths of the living tissue for half an hour. If the plate is eaten bare, or the 12-hour incubation runs out, the strain that covered more of the dish over the whole incubation takes it.</li>
+    <li><b>Stay fed.</b> A strain is one organism with no centre. Each connected fragment pools its own energy: cut a network apart and every piece lives on its share until it finds food. A starving fragment pulls back from its edges, recovering the energy in its body, and only dies when there is nothing left to withdraw. Pieces that touch again merge.</li>
+    <li><b>Win.</b> Wipe out the rival, or overrun it: hold nine tenths of the living tissue for half an hour. Otherwise the strain holding more of the dish when the 12-hour incubation ends takes it, so a lean strain parked on regrowing food can outlast a bloomer that ate the plate bare.</li>
     <li><b>Zoom in.</b> Scroll to get close and right-drag to pan. New growth is a sparse tendril that thickens into lace, sheets and pulsing veins as it matures; rival tendrils creep into thin cells and wrestle for them, and every attack has its own look.</li>
     <li><b>Study.</b> Every battle is recorded minute by minute. Rewind, step and tap cells to see why it went the way it did.</li>
   </ol></details>
@@ -2020,7 +2048,7 @@ function evText(ev) {
     case 'breach': return `${n} dissolved a granite wall`;
     case 'split': return `${n} was cut apart: ${ev.n} fragments, one of ${ev.piece} cells`;
     case 'fragstarve': return `A cut-off fragment of ${n} (${ev.n} cells) is starving`;
-    case 'starve': return `${n} is starving and withering`;
+    case 'starve': return `${n} is starving and pulling back`;
     case 'dormant': return `${n} formed sclerotia and went dormant`;
     case 'recover': return `${n} recovered its energy`;
     case 'spores': return `${n} fired ${ev.shots.length} spore${ev.shots.length > 1 ? 's' : ''}`;
@@ -2057,7 +2085,7 @@ function updateHud() {
   $('hPCells').textContent = cp; $('hECells').textContent = ce;
   $('hPE').textContent = Math.round(b.stats.energy[1][t] || 0); $('hEE').textContent = Math.round(b.stats.energy[2][t] || 0);
   const Fr = b.frames[t] && b.frames[t].frags;
-  for (const s of [1, 2]) { const n = Fr ? Fr[s].filter(x => x[0] >= 6).length : 1; $(s === 1 ? 'hPFrag' : 'hEFrag').textContent = n > 1 ? ` · ${n} fragments` : ''; }
+  for (const s of [1, 2]) { const n = Fr ? Fr[s].filter(x => x[0] >= 10).length : 1; $(s === 1 ? 'hPFrag' : 'hEFrag').textContent = n > 1 ? ` · ${n} fragments` : ''; }
   $('hClock').textContent = fmt(t); $('tNow').textContent = fmt(t);
   const tot = cp + ce || 1;
   $('tugP').style.width = (cp / tot * 100) + '%'; $('tugE').style.width = (ce / tot * 100) + '%';
@@ -2208,7 +2236,7 @@ function analyze(b) {
   const missed = [0, 0, 0, 0];
   b.dish.piles.forEach((pl, pid) => { if (P.eat[pl.type] && !P.known.has(pid)) for (const i of pl.cells) missed[pl.type] += b.dish.food0[i]; });
   for (const f of [3, 2, 1]) if (missed[f] > 150) notes.push(`${FOOD_NAMES[f]} worth about ${Math.round(missed[f] * YIELD[f])} ATP was never discovered. Raise Sensor range or Explore to find it.`);
-  if (b.bareTick > 0 && P.starveTicks > 30) notes.push(`The plate was eaten bare by ${fmt(b.bareTick)} and both strains withered. Vein Pruning and lower Density stretch the food; a faster kill ends it sooner.`);
+  if (b.bareTick > 0 && P.retracted > 50) notes.push(`The plate was eaten bare by ${fmt(b.bareTick)}; your strain pulled back ${P.retracted} cells to live on its reserves. Holding regrowing bacterial lawns, Vein Pruning and lower Density all stretch a famine; a faster kill avoids it.`);
   else if (P.starveTicks > 30) notes.push(`Your strain starved for ${P.starveTicks} min. It grew faster than it could feed: lower Vigor or Density, add Vein Pruning, or raise Seek food.`);
   if (share(S_ACID) > 0.3 && !has('mucus')) notes.push(`Acid did ${Math.round(share(S_ACID) * 100)}% of your damage. ${iso('mucus') ? 'Alkaline Slime neutralises most of it.' : 'A slime gene against acid is coming.'}`);
   if (share(S_ENGULF) > 0.45 && !has('chitin') && P.lost[S_ENGULF] > 40) notes.push(`Engulfing did ${Math.round(share(S_ENGULF) * 100)}% of your damage. Chitin Rind halves it; more Density makes cells tougher.`);
@@ -2218,7 +2246,7 @@ function analyze(b) {
   if (P.splits >= 2 || P.fragStarved >= 2) notes.push(`Your network was cut apart ${P.splits} time${P.splits === 1 ? '' : 's'} and ${P.fragStarved} cut-off fragment${P.fragStarved === 1 ? '' : 's'} starved. Keep fronts broad${iso('granules') && !has('granules') ? ', or take Reserve Granules so fragments can wait for food' : ''}.`);
   const rocks = b.dish.terrain.some(t => t === T_ROCK);
   if (rocks && !has('acid') && b.result.winner !== 1 && E.acid) notes.push(`${LEVELS[b.level].rival.name.split(' ')[0]} burned through granite you had to walk around. ${iso('acid') ? 'Oxalic Acid opens the same shortcuts.' : ''}`);
-  if (b.result.winner !== 1 && (b.result.reason === 'time' || b.result.reason === 'bare')) notes.push('Coverage over the whole incubation decides a plate that is not overrun. Raise Hunt rival to press the attack, or Vigor to claim agar sooner.');
+  if (b.result.winner !== 1 && b.result.reason === 'time') notes.push('Whatever is alive at 12:00 decides a plate that is not overrun. Raise Hunt rival to press the attack, hold the regrowing lawns, or lower upkeep so your body outlasts the famine.');
   if (b.result.winner === 1 && !notes.length) notes.push(b.result.reason === 'elim' ? `Clean kill at ${fmt(b.result.tick)}. Try a cheaper genome to see how lean a winning strain can be.` : 'You won on territory. A harder-hitting front could finish the rival outright.');
   return notes.slice(0, 3);
 }
@@ -2235,9 +2263,7 @@ function showResult() {
     ? (win ? `${rv} was wiped from the plate at ${fmt(R0.tick)}.` : `${rv} consumed your strain at ${fmt(R0.tick)}.`)
     : R0.reason === 'dom'
     ? (win ? `${rv} was overrun: down to ${100 - pct}% of the living tissue by ${fmt(R0.tick)}.` : `${rv} overran the plate by ${fmt(R0.tick)}; your strain was down to ${100 - pct}% of the living tissue.`)
-    : R0.reason === 'bare'
-    ? (win ? `The plate was eaten bare at ${fmt(b.bareTick)}. Your strain had covered ${pct}% of the occupied agar, peaking at ${P.peak} cells to ${E.peak}.` : `The plate was eaten bare at ${fmt(b.bareTick)}. ${rv} had covered ${100 - pct}% of the occupied agar, peaking at ${E.peak} cells to your ${P.peak}.`)
-    : (win ? `Over the incubation your strain covered ${Math.round(b.result.share * 100)}% of the occupied agar, peaking at ${P.peak} cells to ${E.peak}.` : `${rv} covered ${Math.round((1 - b.result.share) * 100)}% of the occupied agar over the incubation, peaking at ${E.peak} cells to your ${P.peak}.`);
+    : (win ? `You held ${P.cells} cells to ${E.cells} when incubation ended${b.bareTick > 0 ? `, after the plate went bare at ${fmt(b.bareTick)}` : ''}.` : `${rv} held ${E.cells} cells to your ${P.cells} when incubation ended${b.bareTick > 0 ? `, after the plate went bare at ${fmt(b.bareTick)}` : ''}.`);
   const lostTot = P.lost.reduce((a, x) => a + x, 0);
   const lossBar = lostTot ? [1, 2, 3, 4, 5, 6, 7].filter(k => P.lost[k]).map(k => `<i style="width:${P.lost[k] / lostTot * 100}%;background:${SRC_COL[k]}" title="${SRC_NAMES[k]}"></i>`).join('') : '';
   const legend = [1, 2, 3, 4, 5, 6, 7].filter(k => P.lost[k]).map(k => `<span><i style="background:${SRC_COL[k]}"></i>${SRC_NAMES[k]} ${P.lost[k]}</span>`).join('');
