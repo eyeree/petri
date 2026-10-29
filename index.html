@@ -1354,21 +1354,24 @@ function dataTex(filter) {
 }
 const texA = dataTex(THREE.LinearFilter), texB = dataTex(THREE.LinearFilter);
 const texAuxA = dataTex(THREE.NearestFilter), texAuxB = dataTex(THREE.NearestFilter);
-const texStatus = dataTex(THREE.NearestFilter), texTerr = dataTex(THREE.LinearFilter);
+const texStatus = dataTex(THREE.NearestFilter), texTerr = dataTex(THREE.LinearFilter), texPhase = dataTex(THREE.LinearFilter);
 
 const surfUniforms = {
-  uDensA: { value: texA }, uDensB: { value: texB }, uAuxA: { value: texAuxA }, uAuxB: { value: texAuxB }, uStatus: { value: texStatus }, uTerr: { value: texTerr },
+  uDensA: { value: texA }, uDensB: { value: texB }, uAuxA: { value: texAuxA }, uAuxB: { value: texAuxB }, uStatus: { value: texStatus }, uTerr: { value: texTerr }, uPhase: { value: texPhase },
   uNoise: { value: noiseRT ? noiseRT.texture : null }, uMix: { value: 0 }, uTime: { value: 0 }, uSize: { value: SIZE }, uDishR: { value: DISH_UV },
   uPCol: { value: new THREE.Color(0xf6c52e) }, uECol: { value: new THREE.Color(0xe0457f) }, uAgar: { value: new THREE.Color(0x6f6650) },
   uSel: { value: new THREE.Vector3(0, 0, 0) }, uGridN: { value: N }, uGenes: { value: new THREE.Vector4(0, 0, 0, 0) },
 };
 // Shared sampling. Frame textures: dens (bilinear) carries per-side density, hub distance and damage; aux (nearest)
 // carries mass, vein strength, routing code and contest. Frames t and t+1 are blended by uMix for smooth playback.
+// phase (bilinear) is the displayed hub distance, relaxed over time by updatePhase; R holds the whole part and G the
+// fraction (both in dist×3 units), so the decode is linear and bilinear filtering stays exact.
 const SURF_COMMON = `
-    uniform sampler2D uDensA, uDensB, uAuxA, uAuxB, uNoise, uTerr;
+    uniform sampler2D uDensA, uDensB, uAuxA, uAuxB, uNoise, uTerr, uPhase;
     uniform float uMix, uTime, uSize, uGridN;
     vec4 densAt(vec2 uv){ return mix(texture2D(uDensA,uv),texture2D(uDensB,uv),uMix); }
     vec4 auxAt(vec2 uv){ return mix(texture2D(uAuxA,uv),texture2D(uAuxB,uv),uMix); }
+    float hubAt(vec2 uv){ vec4 p=texture2D(uPhase,uv); return p.r*255.0+p.g; }
     vec2 warpAt(vec2 uv, vec4 nz){ return vec2(nz.r-0.5, texture2D(uNoise,uv.yx*0.93+0.31).r-0.5)*0.9; }`;
 const surfMat = new THREE.ShaderMaterial({
   uniforms: surfUniforms,
@@ -1387,7 +1390,7 @@ const surfMat = new THREE.ShaderMaterial({
       vec2 mv=auxBi(w);
       vec4 dc=densAt((floor(w*uGridN)+0.5)/uGridN);
       float body=smoothstep(0.10,0.30,m+(nz.r-0.5)*0.15)*step(0.004,max(dc.r,dc.g));
-      float ph=d.b*255.0*0.55+3.5*sin(uTime*0.7); float pulse=0.5+0.5*sin(ph-uTime*2.2);
+      float ph=hubAt(w)*0.55+3.5*sin(uTime*0.7); float pulse=0.5+0.5*sin(ph-uTime*2.2);
       float h=body*(0.004+0.085*mv.x*mv.x)*(0.92+0.08*pulse)+body*mv.y*mv.y*0.10*(0.85+0.15*pulse);
       vec4 t=texture2D(uTerr,uv);
       h+=t.r*0.035*nz.b;
@@ -1418,6 +1421,12 @@ const surfMat = new THREE.ShaderMaterial({
       return vec3(sqrt(f1),sqrt(f2),id);
     }
     float segDist(vec2 p, vec2 a, vec2 b){ vec2 ab=b-a; float t=clamp(dot(p-a,ab)/max(dot(ab,ab),1e-4),0.0,1.0); return length(p-(a+ab*t)); }
+    // coverage of the tube running from cell cc towards its routing parent (code pd; 4 = none)
+    float tubeSeg(vec2 p, vec2 cc, float pd, float radP, float px){
+      if(abs(pd-4.0)<0.5 || pd>8.5) return 0.0;
+      vec2 dir=vec2(mod(pd,3.0)-1.0,floor(pd/3.0)-1.0);
+      return 1.0-smoothstep(radP*0.45,radP+px,segDist(p,cc+0.5,cc+0.5+dir));
+    }
     vec3 bump(vec3 n, vec3 pos, float h){
       vec3 sx=dFdx(pos), sy=dFdy(pos); vec3 r1=cross(sy,n), r2=cross(n,sx); float det=dot(sx,r1);
       vec3 grad=sign(det)*(dFdx(h)*r1+dFdy(h)*r2); return normalize(abs(det)*n-grad);
@@ -1442,21 +1451,17 @@ const surfMat = new THREE.ShaderMaterial({
         vec2 off=vec2(float(dx),float(dy)); vec2 cc=c0+off; vec2 cuv=(cc+0.5)*tx;
         vec4 d=densAt(cuv); float own=d.r>0.004?1.0:(d.g>0.004?2.0:0.0);
         if(own<0.5) continue;
-        vec4 a=auxAt(cuv); float code=floor(texture2D(uAuxA,cuv).b*255.0+0.5);
+        vec4 a=auxAt(cuv); float codeA=floor(texture2D(uAuxA,cuv).b*255.0+0.5), codeB=floor(texture2D(uAuxB,cuv).b*255.0+0.5);
         vec2 rel=gw-(cc+0.5); float dr=length(rel);
         float same=abs(own-o0)<0.5?1.0:0.0;
         float w=max(0.0,1.0-dr*0.7); w*=w;
         massS+=a.r*w*same; wS+=w*same;
         if(same<0.5 && occ>0.5){ atk+=off; rival+=1.0; }
-        float pd=mod(code,16.0);
-        if(abs(pd-4.0)>0.5 && pd<8.5){
-          vec2 dir=vec2(mod(pd,3.0)-1.0,floor(pd/3.0)-1.0);
-          float sd=segDist(gw,cc+0.5,cc+0.5+dir);
-          float rad=0.045+0.32*pow(a.g,1.6);
-          float radP=max(rad,px*0.9);
-          float t=(1.0-smoothstep(radP*0.45,radP+px,sd))*min(1.0,rad/(px*0.9))*same;
-          if(t>tube){ tube=t; tubeV=a.g; }
-        }
+        // the tube towards the routing parent; when the tree re-roots between the two ticks the old tube fades into the new
+        float rad=0.045+0.32*pow(a.g,1.6);
+        float radP=max(rad,px*0.9);
+        float t=mix(tubeSeg(gw,cc,mod(codeA,16.0),radP,px),tubeSeg(gw,cc,mod(codeB,16.0),radP,px),uMix)*min(1.0,rad/(px*0.9))*same;
+        if(t>tube){ tube=t; tubeV=a.g; }
       }
       float m2=wS>0.0?massS/wS:0.0;
       // lace: thin cells show only a few threads; the network fills in as the cell matures
@@ -1480,8 +1485,7 @@ const surfMat = new THREE.ShaderMaterial({
       float ct=a0.a;
       float im=step(1.0-ct,fract(wy.z+0.04*sin(uTime*2.0+wy.z*30.0)))*step(0.01,ct);
       vec3 base=mix(own,riv,im);
-      vec4 db=densAt(uv);
-      float ph=db.b*255.0*0.55+3.5*sin(uTime*0.7); float flow=0.5+0.5*sin(ph-uTime*2.2); float flow2=0.5+0.5*sin(ph*2.3+uTime*3.1);
+      float ph=hubAt(uv)*0.55+3.5*sin(uTime*0.7); float flow=0.5+0.5*sin(ph-uTime*2.2); float flow2=0.5+0.5*sin(ph*2.3+uTime*3.1);
       vec3 mold=base*(0.72+0.28*m2)*(0.9+0.2*nz.r);
       mold=mix(mold,mold*0.82+vec3(0.06,0.03,0.0),sheet*0.6);
       mold*=1.0-0.2*sheet*max(0.0,0.5-wy.x);
@@ -1666,10 +1670,30 @@ function applyMatter(matter) {
 
 // --- frame upload ---
 let shown = { battle: null, t: -1, t2: -1 };
-function showFrame(b, t, frac) {
+// Flow-pulse phase. The pulse rides on each cell's routing distance from its fragment's hub, and a hub that moves by
+// one cell shifts that distance for nearly every cell of the fragment at once; shown as recorded, a whole colony's
+// vein shading jumped each time a hub relocated. The displayed distance instead relaxes toward the recorded one
+// (time constant PHASE_TAU, in wall seconds), snapping only on a seek, a new battle or a newly occupied cell.
+const PHASE_TAU = 0.3;
+const phase = new Float32Array(NN).fill(-1);
+function updatePhase(F, F2, mix, dt, snap) {
+  const pd = texPhase.image.data, da = F.dens, db = F2.dens, k = snap ? 1 : 1 - Math.exp(-dt / PHASE_TAU);
+  for (let i = 0; i < NN; i++) {
+    const j = i * 4, oa = da[j] + da[j + 1] > 0, ob = db[j] + db[j + 1] > 0;
+    if (!oa && !ob) { phase[i] = -1; pd[j] = pd[j + 1] = 0; continue; }
+    const target = oa && ob ? da[j + 2] + (db[j + 2] - da[j + 2]) * mix : oa ? da[j + 2] : db[j + 2];
+    const p = phase[i] < 0 ? target : phase[i] + (target - phase[i]) * k;
+    phase[i] = p;
+    const fl = Math.floor(p);
+    pd[j] = fl; pd[j + 1] = Math.round((p - fl) * 255);
+  }
+  texPhase.needsUpdate = true;
+}
+function showFrame(b, t, frac, dt) {
   const last = b.frames.length - 1;
   t = clamp(t, 0, last);
   const t2 = Math.min(t + 1, last);
+  const snap = shown.battle !== b || Math.abs(t - shown.t) > 8;
   if (shown.battle !== b || shown.t !== t || shown.t2 !== t2) {
     const F = b.frames[t], F2 = b.frames[t2];
     texA.image.data = F.dens; texA.needsUpdate = true;
@@ -1686,7 +1710,9 @@ function showFrame(b, t, frac) {
     applyMatter(F.matter); showProbes(F);
     shown = { battle: b, t, t2 };
   }
-  surfUniforms.uMix.value = t2 > t ? clamp(frac, 0, 1) : 0;
+  const mix = t2 > t ? clamp(frac, 0, 1) : 0;
+  surfUniforms.uMix.value = mix;
+  updatePhase(b.frames[t], b.frames[t2], mix, dt || 0, snap);
 }
 function setGenes(b) {
   const P = b.sides[1], E = b.sides[2];
@@ -2466,13 +2492,13 @@ function frame(now) {
       setTimeout(() => { if (S.mode === 'battle' && S.battle === b) showResult(); }, 700);
     }
     const t = Math.floor(S.playhead);
-    showFrame(b, t, S.playhead - t);
+    showFrame(b, t, S.playhead - t, dt);
     updateHud(); updateToast(); drawScrub(); updateInspect();
     const keys = cam.zoom < 0.55, view = viewMoved() || Math.abs(cam.theta) > 0.05;
     if (keys !== uiState.keys) { uiState.keys = keys; $('keys').hidden = !keys; }
     if (view !== uiState.view) { uiState.view = view; $('bView').hidden = !view; }
   } else if (S.preview) {
-    showFrame(S.preview, 0, 0);
+    showFrame(S.preview, 0, 0, dt);
   }
   if (cam.auto && !pointers.size) { cam.theta += dt * 0.08; updateCamera(); }
   updateFx(dt);
