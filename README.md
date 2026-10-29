@@ -15,7 +15,9 @@ see what happened to them. Each plate you win isolates new genes for the next on
 
 **Genome.** Traits (Vigor, Density, Sensor range), three behaviour drives (Seek food,
 Hunt rival, Explore) and a set of genes for metabolism, defence, offence and network
-management all cost kilobases, so every strain is a trade-off.
+management all cost kilobases, so every strain is a trade-off. Save a strain under its
+name and load it on any plate: plates differ only in their kilobase budget, so a strain
+bred for a later plate shows as over budget on an earlier one until it is trimmed.
 
 **Sensing.** A strain only knows about food and rival tissue within its sensor range of
 some cell it owns, and granite blocks that. Food it has sensed stays remembered. Instead

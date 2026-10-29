@@ -110,6 +110,34 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 .sec-h h3 { font-family: var(--f-display); font-weight: 700; font-size: 18px; }
 .sec-h small { color: var(--faint); font-size: 12px; }
 .name-in { width: 100%; box-sizing: border-box; background: var(--raised); border: 1px solid var(--line); border-radius: var(--r-sm); color: var(--ink); padding: 10px 12px; font-family: var(--f-display); font-weight: 700; font-size: 17px; min-height: 44px; }
+/* Strain: the name row saves the current strain; the rack below lists saved strains to load, rename or delete. */
+.strain-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; }
+.sec-h small.st-dirty { color: var(--gold); } .sec-h small.st-saved { color: var(--ok); }
+.lib { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bench-2); }
+.lib summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; font-weight: 600; }
+.lib summary::-webkit-details-marker { display: none; }
+.lib summary .n { font-family: var(--f-mono); font-size: 12px; font-weight: 400; color: var(--faint); margin-right: auto; }
+.lib summary::after { content: "+"; font-family: var(--f-mono); color: var(--faint); }
+.lib[open] summary::after { content: "–"; }
+.lib-empty { margin: 0; padding: 0 12px 12px; color: var(--dim); font-size: 12.5px; }
+.strains { list-style: none; margin: 0; padding: 0 8px 8px; display: grid; gap: 6px; }
+.strain { display: grid; grid-template-columns: 1fr auto auto; gap: 6px; align-items: center; padding: 8px 8px 8px 12px; border-radius: var(--r-sm); background: var(--raised); border: 1px solid var(--line); }
+.strain.cur { border-color: var(--gold-deep); }
+.strain .pick { min-width: 0; display: grid; gap: 2px; text-align: left; background: none; border: 0; padding: 0; cursor: pointer; }
+.strain .top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-width: 0; }
+.strain .top b { max-width: 100%; font-family: var(--f-display); font-weight: 700; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.strain .pick:hover .top b { color: var(--gold); }
+.strain .kb { font-family: var(--f-mono); font-size: 11px; color: var(--dim); white-space: nowrap; }
+.strain .kb.over { color: var(--bad); }
+.strain .sum { font-family: var(--f-mono); font-size: 11px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.strain .ib { width: 36px; height: 36px; border-radius: 9px; font-size: 14px; color: var(--dim); }
+.strain .ib svg { width: 16px; height: 16px; }
+.strain .ib.armed { width: auto; padding: 0 10px; font-family: var(--f-mono); font-size: 12px; color: var(--bad); border-color: var(--bad); }
+.strain .ren { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.strain .ren .name-in { flex: 1 1 140px; width: auto; font-size: 15px; min-height: 40px; padding: 6px 10px; }
+.strain .ren .name-in[aria-invalid="true"] { border-color: var(--bad); }
+.strain .ren .btn { min-height: 40px; padding: 0 14px; }
+.strain .ren .err { flex-basis: 100%; color: var(--bad); font-size: 12.5px; }
 .trait { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; padding: 10px 12px; border-radius: var(--r-md); background: var(--raised); border: 1px solid var(--line); }
 .trait .tn { font-weight: 600; }
 .trait .td { grid-column: 1 / -1; color: var(--dim); font-size: 12.5px; }
@@ -206,6 +234,8 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 
 .card .verdict { font-family: var(--f-display); font-weight: 800; font-size: 34px; line-height: 1; letter-spacing: -0.02em; }
 .card .verdict.win { color: var(--gold); } .card .verdict.lose { color: var(--rival); }
 .card .why { color: var(--dim); margin-top: 6px; }
+.modal { position: fixed; z-index: 30; }
+.card .mtitle { font-family: var(--f-display); font-weight: 800; font-size: 24px; line-height: 1.1; letter-spacing: -0.02em; margin-top: 6px; }
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .stat { padding: 8px 10px; border-radius: var(--r-sm); background: var(--raised); }
 .stat small { display: block; font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); }
@@ -292,6 +322,7 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 
     </div>
   </footer>
 </div>
+<div class="result modal" id="modal" hidden></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
 // ===================== MYXO SIMULATION =====================
@@ -1223,15 +1254,40 @@ const FOOD_ENZ = ['', 'amylase', 'protease', 'ligninase'];
 // ---------------- Progress ----------------
 const KEY = 'myxo.petri.v1';
 const DEFAULT_GENOME = { vigor: 2, density: 2, sense: 2, genes: ['amylase', 'protease', 'chitin', 'crush'], taxis: { food: 3, hunt: 1, explore: 2 } };
-let prog = { cleared: [false, false, false, false, false, false], genomes: {}, name: 'Strain P-01' };
-try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && Array.isArray(s.cleared)) prog = Object.assign(prog, s); } catch (e) { }
+const DEFAULT_NAME = 'Strain P-01', NAME_MAX = 20;
+// The player breeds one strain at a time (prog.name + prog.genome) and carries it from plate to plate; plates differ only in their kb budget,
+// so a strain bred for a later plate can be loaded on an earlier one and simply shows as over budget until it is trimmed.
+// prog.strains is the rack of saved strains: { name, genome, t }, names unique ignoring case.
+const genomeKey = g => { const n = normGenome(g); return JSON.stringify([n.vigor, n.density, n.sense, n.taxis.food, n.taxis.hunt, n.taxis.explore, [...n.genes].sort()]); };
+const sameName = (a, b) => String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
+const freshProg = () => ({ cleared: [false, false, false, false, false, false], name: DEFAULT_NAME, genome: normGenome(DEFAULT_GENOME), strains: [] });
+let prog = freshProg();
+// Saves from before the strain rack kept a genome per plate (genomes[i]) and the last one edited (lastGenome): the last edited becomes the current
+// strain and every other distinct per-plate build is kept as a saved strain named after its plate.
+function migrateProg(s) {
+  const p = freshProg(), old = s.genomes || {};
+  p.cleared = p.cleared.map((c, i) => !!s.cleared[i]);
+  p.name = String(s.name || DEFAULT_NAME).slice(0, NAME_MAX);
+  p.genome = normGenome(s.genome || s.lastGenome || old[Object.keys(old).pop()] || DEFAULT_GENOME);
+  p.strains = (Array.isArray(s.strains) ? s.strains : []).filter(x => x && x.genome).map(x => ({ name: String(x.name || DEFAULT_NAME).slice(0, NAME_MAX), genome: normGenome(x.genome), t: +x.t || 0 }));
+  const seen = new Set([genomeKey(p.genome), ...p.strains.map(x => genomeKey(x.genome))]);
+  for (const i of Object.keys(old)) {
+    if (!LEVELS[+i] || !old[i]) continue;
+    const g = normGenome(old[i]), k = genomeKey(g);
+    if (seen.has(k)) continue; seen.add(k);
+    p.strains.push({ name: `${p.name.slice(0, NAME_MAX - 7)} (${LEVELS[+i].code})`, genome: g, t: 0 });
+  }
+  return p;
+}
+try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && Array.isArray(s.cleared)) { prog = migrateProg(s); save(); } } catch (e) { }
 const save = () => { try { localStorage.setItem(KEY, JSON.stringify(prog)); } catch (e) { } };
 const isolated = g => g.unlock <= 1 || !!prog.cleared[g.unlock - 2];
 const playable = i => i === 0 || !!prog.cleared[i - 1];
 const cloneG = g => normGenome(g);
+const strainAt = name => prog.strains.findIndex(s => sameName(s.name, name));
 
 // ---------------- App state ----------------
-const S = { mode: 'rack', level: 0, genome: cloneG(DEFAULT_GENOME), battle: null, playhead: 0, revealed: 0, playing: false, speed: 1, sel: -1, resultShown: false, shownEvt: -1, lastFx: 0, logN: 0, showProbes: false };
+const S = { mode: 'rack', level: 0, genome: cloneG(prog.genome), battle: null, libOpen: false, playhead: 0, revealed: 0, playing: false, speed: 1, sel: -1, resultShown: false, shownEvt: -1, lastFx: 0, logN: 0, showProbes: false };
 const SPEEDS = [0.125, 0.25, 0.5, 1, 2, 4], SPEED_LBL = { 0.125: '⅛', 0.25: '¼', 0.5: '½', 1: '1', 2: '2', 4: '4' };
 const TPS = 24; // ticks per second at 1x
 
@@ -1878,13 +1934,13 @@ function renderRack() {
   <button class="linkbtn" id="resetProg">Reset all progress</button>`);
   $('resetProg').addEventListener('click', e => {
     const b = e.currentTarget;
-    if (b.dataset.armed) { prog = { cleared: [false, false, false, false, false, false], genomes: {}, name: 'Strain P-01' }; save(); S.level = 0; renderProgress(); renderRack(); previewLevel(0); }
-    else { b.dataset.armed = '1'; b.textContent = 'Tap again to erase every conquered dish and saved genome'; }
+    if (b.dataset.armed) { prog = freshProg(); save(); S.level = 0; S.genome = cloneG(prog.genome); renderProgress(); renderRack(); previewLevel(0); }
+    else { b.dataset.armed = '1'; b.textContent = 'Tap again to erase every conquered dish and saved strain'; }
   });
 }
 function previewLevel(i) {
   if (!renderer) return;
-  const b = new Battle(i, S.mode === 'lab' ? S.genome : (prog.genomes[i] || DEFAULT_GENOME), LEVELS[i].rival);
+  const b = new Battle(i, S.genome, LEVELS[i].rival);
   if (!world || world.dish.level !== i) { buildWorld(b.dish); }
   S.preview = b; shown.battle = null; setGenes(b);
   showFrame(b, 0, 0);
@@ -1907,8 +1963,6 @@ function dishFacts(i) {
 function openLab(i) {
   if (!playable(i)) return;
   S.level = i;
-  const saved = prog.genomes[i] || prog.lastGenome || DEFAULT_GENOME;
-  S.genome = cloneG(saved);
   S.genome.genes = S.genome.genes.filter(id => GENE_BY_ID[id] && isolated(GENE_BY_ID[id]));
   setMode('lab');
   renderLab();
@@ -1938,7 +1992,10 @@ function renderLab() {
         <span class="rival-stats">Vigor ${rv.vigor} · Density ${rv.density} · Senses ${SENSE_RANGE[rv.sense]} cells · Food ${rv.taxis.food} / Hunt ${rv.taxis.hunt} / Explore ${rv.taxis.explore}</span>
         <div class="chips">${rv.genes.map(id => `<span class="tag">${esc(GENE_BY_ID[id].name)}</span>`).join('')}</div></div>
     </div>
-    <div class="sec"><div class="sec-h"><h3>Strain</h3><small>your plasmodium’s name</small></div><input class="name-in" id="strainName" maxlength="20" value="${esc(prog.name)}" aria-label="Strain name"></div>
+    <div class="sec"><div class="sec-h"><h3>Strain</h3><small id="strainStatus"></small></div>
+      <div class="strain-row"><input class="name-in" id="strainName" maxlength="${NAME_MAX}" value="${esc(prog.name)}" placeholder="${DEFAULT_NAME}" aria-label="Strain name"><button class="btn" id="strainSave">Save</button></div>
+      <details class="lib" id="lib"${S.libOpen ? ' open' : ''}><summary>Saved strains<span class="n" id="libN"></span></summary><div id="libList"></div></details>
+    </div>
     <div class="sec"><div class="sec-h"><h3>Traits</h3><small>costs rise steeply</small></div>
       ${traitRow('vigor', 'Vigor', 'How many new cells it can push out each minute. Fast growth burns energy.')}
       ${traitRow('density', 'Density', 'Thicker cytoplasm: more HP and stronger engulfing, but pricier growth and upkeep.')}
@@ -1954,7 +2011,10 @@ function renderLab() {
   </div>
   <div class="lab-foot"><div class="budget" id="budget"></div><button class="btn primary" id="inoc">Inoculate</button></div>`;
   $('labBack').addEventListener('click', () => { setMode('rack'); renderRack(); previewLevel(S.level); });
-  $('strainName').addEventListener('input', e => { prog.name = e.target.value.trim() || 'Strain P-01'; save(); });
+  $('strainName').addEventListener('input', e => { prog.name = e.target.value.trim() || DEFAULT_NAME; save(); renderLibrary(); });
+  $('strainSave').addEventListener('click', saveStrain);
+  $('lib').addEventListener('toggle', e => { S.libOpen = e.target.open; });
+  renderLibrary();
   Lab.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => {
     const [k, d] = b.dataset.step.split(':'), drive = k.startsWith('taxis.'), key = drive ? k.slice(6) : k, obj = drive ? g.taxis : g;
     const v = clamp(obj[key] + (+d), drive ? 0 : 1, 5); if (v !== obj[key]) { obj[key] = v; refreshLab(); }
@@ -1968,7 +2028,7 @@ function renderLab() {
   updateBudget();
 }
 function refreshLab() { const st = $('panel').scrollTop; renderLab(); $('panel').scrollTop = st; persistGenome(); previewLevel(S.level); }
-function persistGenome() { prog.genomes[S.level] = cloneG(S.genome); prog.lastGenome = cloneG(S.genome); save(); }
+function persistGenome() { prog.genome = cloneG(S.genome); save(); }
 function traitRow(k, name, desc) {
   const drive = k.startsWith('taxis.'), v = drive ? S.genome.taxis[k.slice(6)] : S.genome[k], lo = drive ? 0 : 1;
   const cost = (drive ? DRIVE_COST : TRAIT_COST)[v];
@@ -1991,13 +2051,106 @@ function updateBudget() {
   $('inoc').disabled = over;
 }
 
+// ---------------- Strain rack: save, load, rename, delete ----------------
+const PEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20h4L18 10l-4-4L4 16z"/><path d="M12.5 7.5l4 4"/></svg>';
+const STATUS_TXT = { saved: 'saved', dirty: 'unsaved changes', new: 'not saved' };
+// 'saved': the lab matches the strain saved under this name; 'dirty': saved under this name but edited since; 'new': nothing saved under this name.
+// The untouched default strain counts as saved: there is nothing to lose.
+function strainStatus() {
+  const k = strainAt(prog.name), key = genomeKey(S.genome);
+  if (k >= 0) return genomeKey(prog.strains[k].genome) === key ? 'saved' : 'dirty';
+  return sameName(prog.name, DEFAULT_NAME) && key === genomeKey(DEFAULT_GENOME) ? 'saved' : 'new';
+}
+function strainSummary(g) {
+  const names = g.genes.map(id => GENE_BY_ID[id] && GENE_BY_ID[id].name).filter(Boolean);
+  return `<span class="sum">Vigor ${g.vigor} · Density ${g.density} · Senses ${SENSE_RANGE[g.sense]} cells · Food ${g.taxis.food} / Hunt ${g.taxis.hunt} / Explore ${g.taxis.explore}</span><span class="sum">${names.length ? esc(names.join(', ')) : 'no genes'}</span>`;
+}
+function renderLibrary() {
+  const st = strainStatus(), stEl = $('strainStatus');
+  stEl.textContent = STATUS_TXT[st]; stEl.className = 'st-' + st;
+  $('strainSave').disabled = st === 'saved';
+  const list = $('libList'), B = LEVELS[S.level].budget, cur = strainAt(prog.name), n = prog.strains.length;
+  $('libN').textContent = n ? ` · ${n}` : '';
+  if (!n) { list.innerHTML = '<p class="lib-empty">Nothing saved yet. Save the strain above to keep it here, then load it on any plate.</p>'; return; }
+  const order = prog.strains.map((s, i) => i).sort((a, b) => (prog.strains[b].t - prog.strains[a].t) || a - b);
+  list.innerHTML = `<ul class="strains">${order.map(i => {
+    const s = prog.strains[i], c = genomeCost(s.genome), over = c > B;
+    return `<li class="strain${i === cur ? ' cur' : ''}">
+      <button class="pick" data-i="${i}" aria-label="Load ${esc(s.name)}"><span class="top"><b>${esc(s.name)}</b><span class="kb${over ? ' over' : ''}">${c} kb${over ? ` · over this plate’s ${B}` : ''}</span></span>${strainSummary(s.genome)}</button>
+      <button class="ib" data-ren="${i}" aria-label="Rename ${esc(s.name)}" title="Rename">${PEN}</button>
+      <button class="ib" data-del="${i}" aria-label="Delete ${esc(s.name)}" title="Delete">✕</button></li>`;
+  }).join('')}</ul>`;
+  list.querySelectorAll('[data-i]').forEach(b => b.addEventListener('click', () => loadStrain(+b.dataset.i)));
+  list.querySelectorAll('[data-ren]').forEach(b => b.addEventListener('click', () => renameUI(+b.dataset.ren)));
+  list.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => {
+    if (b.dataset.armed) { deleteStrain(+b.dataset.del); return; }
+    b.dataset.armed = '1'; b.classList.add('armed'); b.textContent = 'Delete?'; b.setAttribute('aria-label', `Tap again to delete ${prog.strains[+b.dataset.del].name}`);
+    setTimeout(() => { if (b.isConnected) { delete b.dataset.armed; b.classList.remove('armed'); b.textContent = '✕'; b.setAttribute('aria-label', `Delete ${prog.strains[+b.dataset.del].name}`); } }, 4000);
+  }));
+}
+function saveStrain() {
+  const name = prog.name, k = strainAt(name), entry = { name, genome: cloneG(S.genome), t: Date.now() };
+  if (k < 0) prog.strains.unshift(entry); else prog.strains[k] = entry;
+  save(); renderLibrary();
+}
+function loadStrain(i) {
+  const s = prog.strains[i]; if (!s) return;
+  askUnsaved(s.name, () => {
+    prog.name = s.name;
+    S.genome = cloneG(s.genome);
+    S.genome.genes = S.genome.genes.filter(id => GENE_BY_ID[id] && isolated(GENE_BY_ID[id]));
+    refreshLab();
+  });
+}
+function deleteStrain(i) { prog.strains.splice(i, 1); save(); renderLibrary(); }
+function renameStrain(i, name) {
+  const s = prog.strains[i];
+  if (sameName(prog.name, s.name)) { prog.name = name; $('strainName').value = name; }
+  s.name = name; save(); renderLibrary();
+}
+function renameUI(i) {
+  const s = prog.strains[i], li = $('libList').querySelector(`[data-i="${i}"]`).closest('li');
+  li.classList.remove('cur');
+  li.innerHTML = `<form class="ren"><input class="name-in" maxlength="${NAME_MAX}" value="${esc(s.name)}" aria-label="New name for ${esc(s.name)}"><button class="btn" type="submit">Rename</button><button class="btn" type="button" data-cancel>Cancel</button><span class="err" hidden>Another saved strain already has that name.</span></form>`;
+  const inp = li.querySelector('input'), err = li.querySelector('.err');
+  li.querySelector('form').addEventListener('submit', e => {
+    e.preventDefault();
+    const name = inp.value.trim().slice(0, NAME_MAX), k = strainAt(name);
+    if (!name || name === s.name) { renderLibrary(); return; }
+    if (k >= 0 && k !== i) { err.hidden = false; inp.setAttribute('aria-invalid', 'true'); inp.focus(); return; }
+    renameStrain(i, name);
+  });
+  li.querySelector('[data-cancel]').addEventListener('click', renderLibrary);
+  inp.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); renderLibrary(); } });
+  inp.focus(); inp.select();
+}
+// Before `target` replaces the strain in the lab: proceed at once when nothing would be lost, otherwise offer to save, abandon or cancel.
+function askUnsaved(target, proceed) {
+  const st = strainStatus();
+  if (st === 'saved') { proceed(); return; }
+  const name = prog.name, never = st === 'new', M = $('modal');
+  M.innerHTML = `<div class="card" role="dialog" aria-modal="true" aria-label="Unsaved strain">
+    <div><div class="eyebrow">Gene lab</div><h2 class="mtitle">${esc(name)} ${never ? 'has never been saved' : 'has unsaved changes'}</h2>
+      <div class="why">Loading ${esc(target)} replaces it in the lab. ${never ? 'Abandon it and its genome is gone.' : 'Abandon the changes and the saved version stays as it was.'}</div></div>
+    <div class="acts"><button class="btn primary" id="mSave">Save ${esc(name)}</button><button class="btn" id="mDrop">${never ? `Abandon ${esc(name)}` : 'Abandon changes'}</button><button class="btn" id="mCancel">Cancel</button></div></div>`;
+  const onKey = e => { if (e.key === 'Escape') { e.preventDefault(); close(); } };
+  const onBg = e => { if (e.target === M) close(); };
+  const close = () => { M.hidden = true; M.innerHTML = ''; document.removeEventListener('keydown', onKey); M.removeEventListener('click', onBg); };
+  M.hidden = false;
+  document.addEventListener('keydown', onKey); M.addEventListener('click', onBg);
+  $('mSave').addEventListener('click', () => { saveStrain(); close(); proceed(); });
+  $('mDrop').addEventListener('click', () => { close(); proceed(); });
+  $('mCancel').addEventListener('click', close);
+  $('mSave').focus();
+}
+
 // ===================== Battle =====================
 function startBattle() {
   const g = cloneG(S.genome);
   if (genomeCost(g) > LEVELS[S.level].budget) return;
   persistGenome();
   S.battle = new Battle(S.level, g, LEVELS[S.level].rival);
-  S.battle.pname = prog.name || 'Strain P-01';
+  S.battle.pname = prog.name || DEFAULT_NAME;
   S.playhead = 0; S.revealed = 0; S.playing = true; S.resultShown = false; S.shownEvt = -1; S.sel = -1; S.logN = -1;
   clearFx();
   buildWorld(S.battle.dish); shown.battle = null; setGenes(S.battle);
