@@ -1483,9 +1483,12 @@ const cloneG = g => normGenome(g);
 const strainAt = name => prog.strains.findIndex(s => sameName(s.name, name));
 
 // ---------------- App state ----------------
-const S = { mode: 'rack', level: 0, genome: cloneG(prog.genome), battle: null, libOpen: false, playhead: 0, revealed: 0, playing: false, speed: 1, sel: -1, resultShown: false, shownEvt: -1, lastFx: 0, logN: 0, showProbes: false, anim: true, pvp: null }; // pvp: the versus session (see Versus below), null when playing solo
-const SPEEDS = [0.125, 0.25, 0.5, 1, 2, 4], SPEED_LBL = { 0.125: '⅛', 0.25: '¼', 0.5: '½', 1: '1', 2: '2', 4: '4' };
-const TPS = 24; // ticks per second at 1x
+const S = { mode: 'rack', level: 0, genome: cloneG(prog.genome), battle: null, libOpen: false, playhead: 0, revealed: 0, playing: false, speed: 1500, sel: -1, resultShown: false, shownEvt: -1, lastFx: 0, logN: 0, showProbes: false, anim: true, pvp: null }; // pvp: the versus session (see Versus below), null when playing solo
+// Playback speed is a multiple of real time. A tick is one minute of incubation, so Nx advances N/60 ticks a wall
+// second: 1x plays the 12 h incubation in 12 h, 2000x in 21.6 s. Frames t and t+1 are crossfaded by the fractional
+// playhead, so at the slower rates growth, veins and food piles move continuously instead of stepping once a minute.
+const SPEEDS = [1, 10, 100, 500, 1000, 1500, 2000], TICK_SEC = 60;
+const runLength = v => { const s = MAXT * TICK_SEC / v; return s >= 3600 ? `${+(s / 3600).toFixed(1)} h` : s >= 90 ? `${+(s / 60).toFixed(1)} min` : `${Math.round(s)} s`; };
 
 // ===================== 3D =====================
 const stage = $('stage'), canvas = $('gl');
@@ -1877,12 +1880,14 @@ function buildWorld(dish) {
   world = w;
 }
 
-function applyMatter(matter) {
+// Food and granite remaining, blended between the two shown ticks like the surface textures, so a pile shrinks
+// continuously at slow playback rather than stepping once a minute.
+function applyMatter(mA, mB, mix) {
   if (!world) return;
   for (const g of world.groups) {
     let dirty = false;
     for (let k = 0; k < g.cells.length; k++) {
-      const m = matter[g.cells[k]] / 255;
+      const c = g.cells[k], a = mA[c], m = (a + (mB[c] - a) * mix) / 255;
       if (Math.abs(m - g.last[k]) < 0.004) continue;
       g.last[k] = m; dirty = true;
       const b = g.base[k];
@@ -1937,11 +1942,12 @@ function showFrame(b, t, frac, dt) {
       sd[i * 4 + 2] = (f >> 4) * 28; sd[i * 4 + 3] = F.dens[i * 4 + 3];
     }
     texStatus.needsUpdate = true;
-    applyMatter(F.matter); showProbes(F);
+    showProbes(F);
     shown = { battle: b, t, t2 };
   }
   const mix = t2 > t ? clamp(frac, 0, 1) : 0;
   surfUniforms.uMix.value = mix;
+  applyMatter(b.frames[t].matter, b.frames[t2].matter, mix);
   updatePhase(b.frames[t], b.frames[t2], mix, dt || 0, snap);
 }
 function setGenes(b) {
@@ -2940,9 +2946,9 @@ $('bPrevEv').addEventListener('click', () => jumpEvent(-1));
 $('bNextEv').addEventListener('click', () => jumpEvent(1));
 // Speed dropdown: a popover listing every speed, so a specific rate is one pick away instead of a cycle.
 const speedMenu = $('speedMenu'), speedBtn = $('bSpeed');
-speedMenu.innerHTML = SPEEDS.map(v => `<button type="button" role="menuitemradio" data-v="${v}"><span>${SPEED_LBL[v]}×</span><span class="tick" aria-hidden="true">✓</span></button>`).join('');
+speedMenu.innerHTML = SPEEDS.map(v => `<button type="button" role="menuitemradio" data-v="${v}" title="${v}× real time: the full incubation plays in ${runLength(v)}"><span>${v}×</span><span class="tick" aria-hidden="true">✓</span></button>`).join('');
 function setSpeed(v) {
-  S.speed = v; speedBtn.textContent = SPEED_LBL[v] + '×';
+  S.speed = v; speedBtn.textContent = v + '×';
   for (const b of speedMenu.children) b.setAttribute('aria-checked', String(+b.dataset.v === v));
 }
 function speedMenuOpen() { return !speedMenu.hidden; }
@@ -3109,7 +3115,7 @@ function frame(now) {
     if (b.done && b.pvp && !b.pvp.settled) pvpSettle(b);
     if (S.playing) {
       const prev = S.playhead;
-      S.playhead = Math.min(lastTick(), S.playhead + dt * TPS * S.speed);
+      S.playhead = Math.min(lastTick(), S.playhead + dt * S.speed / TICK_SEC);
       fireEvents(prev, S.playhead);
     }
     if (S.playhead > S.revealed) S.revealed = S.playhead;
