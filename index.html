@@ -195,6 +195,7 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 
 .hud .clock { text-align: center; display: grid; }
 .hud .clock span { font-family: var(--f-mono); font-size: 18px; font-weight: 500; font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
 .hud .clock small { font-family: var(--f-mono); font-size: 9.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); }
+.hud .clock small.round { color: var(--gold); }
 .tug { grid-column: 1 / -1; height: 6px; border-radius: 3px; overflow: hidden; display: flex; background: var(--raised-2); }
 .tug i { display: block; height: 100%; transition: width .15s linear; }
 .tug .tp { background: var(--gold); } .tug .te { background: var(--rival); margin-left: auto; }
@@ -253,6 +254,37 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 
 .card .acts { display: flex; flex-wrap: wrap; gap: 8px; }
 .card .acts .btn { flex: 1 1 120px; }
 .sub-h { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--faint); }
+/* Match: the countdown card before a round, the round rows and the picked round's detail on the summary, the new-gene reward, the rounds picker */
+.card .eyebrow { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.card .x { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised); color: var(--ink); cursor: pointer; flex: none; }
+.countdown { text-align: center; cursor: pointer; overflow: hidden; } /* the digit's pop would otherwise scroll the card */
+.countdown .eyebrow { justify-content: center; }
+.countdown .mtitle { margin-top: 2px; }
+.countdown .score { color: var(--dim); font-family: var(--f-mono); font-size: 12.5px; margin-top: 4px; }
+.countdown .num { font-family: var(--f-display); font-weight: 800; font-size: 84px; line-height: 1; color: var(--gold); letter-spacing: -0.04em; font-variant-numeric: tabular-nums; animation: pop .55s ease-out; }
+@keyframes pop { from { transform: scale(1.3); opacity: 0.15; } to { transform: scale(1); opacity: 1; } }
+.rounds { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.rounds li { display: grid; grid-template-columns: 10px 1fr auto; gap: 3px 10px; align-items: center; padding: 7px 8px 7px 10px; border-radius: var(--r-sm); background: var(--raised); font-size: 13px; cursor: pointer; }
+.rounds li:hover { background: var(--raised-2); }
+.rounds li.cur { box-shadow: inset 0 0 0 1px var(--gold-deep); }
+.rounds li.cur .rn { color: var(--gold); }
+.rounds li:focus-visible { outline: 2px solid var(--gold); outline-offset: 1px; }
+.rounds .dot { width: 10px; height: 10px; border-radius: 50%; grid-row: 1 / 3; }
+.rounds .rn { font-family: var(--f-mono); font-size: 11.5px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.rounds .how { grid-column: 2; }
+.rounds .rw { font-weight: 600; }
+.rounds .btn { grid-column: 3; grid-row: 1 / 3; min-height: 36px; padding: 0 12px; font-size: 12.5px; }
+.rdetail { display: grid; gap: 14px; }
+.reward { padding: 12px 14px; border-radius: var(--r-md); border: 1px solid var(--gold); background: linear-gradient(135deg, rgba(244,197,60,.18), rgba(244,197,60,.05)); display: grid; gap: 3px; }
+.reward .sub-h { color: var(--gold); }
+.reward b { font-family: var(--f-display); font-weight: 800; font-size: 21px; line-height: 1.15; letter-spacing: -0.01em; color: var(--ink); }
+.reward .note { color: var(--dim); font-size: 12.5px; }
+.seg { display: inline-flex; border-radius: 10px; border: 1px solid var(--line); overflow: hidden; justify-self: start; }
+.seg button { background: var(--raised); border: 0; min-height: 36px; padding: 0 12px; cursor: pointer; font-family: var(--f-mono); font-size: 12.5px; color: var(--dim); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--gold); color: var(--gold-ink); }
+.seg button:disabled { cursor: not-allowed; opacity: 0.5; }
+.seg button[aria-pressed="true"]:disabled { opacity: 1; }
 
 /* ---------- Versus: player vs player ---------- */
 .vs-card { margin-top: 18px; padding: 14px; border-radius: var(--r-md); background: var(--bench-2); border: 1px solid var(--line); display: grid; gap: 10px; }
@@ -314,24 +346,34 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 
 .scrubwrap .tt { font-family: var(--f-mono); font-size: 11.5px; color: var(--dim); font-variant-numeric: tabular-nums; min-width: 40px; }
 .scrubwrap .tt:last-child { text-align: right; }
 #scrub { width: 100%; height: 48px; display: block; border-radius: 10px; touch-action: none; cursor: pointer; background: var(--panel); box-shadow: inset 0 0 0 1px var(--line); }
-.controls { display: flex; align-items: center; gap: 6px; justify-content: center; flex-wrap: wrap; }
+/* Three groups: leave the match on the left, the transport in the middle, speed, log and results on the right. Below
+   960px the transport takes a row of its own. */
+.controls { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 6px; }
+.cg { display: flex; align-items: center; gap: 6px; }
+.cg.right { justify-content: flex-end; }
 .ib { width: 46px; height: 46px; border-radius: 12px; background: var(--raised); border: 1px solid var(--line); display: grid; place-items: center; cursor: pointer; padding: 0; }
 .ib svg { width: 20px; height: 20px; }
+.ib:disabled { opacity: 0.35; cursor: default; }
 .ib.play { width: 58px; background: var(--gold); border-color: var(--gold); color: var(--gold-ink); }
-.ib.txt { width: auto; padding: 0 12px; font-family: var(--f-mono); font-size: 13px; }
-.speedwrap { position: relative; display: inline-grid; }
-.speedmenu { position: absolute; left: 50%; bottom: calc(100% + 6px); transform: translateX(-50%); z-index: 20; min-width: 112px; padding: 4px; display: grid; gap: 2px; background: var(--raised); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: 0 10px 30px rgba(0,0,0,.45); }
-.speedmenu button { display: flex; justify-content: space-between; align-items: center; gap: 10px; width: 100%; padding: 7px 10px; border: 0; border-radius: var(--r-sm); background: none; text-align: left; font-family: var(--f-mono); font-size: 13px; color: var(--ink); cursor: pointer; white-space: nowrap; }
-.speedmenu button:hover, .speedmenu button:focus-visible { background: var(--raised-2); outline-offset: -2px; }
-.speedmenu button[aria-checked="true"] { color: var(--gold); }
-.speedmenu button .tick { width: 14px; text-align: right; color: var(--gold); }
-.speedmenu button:not([aria-checked="true"]) .tick { visibility: hidden; }
-.controls .gap { flex: 1 1 0; max-width: 18px; }
+.ib.nav { width: auto; padding: 0 12px; display: inline-flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; white-space: nowrap; }
+.ib.nav svg { width: 16px; height: 16px; }
+.ib.nav .brief { display: none; }
+.speed { flex: none; display: inline-flex; align-items: center; gap: 8px; height: 46px; padding: 0 10px; box-sizing: border-box; border-radius: 12px; background: var(--raised); border: 1px solid var(--line); }
+.speed .sv { font-family: var(--f-mono); font-size: 12px; color: var(--ink); min-width: 46px; text-align: right; font-variant-numeric: tabular-nums; }
+.speed input { -webkit-appearance: none; appearance: none; width: 110px; height: 4px; margin: 0; border-radius: 2px; background: var(--raised-2); cursor: pointer; }
+.speed input::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: var(--gold); border: 2px solid var(--panel); }
+.speed input::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: var(--gold); border: 2px solid var(--panel); }
+.speed input::-moz-range-track { height: 4px; border-radius: 2px; background: var(--raised-2); }
 .nogl { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 24px; color: var(--dim); }
+@media (max-width: 960px) {
+  .controls { grid-template-columns: 1fr 1fr; }
+  .cg.mid { grid-column: 1 / -1; grid-row: 1; justify-content: center; }
+}
 @media (max-width: 420px) {
-  .ib { width: 40px; height: 42px; border-radius: 10px; } .ib.play { width: 48px; } .ib.txt { padding: 0 8px; min-width: 40px; }
-  .controls { gap: 3px; flex-wrap: nowrap; }
-  .controls .gap { display: none; }
+  .ib { width: 40px; height: 42px; border-radius: 10px; } .ib.play { width: 48px; }
+  .ib.nav { padding: 0 8px; font-size: 12px; } .ib.nav .long { display: none; } .ib.nav .brief { display: inline; }
+  .controls, .cg { gap: 3px; }
+  .speed { height: 42px; padding: 0 8px; gap: 6px; } .speed .sv { min-width: 40px; font-size: 11px; } .speed input { width: 64px; }
   .hud .sname { font-size: 13px; }
 }
 @media (prefers-reduced-motion: reduce) { .meter i, .tug i, .toast, .hint { transition: none; } }
@@ -347,7 +389,7 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 
       <canvas id="gl"></canvas>
       <div class="hud" id="hud" hidden>
         <div class="side p"><div class="sname" id="hPName">Strain</div><div class="nums"><b id="hPCells">0</b> cells · <b id="hPE">0</b> ATP<span id="hPFrag"></span></div></div>
-        <div class="clock"><span id="hClock">00:00</span><small>incubation</small></div>
+        <div class="clock"><span id="hClock">00:00</span><small class="round" id="hRound">Round 1 of 3</small></div>
         <div class="side e"><div class="sname" id="hEName">Rival</div><div class="nums"><b id="hECells">0</b> cells · <b id="hEE">0</b> ATP<span id="hEFrag"></span></div></div>
         <div class="tug" aria-hidden="true"><i class="tp" id="tugP" style="width:50%"></i><i class="te" id="tugE" style="width:50%"></i></div>
       </div>
@@ -371,19 +413,23 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 
   <footer class="transport" id="transport" hidden>
     <div class="scrubwrap"><span class="tt" id="tNow">00:00</span><canvas id="scrub" aria-label="Battle timeline. Drag to rewind or fast-forward."></canvas><span class="tt" id="tEnd">12:00</span></div>
     <div class="controls">
-      <button class="ib" id="bLab" aria-label="Back to the gene lab" title="Gene lab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.7 3h10.6a2 2 0 0 0 1.7-3l-5-9V3"/><path d="M7.5 14h9"/></svg></button>
-      <span class="gap"></span>
-      <button class="ib" id="bPrevEv" aria-label="Previous event" title="Previous event"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5v14l-10-7z"/></svg></button>
-      <button class="ib" id="bBack" aria-label="Step back one minute" title="Step back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></button>
-      <button class="ib play" id="bPlay" aria-label="Play"><svg viewBox="0 0 24 24" fill="currentColor" id="playIcon"><path d="M7 4v16l13-8z"/></svg></button>
-      <button class="ib" id="bFwd" aria-label="Step forward one minute" title="Step forward"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 5l7 7-7 7"/></svg></button>
-      <button class="ib" id="bNextEv" aria-label="Next event" title="Next event"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5v14l10-7z"/></svg></button>
-      <span class="gap"></span>
-      <span class="speedwrap">
-        <button class="ib txt" id="bSpeed" aria-label="Playback speed" aria-haspopup="menu" aria-expanded="false" aria-controls="speedMenu" title="Playback speed">1×</button>
-        <div class="speedmenu" id="speedMenu" role="menu" aria-label="Playback speed" hidden></div>
-      </span>
-      <button class="ib" id="bLog" aria-label="Battle log" title="Battle log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2" fill="currentColor"/><circle cx="4.5" cy="12" r="1.2" fill="currentColor"/><circle cx="4.5" cy="18" r="1.2" fill="currentColor"/></svg></button>
+      <div class="cg left">
+        <button class="ib nav" id="bLab" title="Leave this match and go back to the gene lab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"/></svg><span class="long">End match</span><span class="brief">End</span></button>
+      </div>
+      <div class="cg mid">
+        <button class="ib" id="bPrevR" aria-label="Previous round" title="Previous round"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M13.5 8.5L10 12l3.5 3.5"/></svg></button>
+        <button class="ib" id="bPrevEv" aria-label="Previous event" title="Previous event ([)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6.5" cy="12" r="2.4" fill="currentColor" stroke="none"/><path d="M17 6l-6 6 6 6"/></svg></button>
+        <button class="ib" id="bBack" aria-label="Back one minute" title="Back one minute (←)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5.5a7.5 7.5 0 1 1-6.5 3.75"/><path d="M12 5.5l3-3M12 5.5l3 3"/><text x="12" y="16.2" font-size="9" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none" font-family="var(--f-mono)">1</text></svg></button>
+        <button class="ib play" id="bPlay" aria-label="Play"><svg viewBox="0 0 24 24" fill="currentColor" id="playIcon"><path d="M7 4v16l13-8z"/></svg></button>
+        <button class="ib" id="bFwd" aria-label="Forward one minute" title="Forward one minute (→)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5.5a7.5 7.5 0 1 0 6.5 3.75"/><path d="M12 5.5l-3-3M12 5.5l-3 3"/><text x="12" y="16.2" font-size="9" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none" font-family="var(--f-mono)">1</text></svg></button>
+        <button class="ib" id="bNextEv" aria-label="Next event" title="Next event (])"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="17.5" cy="12" r="2.4" fill="currentColor" stroke="none"/><path d="M7 6l6 6-6 6"/></svg></button>
+        <button class="ib" id="bNextR" aria-label="Next round" title="Next round"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M10.5 8.5L14 12l-3.5 3.5"/></svg></button>
+      </div>
+      <div class="cg right">
+        <label class="speed"><span class="sv" id="speedVal">1×</span><input type="range" id="speed" min="0" max="400" step="1" value="0" aria-label="Playback speed"></label>
+        <button class="ib" id="bLog" aria-label="Battle log" title="Battle log"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2" fill="currentColor"/><circle cx="4.5" cy="12" r="1.2" fill="currentColor"/><circle cx="4.5" cy="18" r="1.2" fill="currentColor"/></svg></button>
+        <button class="ib nav" id="bResults" title="Open the match results"><span class="long">Match results</span><span class="brief">Results</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+      </div>
     </div>
   </footer>
 </div>
@@ -499,12 +545,14 @@ function deriveSide(g0) {
 }
 
 // ---------------- Levels ----------------
+// A plate is static data: gen() only places food, granite, salt and light at fixed spots, with no randomness, so the
+// same plate is always the same dish, and a plate could be written down and shared as plain data.
 const LEVELS = [
   {
-    name: 'Oat Flake Plate', code: 'D-01', seed: 101, budget: 12,
+    name: 'Oat Flake Plate', code: 'D-01', budget: 12,
     blurb: 'Plain 2% agar scattered with rolled oats. A gentle first culture.',
     rival: { name: 'Fuligo minor', vigor: 2, density: 2, sense: 2, genes: ['amylase', 'protease', 'crush'], taxis: { food: 4, hunt: 1, explore: 2 } },
-    gen(D, r) {
+    gen(D) {
       D.pile(F_SUGAR, CXf, CXf, 2.4, 110);
       D.pile(F_SUGAR, 15, 17, 1.8, 90); D.pile(F_SUGAR, 14, 35, 1.7, 90);
       D.pile(F_PROT, 21, 8, 1.5, 90); D.pile(F_SUGAR, 20, 27, 1.3, 70);
@@ -512,10 +560,10 @@ const LEVELS = [
     }
   },
   {
-    name: 'Granite Maze', code: 'D-02', seed: 202, budget: 14,
+    name: 'Granite Maze', code: 'D-02', budget: 14,
     blurb: 'Crushed granite walls split the plate. Bark chips sit sealed in the centre ring.',
     rival: { name: 'Lycogala corrodens', vigor: 2, density: 2, sense: 3, genes: ['amylase', 'acid', 'ligninase'], taxis: { food: 3, hunt: 3, explore: 1 } },
-    gen(D, r) {
+    gen(D) {
       D.line(14, 12, 14, 40, 0.9, D.rock);
       D.ring(CXf, CXf, 7.5, 1.0, [0.6, 2.2, 3.7, 5.3], D.rock);
       D.pile(F_LIGN, CXf, CXf, 2.6, 120);
@@ -525,10 +573,10 @@ const LEVELS = [
     }
   },
   {
-    name: 'Salt Pan', code: 'D-03', seed: 303, budget: 16,
+    name: 'Salt Pan', code: 'D-03', budget: 16,
     blurb: 'Brine has dried into crusts. The best food lies inside the salt.',
     rival: { name: 'Stemonitis lorica', vigor: 2, density: 3, sense: 3, genes: ['amylase', 'protease', 'ligninase', 'chitin', 'osmo', 'regen', 'prune'], taxis: { food: 4, hunt: 2, explore: 1 } },
-    gen(D, r) {
+    gen(D) {
       D.line(17, 3, 21, 48, 2.6, D.salt);
       D.disc(CXf, CXf, 6.5, D.salt);
       D.pile(F_LIGN, CXf, CXf, 2.2, 120);
@@ -538,10 +586,10 @@ const LEVELS = [
     }
   },
   {
-    name: 'Sunlit Shallows', code: 'D-04', seed: 404, budget: 17,
+    name: 'Sunlit Shallows', code: 'D-04', budget: 17,
     blurb: 'A thin film of agar under a lamp. Little food, lots of light, harsh UV.',
     rival: { name: 'Ceratiomyxa lumina', vigor: 3, density: 3, sense: 3, genes: ['chloro', 'amylase', 'sclero', 'prune'], taxis: { food: 3, hunt: 2, explore: 2 } },
-    gen(D, r) {
+    gen(D) {
       D.light(CXf, CXf, 6.5); D.light(15, 12, 4.5); D.light(15, 40, 4.0);
       D.pile(F_SUGAR, 12, 30, 1.1, 50); D.pile(F_SUGAR, 22, 18, 1.1, 50);
       D.pile(F_LIGN, 15, 12, 1.3, 70);
@@ -549,21 +597,21 @@ const LEVELS = [
     }
   },
   {
-    name: 'Bacterial Bloom', code: 'D-05', seed: 505, budget: 19,
+    name: 'Bacterial Bloom', code: 'D-05', budget: 19,
     blurb: 'A lawn of bacteria has bloomed overnight. Your rival is fast and hungry.',
     rival: { name: 'Badhamia vorax', vigor: 4, density: 2, sense: 4, genes: ['protease', 'amylase', 'acid', 'crush'], taxis: { food: 3, hunt: 4, explore: 1 } },
-    gen(D, r) {
-      const spots = [[13, 14], [19, 21], [12, 33], [21, 37], [24, 10], [16, 44], [26, 27], [10, 22]];
-      for (const [x, y] of spots) D.pile(F_PROT, x, y, 1.3 + r() * 0.5, 80 + r() * 40);
+    gen(D) {
+      D.pile(F_PROT, 13, 14, 1.3, 115); D.pile(F_PROT, 19, 21, 1.55, 85); D.pile(F_PROT, 12, 33, 1.75, 95); D.pile(F_PROT, 21, 37, 1.55, 95);
+      D.pile(F_PROT, 24, 10, 1.5, 110); D.pile(F_PROT, 16, 44, 1.4, 100); D.pile(F_PROT, 26, 27, 1.7, 120); D.pile(F_PROT, 10, 22, 1.4, 85);
       D.pile(F_SUGAR, CXf, CXf, 2.0, 90);
       D.salt(19, 29, 1.5); D.rock(22, 16, 1.0);
     }
   },
   {
-    name: 'The Elder Plasmodium', code: 'D-06', seed: 606, budget: 21,
+    name: 'The Elder Plasmodium', code: 'D-06', budget: 21,
     blurb: 'An ancient strain holds this plate. Granite, brine and light, all at once.',
     rival: { name: 'Physarum senex', vigor: 3, density: 3, sense: 5, genes: ['amylase', 'protease', 'ligninase', 'acid', 'mucus', 'chitin', 'regen', 'osmo', 'prune', 'chloro'], taxis: { food: 3, hunt: 3, explore: 2 } },
-    gen(D, r) {
+    gen(D) {
       D.ring(CXf, CXf, 8.0, 1.0, [1.2, 2.8, 4.4, 6.0], D.rock);
       D.light(CXf, CXf, 5.0);
       D.pile(F_LIGN, CXf, CXf, 2.2, 130);
@@ -580,7 +628,6 @@ const CORE_P = 25 * N + 7, CORE_E = NN - 1 - CORE_P;
 
 function makeDish(levelIdx) {
   const L = LEVELS[levelIdx];
-  const r = rng(L.seed);
   const terrain = new Uint8Array(NN), foodType = new Uint8Array(NN), food0 = new Float32Array(NN);
   const pile = new Int16Array(NN).fill(-1), rockHP = new Float32Array(NN);
   const piles = [], lights = [];
@@ -639,7 +686,7 @@ function makeDish(levelIdx) {
       }
     },
   };
-  L.gen(D, r);
+  L.gen(D);
   for (const c of [CORE_P, CORE_E]) {
     const cx = c % N, cy = Math.floor(c / N);
     for (const [i] of cells(cx, cy, 3.6)) { terrain[i] = T_AGAR; foodType[i] = 0; food0[i] = 0; pile[i] = -1; rockHP[i] = 0; }
@@ -659,7 +706,10 @@ const MASS_RATE = 0.025, MASS_DECAY = 0.02, MASS_COST = 0.25;
 // its share of the fragment's intake with time constant HUB_TAU (minutes), so a hub on a pile that is running out
 // fades while one on fresh food grows, and the routing shifts between them cell by cell instead of re-rooting at once.
 const HUB_TAU = 12, HUB_MIN = 0.03, HUB_EPS = 0.02, HUB_MAX = 6, HUB_K = 1 - Math.exp(-1 / HUB_TAU), HUB_SOFT = 2.5;
-function Battle(levelIdx, genomeP, genomeE) {
+// seed drives the battle's one random stream (growth jitter, probe directions, fight noise, pruning, retraction order):
+// the same plate, genomes and seed replay identically, which is what lets two browsers run a match from nothing but
+// its inputs. Left out, a fixed seed per plate is used, which keeps the Node balance harness repeatable.
+function Battle(levelIdx, genomeP, genomeE, seed) {
   const dish = makeDish(levelIdx);
   this.dish = dish; this.level = levelIdx;
   this.terrain = dish.terrain.slice();
@@ -685,7 +735,7 @@ function Battle(levelIdx, genomeP, genomeE) {
   this.tmpA = new Uint8Array(NN); this.tmpB = new Uint8Array(NN);
   this.candJ = new Int32Array(NN); this.candS = new Float32Array(NN); this.candK = new Uint8Array(NN); this.candF = new Int32Array(NN);
   this.kids = new Uint8Array(NN); this.bq = Array.from({ length: 32 }, () => []); // Dial's buckets: one per distance, modulo 32 (wider than any step cost)
-  this.rnd = rng(9001 + levelIdx * 131);
+  this.seed = seed == null ? 9001 + levelIdx * 131 : seed >>> 0; this.rnd = rng(this.seed);
   const srcId = this.srcId = new Int16Array(NN).fill(-1);
   for (let i = 0; i < NN; i++) {
     if (dish.pile[i] >= 0) srcId[i] = dish.pile[i];
@@ -1451,12 +1501,14 @@ const FOOD_ENZ = ['', 'amylase', 'protease', 'ligninase'];
 const KEY = 'myxo.petri.v1';
 const DEFAULT_GENOME = { vigor: 2, density: 2, sense: 2, genes: ['amylase', 'protease', 'chitin', 'crush'], taxis: { food: 3, hunt: 1, explore: 2 } };
 const DEFAULT_NAME = 'Strain P-01', NAME_MAX = 20;
+const ROUNDS_OPTS = [3, 5, 7], ROUNDS_DEFAULT = 3; // a match is the best of 3, 5 or 7 rounds
 // The player breeds one strain at a time (prog.name + prog.genome) and carries it from plate to plate; plates differ only in their kb budget,
 // so a strain bred for a later plate can be loaded on an earlier one and simply shows as over budget until it is trimmed.
 // prog.strains is the rack of saved strains: { name, genome, t, w, l }, names unique ignoring case; w and l count matches against other players.
+// prog.rounds is the match length (best of) for solo play.
 const genomeKey = g => { const n = normGenome(g); return JSON.stringify([n.vigor, n.density, n.sense, n.taxis.food, n.taxis.hunt, n.taxis.explore, [...n.genes].sort()]); };
 const sameName = (a, b) => String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
-const freshProg = () => ({ cleared: [false, false, false, false, false, false], name: DEFAULT_NAME, genome: normGenome(DEFAULT_GENOME), strains: [] });
+const freshProg = () => ({ cleared: [false, false, false, false, false, false], name: DEFAULT_NAME, genome: normGenome(DEFAULT_GENOME), strains: [], rounds: ROUNDS_DEFAULT });
 let prog = freshProg();
 // Saves from before the strain rack kept a genome per plate (genomes[i]) and the last one edited (lastGenome): the last edited becomes the current
 // strain and every other distinct per-plate build is kept as a saved strain named after its plate.
@@ -1464,6 +1516,7 @@ function migrateProg(s) {
   const p = freshProg(), old = s.genomes || {};
   p.cleared = p.cleared.map((c, i) => !!s.cleared[i]);
   p.name = String(s.name || DEFAULT_NAME).slice(0, NAME_MAX);
+  p.rounds = ROUNDS_OPTS.includes(+s.rounds) ? +s.rounds : ROUNDS_DEFAULT;
   p.genome = normGenome(s.genome || s.lastGenome || old[Object.keys(old).pop()] || DEFAULT_GENOME);
   p.strains = (Array.isArray(s.strains) ? s.strains : []).filter(x => x && x.genome).map(x => ({ name: String(x.name || DEFAULT_NAME).slice(0, NAME_MAX), genome: normGenome(x.genome), t: +x.t || 0, w: Math.max(0, +x.w || 0), l: Math.max(0, +x.l || 0) }));
   const seen = new Set([genomeKey(p.genome), ...p.strains.map(x => genomeKey(x.genome))]);
@@ -1483,11 +1536,11 @@ const cloneG = g => normGenome(g);
 const strainAt = name => prog.strains.findIndex(s => sameName(s.name, name));
 
 // ---------------- App state ----------------
-const S = { mode: 'rack', level: 0, genome: cloneG(prog.genome), battle: null, libOpen: false, playhead: 0, revealed: 0, playing: false, speed: 1500, sel: -1, resultShown: false, shownEvt: -1, lastFx: 0, logN: 0, showProbes: false, anim: true, pvp: null }; // pvp: the versus session (see Versus below), null when playing solo
+const S = { mode: 'rack', level: 0, genome: cloneG(prog.genome), match: null, battle: null, libOpen: false, playhead: 0, revealed: 0, playing: false, speed: 1500, sel: -1, resultShown: false, shownEvt: -1, lastFx: 0, logN: 0, showProbes: false, anim: true, pvp: null }; // match: the match being played or reviewed and battle the round of it on show (see Match below); pvp: the versus session (see Versus below), null when playing solo
 // Playback speed is a multiple of real time. A tick is one minute of incubation, so Nx advances N/60 ticks a wall
 // second: 1x plays the 12 h incubation in 12 h, 2000x in 21.6 s. Frames t and t+1 are crossfaded by the fractional
 // playhead, so at the slower rates growth, veins and food piles move continuously instead of stepping once a minute.
-const SPEEDS = [1, 10, 100, 500, 1000, 1500, 2000], TICK_SEC = 60;
+const TICK_SEC = 60;
 const runLength = v => { const s = MAXT * TICK_SEC / v; return s >= 3600 ? `${+(s / 3600).toFixed(1)} h` : s >= 90 ? `${+(s / 60).toFixed(1)} min` : `${Math.round(s)} s`; };
 
 // ===================== 3D =====================
@@ -1899,6 +1952,7 @@ function applyMatter(mA, mB, mix) {
     if (dirty) g.mesh.instanceMatrix.needsUpdate = true;
   }
 }
+function resetMatter() { if (world) for (const g of world.groups) g.last.fill(-1); } // a new round on the same dish: every pile is full again
 
 // --- frame upload ---
 let shown = { battle: null, t: -1, t2: -1 };
@@ -2142,7 +2196,7 @@ function setMode(m) {
   app.className = 'mode-' + m;
   $('rack').hidden = m !== 'rack'; $('lab').hidden = m !== 'lab';
   $('hud').hidden = m !== 'battle'; $('transport').hidden = m !== 'battle';
-  if (m !== 'battle') { $('result').hidden = true; $('inspect').hidden = true; $('log').hidden = true; $('toast').style.opacity = 0; $('keys').hidden = true; $('bView').hidden = true; selectCell(-1); closeSpeedMenu(false); }
+  if (m !== 'battle') { cancelCountdown(); $('result').hidden = true; $('inspect').hidden = true; $('log').hidden = true; $('toast').style.opacity = 0; $('keys').hidden = true; $('bView').hidden = true; selectCell(-1); }
   $('bProbes').hidden = m !== 'battle'; $('bAnim').hidden = m !== 'battle'; probeLines.visible = S.showProbes && m === 'battle';
   cam.auto = m !== 'battle'; cam.zoom = 1; cam.target.copy(HOME); cam.theta = 0; cam.phi = m === 'battle' ? 0.72 : 0.82;
   hint.textContent = m === 'battle'
@@ -2196,6 +2250,7 @@ function renderRack() {
     <li><b>Fight.</b> Touching cells engulf each other each minute. Density, acids, rinds and slimes decide who gives ground.</li>
     <li><b>Stay fed.</b> A strain is one organism with no centre. Each connected fragment pools its own energy: cut a network apart and every piece lives on its share until it finds food. A starving fragment pulls back from its edges, recovering the energy in its body, and only dies when there is nothing left to withdraw. Pieces that touch again merge.</li>
     <li><b>Win.</b> Wipe out the rival, or overrun it: hold nine tenths of the living tissue for half an hour. Otherwise the strain holding more of the dish when the 12-hour incubation ends takes it, so a lean strain parked on regrowing food can outlast a bloomer that ate the plate bare.</li>
+    <li><b>Rounds.</b> A match is the best of three, five or seven rounds: the same two strains on the same plate, each round seeded differently, so a close match-up shows as a split series rather than one lucky culture. The match ends as soon as one side cannot be caught.</li>
     <li><b>Zoom in.</b> Scroll to get close and right-drag to pan. New growth is a sparse tendril that thickens into lace, sheets and pulsing veins as it matures; rival tendrils creep into thin cells and wrestle for them, and every attack has its own look.</li>
     <li><b>Study.</b> Every battle is recorded minute by minute. Rewind, step and tap cells to see why it went the way it did.</li>
   </ol></details>
@@ -2262,7 +2317,7 @@ function renderLab() {
   const sideD = deriveSide(g);
   const head = vs
     ? `<div class="lab-title"><span class="eyebrow">Versus · Gene lab</span><h2>${vsConnected() ? 'Set up the match' : 'Find a player'}</h2><p>${vsConnected()
-        ? 'Either of you can change the plate and the cap. Pick a saved strain that fits, then signal ready: the culture starts once you both are.'
+        ? 'Either of you can change the plate, the cap and the length of the match. Pick a saved strain that fits, then signal ready: the match starts once you both are.'
         : 'Share your code with another breeder, or enter theirs. The two browsers talk to each other directly; nothing is stored anywhere but your own machines.'}</p></div>
     <div class="lobby" id="lobby"></div>`
     : `<div class="lab-title"><span class="eyebrow">${L.code} · Gene lab</span><h2>${esc(L.name)}</h2><p>${esc(L.blurb)}</p></div>
@@ -2271,6 +2326,7 @@ function renderLab() {
       <div class="row"><span class="lbl">Rival specimen</span><span class="rival-name">${esc(rv.name)}</span>
         <span class="rival-stats">Vigor ${rv.vigor} · Density ${rv.density} · Senses ${SENSE_RANGE[rv.sense]} cells · Food ${rv.taxis.food} / Hunt ${rv.taxis.hunt} / Explore ${rv.taxis.explore}</span>
         <div class="chips">${rv.genes.map(id => `<span class="tag">${esc(GENE_BY_ID[id].name)}</span>`).join('')}</div></div>
+      <div class="row"><span class="lbl">Match</span><div class="seg" id="roundsSeg">${roundsSeg(prog.rounds)}</div></div>
     </div>`;
   Lab.innerHTML = `<div class="lab-body">
     <div><button class="back" id="labBack"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M15 5l-7 7 7 7"/></svg>${vs && vsConnected() ? 'Leave the match' : 'Culture rack'}</button></div>
@@ -2309,11 +2365,18 @@ function renderLab() {
     const k = g.genes.indexOf(id); if (k >= 0) g.genes.splice(k, 1); else g.genes.push(id);
     refreshLab();
   }));
-  $('inoc').addEventListener('click', () => S.pvp ? pvpReady() : startBattle());
+  $('inoc').addEventListener('click', () => S.pvp ? pvpReady() : startMatch());
+  const seg = $('roundsSeg');
+  if (seg) seg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+    prog.rounds = +b.dataset.rounds; save();
+    seg.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(+x.dataset.rounds === prog.rounds)));
+  }));
   updateBudget();
 }
 function refreshLab() { pvpTouched(); const st = $('panel').scrollTop; renderLab(); $('panel').scrollTop = st; persistGenome(); previewLevel(S.level); }
 function persistGenome() { prog.genome = cloneG(S.genome); save(); }
+// Match length, best of 3, 5 or 7: the player's own setting in the solo lab, a shared one in the versus lobby.
+const roundsSeg = (v, lock) => ROUNDS_OPTS.map(n => `<button type="button" data-rounds="${n}" aria-pressed="${n === v}" ${lock ? 'disabled' : ''} title="Best of ${n}: the first to ${Math.floor(n / 2) + 1} rounds takes the plate">Best of ${n}</button>`).join('');
 function traitRow(k, name, desc) {
   const drive = k.startsWith('taxis.'), v = drive ? S.genome.taxis[k.slice(6)] : S.genome[k], lo = drive ? 0 : 1;
   const cost = (drive ? DRIVE_COST : TRAIT_COST)[v];
@@ -2447,18 +2510,19 @@ function askUnsaved(target, proceed) {
 // ===================== Versus: player vs player =====================
 // Two browsers find each other through Trystero: public Nostr relays carry only the WebRTC handshake, after which everything
 // goes over a direct data channel. No server of ours, no database, no accounts. Both sides run the same deterministic simulation
-// from the same inputs (plate, cap, sides, both genomes), so no frames are ever sent: the lobby exchanges settings, ready signals
-// carrying the genome to fight, shared strains, and a digest of the verdict once each side has simulated the match.
+// from the same inputs (plate, cap, sides, rounds, both genomes and the seed of each round), so no frames are ever sent: the lobby
+// exchanges settings, ready signals carrying the genome to fight (and, from the hosting browser, the seeds it dealt for the rounds),
+// shared strains, and a digest of the verdict once each side has simulated the match.
 // Rooms: a player's own code keeps its room open for the whole visit, so the code works even while they try someone else's.
 // Entering a code joins a second room. In your own room the first arrival is your opponent; in someone else's room only its
 // owner is (two strangers who enter the same code never get paired with each other). If two players enter each other's codes
 // they share both rooms; every message carries a sequence number so the copy that arrives through the second room is dropped.
 const TRYSTERO_URL = 'https://cdn.jsdelivr.net/npm/trystero@0.26.0/+esm';
-const VS_APP = 'myxo-petri-wars', VS_PROTO = 1, CAP_MIN = 8, CAP_MAX = 40, CAP_DEFAULT = 21, JOIN_PATIENCE = 25000;
+const VS_APP = 'myxo-petri-wars', VS_PROTO = 2, CAP_MIN = 8, CAP_MAX = 40, CAP_DEFAULT = 21, JOIN_PATIENCE = 25000;
 const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no 0/O or 1/I
 const normCode = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const fmtCode = c => c.slice(0, 3) + '-' + c.slice(3);
-const setKey = set => `${set.level}:${set.cap}:${set.swap ? 1 : 0}`;
+const setKey = set => `${set.level}:${set.cap}:${set.swap ? 1 : 0}:${set.rounds}`;
 const vsConnected = () => !!(S.pvp && S.pvp.opp && S.pvp.opp.code);
 const oppLabel = () => (S.pvp && S.pvp.them.label) || 'the other player';
 function myCode() {
@@ -2469,7 +2533,9 @@ function myCode() {
   return c;
 }
 // Anything from the wire is untrusted: clamp settings, drop unknown genes, trim names.
-const netSet = s => { s = s && typeof s === 'object' ? s : {}; return { level: clamp(Math.round(+s.level || 0), 0, LEVELS.length - 1), cap: clamp(Math.round(+s.cap || CAP_DEFAULT), CAP_MIN, CAP_MAX), swap: !!s.swap }; };
+const netSet = s => { s = s && typeof s === 'object' ? s : {}; return { level: clamp(Math.round(+s.level || 0), 0, LEVELS.length - 1), cap: clamp(Math.round(+s.cap || CAP_DEFAULT), CAP_MIN, CAP_MAX), swap: !!s.swap, rounds: ROUNDS_OPTS.includes(Math.round(+s.rounds)) ? Math.round(+s.rounds) : ROUNDS_DEFAULT }; };
+const netSeeds = a => Array.isArray(a) ? a.slice(0, 7).map(v => (+v || 0) >>> 0) : null;
+const hashSeed = s => { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; };
 const netName = s => String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, NAME_MAX) || 'Unnamed strain';
 function netGenome(g) {
   if (!g || typeof g !== 'object') return null;
@@ -2479,7 +2545,7 @@ function netGenome(g) {
     return n;
   } catch (e) { return null; }
 }
-const freshThem = () => ({ ready: false, key: '', name: '', genome: null, label: '' });
+const freshThem = () => ({ ready: false, key: '', name: '', genome: null, label: '', seeds: null });
 const THUMB_URL = [];
 const thumbURL = i => THUMB_URL[i] || (THUMB_URL[i] = thumb(i).toDataURL());
 
@@ -2487,8 +2553,8 @@ function openVersus() {
   if (S.pvp) { openLab(S.pvp.set.level); return; }
   const vs = S.pvp = {
     code: myCode(), lib: null, rooms: new Map(), opp: null, joining: null, seq: 0, seen: new Set(), giftN: 0, matchN: 0, soloLevel: S.level,
-    set: { level: playable(S.level) ? S.level : 0, cap: CAP_DEFAULT, swap: false }, setV: 0,
-    me: { ready: false, key: '', name: '', genome: null }, them: freshThem(), inbox: [], match: null,
+    set: { level: playable(S.level) ? S.level : 0, cap: CAP_DEFAULT, swap: false, rounds: prog.rounds }, setV: 0,
+    me: { ready: false, key: '', name: '', genome: null, seeds: null }, them: freshThem(), inbox: [], match: null,
     status: { kind: 'wait', text: 'Loading the networking library…' },
   };
   openLab(vs.set.level);
@@ -2572,7 +2638,7 @@ function onMsg(R, id, m) {
     }
     case 'ready': {
       const genome = netGenome(m.genome); if (!genome) break;
-      vs.them = { ready: true, key: String(m.key || ''), name: netName(m.name), genome, label: netName(m.name) };
+      vs.them = { ready: true, key: String(m.key || ''), name: netName(m.name), genome, label: netName(m.name), seeds: netSeeds(m.seeds) };
       if (genomeCost(genome) > vs.set.cap) vs.them.ready = false;
       renderLobby(); checkStart(); break;
     }
@@ -2608,7 +2674,8 @@ function onHello(R, id, m) {
 }
 
 // --- lobby ---
-const meGold = () => { const vs = S.pvp; return (vs.code < vs.opp.code) !== vs.set.swap; };
+const isHost = () => { const vs = S.pvp; return vs.code < vs.opp.code; }; // the lower code hosts: its settings win the first handshake and its browser deals the seeds
+const meGold = () => isHost() !== S.pvp.set.swap;
 function renderLobby() {
   const vs = S.pvp, L = $('lobby'); if (!vs || !L) return;
   const prevIn = $('vsIn'), typed = prevIn ? prevIn.value : '', hadFocus = prevIn && document.activeElement === prevIn;
@@ -2620,16 +2687,17 @@ function renderLobby() {
       <div class="vstat ${st.kind}"><i class="dot"></i><span>${esc(st.text)}</span>${vs.joining ? '<button class="linkbtn" id="vsCancel">Stop looking</button>' : ''}</div>`;
   } else {
     const T = vs.them, ready = T.ready && T.key === setKey(vs.set), lock = vs.me.ready ? 'disabled' : '', gold = meGold();
-    const text = vs.me.ready && ready ? 'Both ready. Starting the culture…'
+    const text = vs.me.ready && ready ? 'Both ready. Starting the match…'
       : vs.me.ready ? `Ready. Waiting for ${oppLabel()}…`
       : ready ? `${oppLabel()} is ready. Pick a strain within ${vs.set.cap} kb and press Ready.`
       : `Connected to ${oppLabel()}.`;
     html = `<div class="row"><span class="lbl">Opponent</span><div class="opp"><b>${esc(T.label || 'Connected')}</b><span class="chip${ready ? ' ready' : ''}">${ready ? 'Ready' : 'Not ready'}</span><span class="sub">${ready ? `${esc(T.name)} · ${genomeCost(T.genome)} kb` : 'choosing a strain'}</span></div></div>
       <div class="row"><span class="lbl">Plate</span><div class="plates">${LEVELS.map((P, i) => `<button type="button" data-plate="${i}" aria-pressed="${i === vs.set.level}" ${lock} title="${P.code} ${esc(P.name)}" aria-label="${P.code} ${esc(P.name)}"><img src="${thumbURL(i)}" alt=""><span>${P.code}</span></button>`).join('')}</div>${plateIntel(vs.set.level, S.genome)}</div>
       <div class="row"><span class="lbl">Kilobase cap</span><div class="cap"><span class="val"><b>${vs.set.cap}</b> kb per genome</span><div class="stepper"><button type="button" data-cap="-1" aria-label="Lower the cap" ${lock || (vs.set.cap <= CAP_MIN ? 'disabled' : '')}>−</button><button type="button" data-cap="1" aria-label="Raise the cap" ${lock || (vs.set.cap >= CAP_MAX ? 'disabled' : '')}>+</button></div></div></div>
+      <div class="row"><span class="lbl">Rounds</span><div class="seg">${roundsSeg(vs.set.rounds, lock)}</div></div>
       <div class="row"><span class="lbl">Sides</span><div class="sides"><span><i style="background:${gold ? COL.p : COL.e}"></i>You start ${gold ? 'gold, at the left' : 'pink, at the right'}</span><button type="button" class="btn" data-swap ${lock}>Swap</button></div></div>
       <div class="vstat ${vs.me.ready && !ready ? 'wait' : 'on'}"><i class="dot"></i><span>${esc(text)}</span></div>
-      ${vs.me.ready ? '<div class="note">Cancel ready to change the plate, the cap or the sides.</div>' : ''}`;
+      ${vs.me.ready ? '<div class="note">Cancel ready to change the plate, the cap, the rounds or the sides.</div>' : ''}`;
   }
   L.innerHTML = html;
   const inp = $('vsIn');
@@ -2646,6 +2714,7 @@ function renderLobby() {
   }
   L.querySelectorAll('[data-plate]').forEach(b => b.addEventListener('click', () => changeSet({ level: +b.dataset.plate })));
   L.querySelectorAll('[data-cap]').forEach(b => b.addEventListener('click', () => changeSet({ cap: vs.set.cap + (+b.dataset.cap) })));
+  L.querySelectorAll('[data-rounds]').forEach(b => b.addEventListener('click', () => changeSet({ rounds: +b.dataset.rounds })));
   const sw = L.querySelector('[data-swap]'); if (sw) sw.addEventListener('click', () => changeSet({ swap: !vs.set.swap }));
 }
 function tryCode(code, inp) {
@@ -2675,47 +2744,52 @@ function pvpReady() {
   if (vs.me.ready) { pvpTouched(); return; }
   if (genomeCost(S.genome) > vs.set.cap) return;
   if (!strainInRack()) saveStrain(); // Save & ready: the tally needs a saved strain to land on
-  vs.me = { ready: true, key: setKey(vs.set), name: prog.name, genome: cloneG(S.genome) };
-  send({ t: 'ready', key: vs.me.key, name: vs.me.name, genome: vs.me.genome });
+  // The hosting browser deals one seed per round and sends them with its ready signal; the other side plays the seeds it is
+  // dealt. A change of settings un-readies both sides, so a fresh deal always has one seed per round. Players never see a seed.
+  vs.me = { ready: true, key: setKey(vs.set), name: prog.name, genome: cloneG(S.genome), seeds: isHost() ? newSeeds(vs.set.rounds) : null };
+  send({ t: 'ready', key: vs.me.key, name: vs.me.name, genome: vs.me.genome, seeds: vs.me.seeds });
   renderLobby(); updateBudget(); checkStart();
 }
 function checkStart() {
   const vs = S.pvp; if (!vs || !vsConnected() || vs.match) return;
   const key = setKey(vs.set);
   if (!(vs.me.ready && vs.them.ready && vs.me.key === key && vs.them.key === key)) return;
-  const gold = meGold(), G = gold ? vs.me : vs.them, P = gold ? vs.them : vs.me;
+  const gold = meGold(), G = gold ? vs.me : vs.them, P = gold ? vs.them : vs.me, n = vs.set.rounds;
   vs.matchN++;
+  const dealt = isHost() ? vs.me.seeds : vs.them.seeds; // the host's deal; a client that sent none gets seeds derived from the match key, and the digests will tell
+  const seeds = dealt && dealt.length >= n ? dealt.slice(0, n) : Array.from({ length: n }, (_, k) => hashSeed(`${key}#${vs.matchN}#${k}`));
   vs.match = { key: `${key}#${vs.matchN}`, me: gold ? 1 : 2, myName: vs.me.name, myGenome: vs.me.genome, settled: false, tally: null, mine: null, theirs: null, desync: false };
   vs.me.ready = vs.them.ready = false;
-  startBattle({ level: vs.set.level, gold: G.genome, pink: P.genome, names: [null, G.name, P.name], me: vs.match.me, match: vs.match });
+  startMatch({ level: vs.set.level, gold: G.genome, pink: P.genome, names: [null, G.name, P.name], me: vs.match.me, match: vs.match, seeds });
 }
-// Once the simulation is through: count the result on the saved strain that was played and swap verdict digests with the other
-// side, so a browser whose maths drifted from the other's is at least noticed.
-function pvpSettle(b) {
-  const m = b.pvp; if (!m || m.settled) return; m.settled = true;
-  const win = b.result.winner === m.me, k = strainAt(m.myName);
+// Once every round the match needs is through: count the match on the saved strain that was played and swap verdict digests
+// with the other side, so a browser whose maths drifted from the other's is at least noticed.
+function pvpSettle(M) {
+  const m = M.pvp; if (!m || m.settled || !M.decided) return; m.settled = true;
+  const win = M.winner === m.me, k = strainAt(m.myName);
   if (k >= 0 && genomeKey(prog.strains[k].genome) === genomeKey(m.myGenome)) { const s = prog.strains[k]; if (win) s.w = (s.w || 0) + 1; else s.l = (s.l || 0) + 1; save(); m.tally = s; }
-  let h = 0; for (const s of [1, 2]) for (const v of b.stats.cells[s]) h = (Math.imul(h, 31) + v) >>> 0;
-  m.mine = { winner: b.result.winner, reason: b.result.reason, tick: b.result.tick, h };
+  let h = 0;
+  for (const b of M.rounds.slice(0, M.played)) { h = (Math.imul(h, 31) + b.result.winner * 1000 + b.result.tick) >>> 0; for (const s of [1, 2]) for (const v of b.stats.cells[s]) h = (Math.imul(h, 31) + v) >>> 0; }
+  m.mine = { winner: M.winner, n: M.played, h };
   send({ t: 'verdict', key: m.key, ...m.mine });
   checkDesync(m);
 }
 function checkDesync(m) {
   if (!m.mine || !m.theirs) return;
-  m.desync = m.mine.winner !== m.theirs.winner || m.mine.reason !== m.theirs.reason || m.mine.tick !== m.theirs.tick || m.mine.h !== m.theirs.h;
+  m.desync = m.mine.winner !== m.theirs.winner || m.mine.n !== m.theirs.n || m.mine.h !== m.theirs.h;
   const el = $('vsNote'); if (el) el.innerHTML = pvpResultNote(m);
 }
 function pvpResultNote(m) {
   const parts = [];
   if (m.tally) parts.push(`<b>${esc(m.tally.name)}</b> is now ${m.tally.w || 0} W · ${m.tally.l || 0} L against other players.`);
   else parts.push('Not counted: the strain that played is no longer saved under that name.');
-  if (m.desync) parts.push('The two browsers disagreed on how this culture went, so each of you is watching its own version.');
+  if (m.desync) parts.push('The two browsers disagreed on how this match went, so each of you is watching its own version.');
   return parts.join(' ');
 }
 // Leaving a match early (back to the lobby or the rack) still settles it: the rest of the simulation runs in a moment.
 function pvpLeaveBattle() {
-  const vs = S.pvp, b = S.battle; if (!vs) return;
-  if (b && b.pvp) { while (!b.done) b.step(); pvpSettle(b); }
+  const vs = S.pvp, M = S.match; if (!vs) return;
+  if (M && M.pvp) { finishMatch(); pvpSettle(M); }
   vs.match = null;
 }
 
@@ -2751,38 +2825,152 @@ function renderInbox() {
   });
 }
 
-// ===================== Battle =====================
-// Solo: the lab strain against the plate's rival. Versus (opts): both readied genomes on the agreed plate, gold side first.
-// b.me is the side this player breeds, b.names labels both sides, b.pvp is the match record (null when solo).
-function startBattle(opts) {
-  let b;
+// ===================== Match =====================
+// A match is the best of 3, 5 or 7 rounds between the same two genomes on the same plate. Only the seed differs from
+// round to round, and the match ends as soon as one side has more rounds than the other can still reach. Rounds are
+// simulated lazily and in order (a round exists only once the one before it has finished with the match still open),
+// the round on show first and the rest in the background, so a replay or the summary is never far away.
+// Solo: the lab strain against the plate's rival, with seeds dealt here. Versus (opts): both readied genomes on the
+// agreed plate, gold side first, with the seeds the hosting browser dealt. S.match is the match and S.battle the
+// round on show. Each round's Battle also carries me (the side this player breeds), names (both sides), pvp (the
+// versus match record, null when solo), round (its index) and, while another round is showing, the viewer's
+// playhead and revealed watermark for it.
+let countdown = 0; const CD_STEP = 650; // ms per count of the "3, 2, 1" before a round
+const newSeed = () => { if (window.crypto && crypto.getRandomValues) { const a = new Uint32Array(1); crypto.getRandomValues(a); return a[0]; } return Math.floor(Math.random() * 4294967296); };
+const newSeeds = n => Array.from({ length: n }, newSeed);
+const plateLabel = M => `${M.pvp ? 'Versus' : LEVELS[M.level].code} · ${esc(LEVELS[M.level].name)}`;
+function startMatch(opts) {
+  let M;
   if (opts) {
-    b = new Battle(opts.level, opts.gold, opts.pink);
-    Object.assign(b, { pname: opts.names[1], names: opts.names, me: opts.me, pvp: opts.match });
+    M = { level: opts.level, gold: opts.gold, pink: opts.pink, names: opts.names, me: opts.me, pvp: opts.match, seeds: opts.seeds };
     S.level = opts.level;
   } else {
     const g = cloneG(S.genome);
     if (genomeCost(g) > LEVELS[S.level].budget) return;
     persistGenome();
     const name = prog.name || DEFAULT_NAME;
-    b = new Battle(S.level, g, LEVELS[S.level].rival);
-    Object.assign(b, { pname: name, names: [null, name, LEVELS[S.level].rival.name], me: 1, pvp: null });
+    M = { level: S.level, gold: g, pink: LEVELS[S.level].rival, names: [null, name, LEVELS[S.level].rival.name], me: 1, pvp: null, seeds: newSeeds(prog.rounds) };
   }
-  S.battle = b;
-  S.playhead = 0; S.revealed = 0; S.playing = true; S.resultShown = false; S.shownEvt = -1; S.sel = -1; S.logN = -1;
-  clearFx();
-  buildWorld(b.dish); shown.battle = null; setGenes(b);
+  Object.assign(M, { n: M.seeds.length, need: Math.floor(M.seeds.length / 2) + 1, rounds: [], wins: [0, 0, 0], played: 0, decided: false, winner: 0, reviewed: false, summaryPending: false, newGenes: null });
+  cancelCountdown();
+  S.match = M; S.battle = null;
+  buildWorld(ensureRound(0).dish);
   setMode('battle');
   cam.theta = 0;
+  beginRound(0);
+}
+function ensureRound(k) {
+  const M = S.match;
+  while (M.rounds.length <= k) {
+    const b = new Battle(M.level, M.gold, M.pink, M.seeds[M.rounds.length]);
+    Object.assign(b, { names: M.names, me: M.me, pvp: M.pvp, round: M.rounds.length, playhead: 0, revealed: 0 });
+    M.rounds.push(b);
+  }
+  return M.rounds[k];
+}
+// Rounds count in order and only as far as they have finished; the match is decided the moment a side reaches `need`.
+function tallyMatch(M) {
+  const w = [0, 0, 0]; let played = 0, winner = 0;
+  for (const b of M.rounds) {
+    if (!b.done) break;
+    played++; w[b.result.winner]++;
+    if (w[b.result.winner] >= M.need) { winner = b.result.winner; break; }
+  }
+  M.wins = w; M.played = played; M.winner = winner; M.decided = winner > 0;
+}
+// The first round whose simulation is unfinished, else the next one the match still needs; null once it is decided.
+function pendingRound(M) {
+  for (const b of M.rounds) if (!b.done) return b;
+  return M.decided ? null : ensureRound(M.rounds.length);
+}
+// Advance the simulation for a slice of a frame: the round on show first, then whatever the match still needs.
+function stepMatch(budgetMs) {
+  const M = S.match; if (!M) return;
+  const t0 = performance.now();
+  let b = S.battle;
+  while (performance.now() - t0 < budgetMs) {
+    if (!b || b.done) { b = pendingRound(M); if (!b) return; }
+    b.step();
+    if (b.done) { tallyMatch(M); updateRoundNav(); }
+  }
+}
+function finishRound(b) { while (!b.done) b.step(); tallyMatch(S.match); }
+function finishMatch() { let b; while ((b = pendingRound(S.match))) finishRound(b); }
+// Valid once round k has finished: is there a round after it?
+function hasNextRound(k) { const M = S.match; return k + 1 < M.rounds.length || !M.decided; }
+// Put round b on the stage, keeping the viewer's place in the round it replaces.
+function showRound(b) {
+  const prev = S.battle;
+  if (prev && prev !== b) { prev.playhead = S.playhead; prev.revealed = S.revealed; }
+  S.battle = b; S.playhead = b.playhead; S.revealed = b.revealed;
+  S.resultShown = false; S.shownEvt = -1; S.logN = -1; S.inspT = -1;
+  clearFx(); shown.battle = null; resetMatter(); setGenes(b); selectCell(-1);
   $('hPName').innerHTML = hudName(1); $('hEName').innerHTML = hudName(2);
-  setPlayIcon(); renderLog();
+  renderLog(); updateRoundNav();
+}
+// A round's first showing: "Round k of n" with the score so far and a short count, then play from the start. The
+// simulation is already running underneath, so the count also covers the first minutes of incubation.
+function beginRound(k) {
+  const M = S.match, b = ensureRound(k);
+  cancelCountdown();
+  showRound(b);
+  S.playhead = 0; S.playing = false; setPlayIcon();
+  // the score so far counts only the rounds before this one: later rounds may already be simulated, and must not show
+  const w = [0, 0, 0]; for (const r of M.rounds.slice(0, k)) if (r.done) w[r.result.winner]++;
+  const mine = w[M.me], theirs = w[3 - M.me];
+  const score = !k ? `Best of ${M.n}` : mine > theirs ? `You lead ${mine}–${theirs}` : mine < theirs ? `${esc(M.names[3 - M.me])} leads ${theirs}–${mine}` : `Level at ${mine}–${theirs}`;
+  const R = $('result');
+  R.innerHTML = `<div class="card countdown" role="dialog" aria-label="Round ${k + 1} of ${M.n}"><div><div class="eyebrow">${plateLabel(M)}</div><div class="mtitle">Round ${k + 1} of ${M.n}</div><div class="score">${score}</div></div><div class="num" id="cdNum" aria-live="polite">3</div></div>`;
+  R.hidden = false;
+  let n = 3;
+  const tick = () => {
+    if (--n <= 0) { cancelCountdown(); R.hidden = true; S.playing = true; setPlayIcon(); return; }
+    const num = $('cdNum'); if (num) { num.textContent = n; num.style.animation = 'none'; void num.offsetWidth; num.style.animation = ''; }
+    countdown = setTimeout(tick, CD_STEP);
+  };
+  countdown = setTimeout(tick, CD_STEP);
+  R.onclick = () => { if (countdown) { clearTimeout(countdown); n = 1; tick(); } }; // a tap skips the count
+}
+function cancelCountdown() { if (countdown) clearTimeout(countdown); countdown = 0; $('result').onclick = null; }
+// Show round k from its start without ceremony. A replay (from the summary, or once the match has been reviewed)
+// has nothing left to hide, so its whole timeline is revealed.
+function viewRound(k, replay) {
+  const b = ensureRound(k);
+  cancelCountdown(); $('result').hidden = true;
+  if (replay) { finishRound(b); b.revealed = b.frames.length - 1; }
+  showRound(b);
+  seek(0); S.playing = true; setPlayIcon();
+}
+// Make round k the one on stage while the summary stays open: the summary details it, the clock names it and closing
+// the summary returns to it.
+function selectRound(k) {
+  const b = ensureRound(k); finishRound(b);
+  if (S.battle !== b) { b.revealed = b.frames.length - 1; showRound(b); S.playing = false; setPlayIcon(); } else S.revealed = lastTick();
+  const R = $('result');
+  R.querySelectorAll('.rounds li').forEach(li => { const on = +li.dataset.round === k; li.classList.toggle('cur', on); li.setAttribute('aria-current', String(on)); });
+  const d = R.querySelector('#rdetail'); if (d) d.innerHTML = roundDetail(S.match, b);
+}
+function gotoRound(dir) {
+  const M = S.match, b = S.battle; if (!M || !b) return;
+  const k = b.round + dir; if (k < 0) return;
+  if (dir < 0) { viewRound(k, M.reviewed); return; }
+  finishRound(b); // skipping ahead settles the round being left
+  if (!hasNextRound(b.round)) { openSummary(); return; }
+  if (M.reviewed) viewRound(k, true); else beginRound(k);
+}
+// The round on show has played to its end during the first run through the match: on to the next, or the summary.
+function roundOver(b) {
+  const M = S.match; if (!M || S.battle !== b || M.reviewed) return;
+  tallyMatch(M);
+  if (hasNextRound(b.round)) beginRound(b.round + 1); else showSummary();
+}
+function updateRoundNav() {
+  const M = S.match, b = S.battle; if (!M || !b) return;
+  $('hRound').textContent = `Round ${b.round + 1} of ${M.n}`;
+  $('bPrevR').disabled = b.round === 0;
+  $('bNextR').disabled = M.decided && b.round + 1 >= M.rounds.length;
 }
 function hudName(s) { const b = S.battle; return esc(b.names[s]) + (b.pvp && b.me === s ? '<span class="you">you</span>' : ''); }
-function stepSim(budgetMs) {
-  const b = S.battle; if (!b || b.done) return;
-  const t0 = performance.now();
-  while (!b.done && performance.now() - t0 < budgetMs) b.step();
-}
 // Events are only listed once the playhead has reached them, so the log never gives away the ending.
 function visibleEvents() {
   const evs = S.battle ? S.battle.events : [];
@@ -2797,6 +2985,7 @@ function setPlayIcon() {
 function seek(t, fxOn) {
   const prev = S.playhead;
   S.playhead = clamp(t, 0, lastTick());
+  if (S.playhead < lastTick() - 0.01) S.resultShown = false; // the end can be marked again once it has been left
   if (fxOn) fireEvents(prev, S.playhead);
 }
 function fireEvents(a, b) {
@@ -2810,7 +2999,7 @@ function fireEvents(a, b) {
   }
 }
 // Solo rivals are Latin binomials and go by their genus in the log; player strains keep their full name.
-function sideName(s) { const b = S.battle; return b.pvp || s === 1 ? b.names[s] : b.names[s].split(' ')[0]; }
+function sideName(s, b) { b = b || S.battle; return b.pvp || s === 1 ? b.names[s] : b.names[s].split(' ')[0]; }
 function evText(ev) {
   const n = ev.side ? sideName(ev.side) : '';
   switch (ev.type) {
@@ -2944,45 +3133,28 @@ $('bBack').addEventListener('click', () => stepBy(-1));
 $('bFwd').addEventListener('click', () => stepBy(1));
 $('bPrevEv').addEventListener('click', () => jumpEvent(-1));
 $('bNextEv').addEventListener('click', () => jumpEvent(1));
-// Speed dropdown: a popover listing every speed, so a specific rate is one pick away instead of a cycle.
-const speedMenu = $('speedMenu'), speedBtn = $('bSpeed');
-speedMenu.innerHTML = SPEEDS.map(v => `<button type="button" role="menuitemradio" data-v="${v}" title="${v}× real time: the full incubation plays in ${runLength(v)}"><span>${v}×</span><span class="tick" aria-hidden="true">✓</span></button>`).join('');
-function setSpeed(v) {
-  S.speed = v; speedBtn.textContent = v + '×';
-  for (const b of speedMenu.children) b.setAttribute('aria-checked', String(+b.dataset.v === v));
+// Speed slider, real time to 10000×. Below about 60× a minute of incubation takes over a second and the dish looks
+// still, so a plain log scale would spend half its travel on rates that all look alike. This one is log with the low
+// end squeezed: the first fifth of the travel covers 1× to 100×, the rest 100× to 10000×, with no kink between them.
+// The readout rounds the rate to two figures (1500×, not 1479×).
+const speedIn = $('speed'), speedVal = $('speedVal'), SPEED_MAX = 10000, SPEED_STEPS = +speedIn.max;
+const KNEE_T = 0.2, KNEE_V = 100, SPEED_P = Math.log(Math.log10(KNEE_V) / Math.log10(SPEED_MAX)) / Math.log(KNEE_T);
+const speedAt = t => Math.pow(10, Math.log10(SPEED_MAX) * Math.pow(t, SPEED_P)); // slider travel 0..1 → rate
+const travelAt = v => Math.pow(Math.log10(v) / Math.log10(SPEED_MAX), 1 / SPEED_P); // rate → slider travel
+const niceSpeed = x => { const p = Math.max(1, Math.pow(10, Math.floor(Math.log10(x)) - 1)); return clamp(Math.round(x / p) * p, 1, SPEED_MAX); };
+function showSpeed(v) {
+  S.speed = v; speedVal.textContent = v + '×';
+  speedIn.title = `${v}× real time: a full incubation plays in ${runLength(v)}`; speedIn.setAttribute('aria-valuetext', `${v} times real time`);
 }
-function speedMenuOpen() { return !speedMenu.hidden; }
-function openSpeedMenu(focusCurrent) {
-  speedMenu.hidden = false; speedBtn.setAttribute('aria-expanded', 'true');
-  if (focusCurrent) (speedMenu.querySelector('[aria-checked="true"]') || speedMenu.firstElementChild).focus();
-}
-function closeSpeedMenu(refocus) {
-  if (!speedMenuOpen()) return;
-  speedMenu.hidden = true; speedBtn.setAttribute('aria-expanded', 'false');
-  if (refocus) speedBtn.focus();
-}
-speedBtn.addEventListener('click', () => { if (speedMenuOpen()) closeSpeedMenu(false); else openSpeedMenu(false); });
-speedBtn.addEventListener('keydown', e => {
-  if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { e.preventDefault(); openSpeedMenu(true); }
-});
-speedMenu.addEventListener('click', e => {
-  const b = e.target.closest('button[data-v]'); if (!b) return;
-  setSpeed(+b.dataset.v); closeSpeedMenu(true);
-});
-speedMenu.addEventListener('keydown', e => {
-  const items = [...speedMenu.children], i = items.indexOf(document.activeElement);
-  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus(); }
-  else if (e.key === 'Home') { e.preventDefault(); items[0].focus(); }
-  else if (e.key === 'End') { e.preventDefault(); items[items.length - 1].focus(); }
-  else if (e.key === 'Escape' || e.key === 'Tab') { closeSpeedMenu(e.key === 'Escape'); }
-  e.stopPropagation();
-});
-document.addEventListener('pointerdown', e => { if (!e.target.closest('.speedwrap')) closeSpeedMenu(false); });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeSpeedMenu(true); }, true);
+function setSpeed(v) { showSpeed(v); speedIn.value = Math.round(travelAt(v) * SPEED_STEPS); }
+speedIn.addEventListener('input', () => showSpeed(niceSpeed(speedAt(speedIn.value / SPEED_STEPS))));
 setSpeed(S.speed);
 $('bLog').addEventListener('click', () => { $('log').hidden = !$('log').hidden; });
 $('logX').addEventListener('click', () => { $('log').hidden = true; });
 $('bLab').addEventListener('click', () => { S.playing = false; openLab(S.level); });
+$('bResults').addEventListener('click', openSummary);
+$('bPrevR').addEventListener('click', () => gotoRound(-1));
+$('bNextR').addEventListener('click', () => gotoRound(1));
 document.addEventListener('keydown', e => {
   if (S.mode !== 'battle' || e.target.tagName === 'INPUT') return;
   if (e.key === ' ') { e.preventDefault(); togglePlay(); }
@@ -2992,6 +3164,7 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'Home' || e.key === '0') resetView();
   else if (e.key === 'p' || e.key === 'P') toggleProbes();
   else if (e.key === 'a' || e.key === 'A') toggleAnim();
+  else if (e.key === 'Escape') closeSummary();
 });
 
 // --- inspector ---
@@ -3030,12 +3203,12 @@ function updateInspect() {
   $('inspX').addEventListener('click', () => selectCell(-1));
 }
 
-// --- result ---
-function analyze(b) {
-  const me = b.me || 1, P = b.sides[me], E = b.sides[3 - me], g = P.g, notes = [], has = id => g.genes.includes(id);
-  const iso = id => isolated(GENE_BY_ID[id]);
-  const dmgTot = P.dmgTaken.reduce((a, x) => a + x, 0) || 1;
-  const share = k => P.dmgTaken[k] / dmgTot;
+// Field notes on one round from this player's side: what cost them, and which gene or trait would answer it.
+function analyze(M, b) {
+  const me = M.me, P = b.sides[me], E = b.sides[3 - me], g = P.g, R0 = b.result, won = R0.winner === me, notes = [];
+  const has = id => g.genes.includes(id), iso = id => isolated(GENE_BY_ID[id]);
+  const per = (v, unit) => `${Math.round(v)} ${unit}${Math.round(v) === 1 ? '' : 's'}`;
+  const dmgTot = P.dmgTaken.reduce((a, x) => a + x, 0) || 1, share = k => P.dmgTaken[k] / dmgTot;
   const uneaten = [0, 0, 0, 0];
   for (let i = 0; i < NN; i++) if (b.dish.food0[i] > 0 && !P.eat[b.dish.foodType[i]]) uneaten[b.dish.foodType[i]] += b.dish.food0[i];
   for (const f of [3, 2, 1]) if (uneaten[f] > 250) {
@@ -3045,61 +3218,90 @@ function analyze(b) {
   const missed = [0, 0, 0, 0];
   b.dish.piles.forEach((pl, pid) => { if (P.eat[pl.type] && !P.known.has(pid)) for (const i of pl.cells) missed[pl.type] += b.dish.food0[i]; });
   for (const f of [3, 2, 1]) if (missed[f] > 150) notes.push(`${FOOD_NAMES[f]} worth about ${Math.round(missed[f] * YIELD[f])} ATP was never discovered. Raise Sensor range or Explore to find it.`);
-  if (b.bareTick > 0 && P.retracted > 50) notes.push(`The plate was eaten bare by ${fmt(b.bareTick)}; your strain pulled back ${P.retracted} cells to live on its reserves. Holding regrowing bacterial lawns, Vein Pruning and lower Density all stretch a famine; a faster kill avoids it.`);
-  else if (P.starveTicks > 30) notes.push(`Your strain starved for ${P.starveTicks} min. It grew faster than it could feed: lower Vigor or Density, add Vein Pruning, or raise Seek food.`);
+  if (b.bareTick > 0 && P.retracted > 50) notes.push(`The plate was eaten bare at ${fmt(b.bareTick)}; your strain pulled back about ${Math.round(P.retracted)} cells to live on its reserves. Holding regrowing bacterial lawns, Vein Pruning and lower Density all stretch a famine; a faster kill avoids it.`);
+  else if (P.starveTicks > 30) notes.push(`Your strain starved for about ${Math.round(P.starveTicks)} min. It grew faster than it could feed: lower Vigor or Density, add Vein Pruning, or raise Seek food.`);
   if (share(S_ACID) > 0.3 && !has('mucus')) notes.push(`Acid did ${Math.round(share(S_ACID) * 100)}% of your damage. ${iso('mucus') ? 'Alkaline Slime neutralises most of it.' : 'A slime gene against acid is coming.'}`);
   if (share(S_ENGULF) > 0.45 && !has('chitin') && P.lost[S_ENGULF] > 40) notes.push(`Engulfing did ${Math.round(share(S_ENGULF) * 100)}% of your damage. Chitin Rind halves it; more Density makes cells tougher.`);
   if (share(S_TOXIN) > 0.2 && !has('mucus')) notes.push('The rival’s antibiotic haze ate your front line. Alkaline Slime blunts it.');
-  if (P.lost[S_SALT] > 15 && !has('osmo')) notes.push(`${P.lost[S_SALT]} cells died on salt crust. ${iso('osmo') ? 'Osmotic Pumps make you immune.' : 'Lower Explore so growth stays off the crust.'}`);
-  if (P.lost[S_UV] > 15 && !has('chloro')) notes.push(`${P.lost[S_UV]} cells burned under the lamp. ${iso('chloro') ? 'An Algal Symbiont turns that light into food.' : 'Lower Explore to keep out of the light.'}`);
-  if (P.splits >= 2 || P.fragStarved >= 2) notes.push(`Your network was cut apart ${P.splits} time${P.splits === 1 ? '' : 's'} and ${P.fragStarved} cut-off fragment${P.fragStarved === 1 ? '' : 's'} starved. Keep fronts broad${iso('granules') && !has('granules') ? ', or take Reserve Granules so fragments can wait for food' : ''}.`);
+  if (P.lost[S_SALT] > 15 && !has('osmo')) notes.push(`${per(P.lost[S_SALT], 'cell')} died on salt crust. ${iso('osmo') ? 'Osmotic Pumps make you immune.' : 'Lower Explore so growth stays off the crust.'}`);
+  if (P.lost[S_UV] > 15 && !has('chloro')) notes.push(`${per(P.lost[S_UV], 'cell')} burned under the lamp. ${iso('chloro') ? 'An Algal Symbiont turns that light into food.' : 'Lower Explore to keep out of the light.'}`);
+  if (P.splits >= 2 || P.fragStarved >= 2) notes.push(`Your network was cut apart ${per(P.splits, 'time')} and ${per(P.fragStarved, 'cut-off fragment')} starved. Keep fronts broad${iso('granules') && !has('granules') ? ', or take Reserve Granules so fragments can wait for food' : ''}.`);
   const rocks = b.dish.terrain.some(t => t === T_ROCK);
-  if (rocks && !has('acid') && b.result.winner !== me && E.acid) notes.push(`${sideName(3 - me)} burned through granite you had to walk around. ${iso('acid') ? 'Oxalic Acid opens the same shortcuts.' : ''}`);
-  if (b.result.winner !== me && b.result.reason === 'time') notes.push('Whatever is alive at 12:00 decides a plate that is not overrun. Raise Hunt rival to press the attack, hold the regrowing lawns, or lower upkeep so your body outlasts the famine.');
-  if (b.result.winner === me && !notes.length) notes.push(b.result.reason === 'elim' ? `Clean kill at ${fmt(b.result.tick)}. Try a cheaper genome to see how lean a winning strain can be.` : 'You won on territory. A harder-hitting front could finish the rival outright.');
-  return notes.slice(0, 3);
+  if (rocks && !has('acid') && !won && E.acid) notes.push(`${sideName(3 - me, b)} burned through granite you had to walk around. ${iso('acid') ? 'Oxalic Acid opens the same shortcuts.' : ''}`);
+  if (!won && R0.reason === 'time') notes.push('Whatever is alive at 12:00 decides a round that is not overrun. Raise Hunt rival to press the attack, hold the regrowing lawns, or lower upkeep so your body outlasts the famine.');
+  if (won && !notes.length) notes.push(R0.reason === 'elim' ? `A clean kill at ${fmt(R0.tick)}. Try a cheaper genome to see how lean a winning strain can be.` : 'You won on territory. A harder-hitting front could finish the rival outright.');
+  return notes.slice(0, 4);
 }
-function showResult() {
-  const b = S.battle, me = b.me || 1, P = b.sides[me], E = b.sides[3 - me], win = b.result.winner === me, vs = b.pvp;
-  const rv = b.names[3 - me];
-  let newGenes = [];
-  if (win && !vs && !prog.cleared[b.level]) {
-    prog.cleared[b.level] = true; save(); renderProgress();
-    newGenes = GENES.filter(G => G.unlock === b.level + 2);
-  }
-  const R0 = b.result, pct = Math.round(R0.share * 100);
-  const why = R0.reason === 'elim'
-    ? (win ? `${rv} was wiped from the plate at ${fmt(R0.tick)}.` : `${rv} consumed your strain at ${fmt(R0.tick)}.`)
-    : R0.reason === 'dom'
-    ? (win ? `${rv} was overrun: down to ${100 - pct}% of the living tissue by ${fmt(R0.tick)}.` : `${rv} overran the plate by ${fmt(R0.tick)}; your strain was down to ${100 - pct}% of the living tissue.`)
-    : (win ? `You held ${P.cells} cells to ${E.cells} when incubation ended${b.bareTick > 0 ? `, after the plate went bare at ${fmt(b.bareTick)}` : ''}.` : `${rv} held ${E.cells} cells to your ${P.cells} when incubation ended${b.bareTick > 0 ? `, after the plate went bare at ${fmt(b.bareTick)}` : ''}.`);
-  const lostTot = P.lost.reduce((a, x) => a + x, 0);
-  const lossBar = lostTot ? [1, 2, 3, 4, 5, 6, 7].filter(k => P.lost[k]).map(k => `<i style="width:${P.lost[k] / lostTot * 100}%;background:${SRC_COL[k]}" title="${SRC_NAMES[k]}"></i>`).join('') : '';
-  const legend = [1, 2, 3, 4, 5, 6, 7].filter(k => P.lost[k]).map(k => `<span><i style="background:${SRC_COL[k]}"></i>${SRC_NAMES[k]} ${P.lost[k]}</span>`).join('');
-  const notes = analyze(b);
-  const next = !vs && b.level + 1 < LEVELS.length && playable(b.level + 1);
+// The picked round in detail: both sides' numbers, this player's losses by cause and the field notes.
+function roundDetail(M, b) {
+  const me = M.me, P = b.sides[me], E = b.sides[3 - me];
+  const lostBy = [1, 2, 3, 4, 5, 6, 7].map(k => P.lost[k]), lostAll = lostBy.reduce((a, x) => a + x, 0);
+  const lossBar = lostAll ? [1, 2, 3, 4, 5, 6, 7].filter(k => lostBy[k - 1]).map(k => `<i style="width:${lostBy[k - 1] / lostAll * 100}%;background:${SRC_COL[k]}" title="${SRC_NAMES[k]}"></i>`).join('') : '';
+  const legend = [1, 2, 3, 4, 5, 6, 7].filter(k => lostBy[k - 1]).map(k => `<span><i style="background:${SRC_COL[k]}"></i>${SRC_NAMES[k]} ${lostBy[k - 1]}</span>`).join('');
+  const stat = (lbl, a, c) => `<div class="stat"><small>${lbl}</small><b>${Math.round(a)}</b> <span class="vs">/ ${Math.round(c)}</span></div>`;
+  return `<div class="sub-h">Round ${b.round + 1} · you / ${esc(M.names[3 - me])}</div>
+    <div class="stats">${stat('Peak cells', P.peak, E.peak)}${stat('ATP eaten', P.eaten, E.eaten)}${stat('Kills', P.kills, E.kills)}</div>
+    ${lostAll ? `<div class="losses"><div class="sub-h">Your ${lostAll} lost cells, by cause</div><div class="bar2">${lossBar}</div><div class="legend">${legend}</div></div>` : ''}
+    <div><div class="sub-h">Field notes</div><ul class="notes">${analyze(M, b).map(n => `<li>${esc(n)}</li>`).join('')}</ul></div>`;
+}
+// One line on how a round ended, told from the loser's side.
+function roundHow(b) {
+  const R0 = b.result, W = b.sides[R0.winner], Lz = b.sides[3 - R0.winner], ln = sideName(3 - R0.winner, b);
+  if (R0.reason === 'elim') return `${ln} was wiped from the plate`;
+  if (R0.reason === 'dom') return `${ln} was overrun, down to ${Math.round((1 - R0.share) * 100)}% of the tissue`;
+  return `${W.cells} cells to ${Lz.cells} when incubation ended`;
+}
+function openSummary() { S.playing = false; setPlayIcon(); cancelCountdown(); showSummary(); }
+function closeSummary() { const M = S.match; if (M && M.reviewed && !M.summaryPending) $('result').hidden = true; }
+// The match summary. Opening it ends the first run through the match: from here every showing is a replay, so no
+// round advances by itself and nothing is fogged. A replay watched to its end brings the summary back; one scrubbed
+// or stepped to the end does not. The verdict reads across the match; the rest of the card details the round picked
+// from the list (the one on show, to begin with). Picking a round also puts it on the stage behind the summary, and
+// its Rewatch button plays it again from the start. Opened before the match is decided, the summary waits for the
+// remaining rounds, which the frame loop then simulates at full tilt.
+function showSummary() {
+  const M = S.match; if (!M) return;
+  M.reviewed = true;
   const R = $('result');
-  R.innerHTML = `<div class="card" role="dialog" aria-label="Battle result">
-    <div><div class="eyebrow">${vs ? 'Versus' : LEVELS[b.level].code} · ${esc(LEVELS[b.level].name)}</div><div class="verdict ${win ? 'win' : 'lose'}">${win ? 'Dish conquered' : 'Overrun'}</div><div class="why">${esc(why)}</div></div>
-    <div class="stats">
-      <div class="stat"><small>Peak cells</small><b>${P.peak}</b> <span class="vs">/ ${E.peak}</span></div>
-      <div class="stat"><small>ATP eaten</small><b>${Math.round(P.eaten)}</b> <span class="vs">/ ${Math.round(E.eaten)}</span></div>
-      <div class="stat"><small>Kills</small><b>${P.kills}</b> <span class="vs">/ ${E.kills}</span></div>
-    </div>
-    ${lostTot ? `<div class="losses"><div class="sub-h">Your ${lostTot} lost cells, by cause</div><div class="bar2">${lossBar}</div><div class="legend">${legend}</div></div>` : ''}
-    ${newGenes.length ? `<div class="unlock">New genes isolated: <b>${newGenes.map(G => G.name).join(', ')}</b></div>` : ''}
-    ${!vs && win && b.level === LEVELS.length - 1 ? '<div class="unlock">Every plate on the rack is yours. Try beating each dish with a smaller genome.</div>' : ''}
+  if (!M.decided) {
+    M.summaryPending = true;
+    R.innerHTML = `<div class="card" role="dialog" aria-label="Match summary"><div><div class="eyebrow">${plateLabel(M)}</div><div class="mtitle">Finishing the incubations…</div><div class="why">The remaining rounds are being simulated.</div></div></div>`;
+    R.hidden = false; return;
+  }
+  M.summaryPending = false;
+  const me = M.me, rs = M.rounds.slice(0, M.played), win = M.winner === me, vs = M.pvp, rv = M.names[3 - me], w = M.wins[me], l = M.wins[3 - me];
+  if (!M.newGenes) { // settled once: the summary is shown again after every rewatch
+    M.newGenes = [];
+    if (win && !vs && !prog.cleared[M.level]) { prog.cleared[M.level] = true; save(); renderProgress(); M.newGenes = GENES.filter(G => G.unlock === M.level + 2); }
+  }
+  let why = (win ? `You took ${w} of ${rs.length} round${rs.length === 1 ? '' : 's'}` : `${rv} took ${l} of ${rs.length} round${rs.length === 1 ? '' : 's'}`) + (rs.length < M.n ? `, settling a best of ${M.n} early.` : '.');
+  if (w && l) {
+    const shares = rs.map(b => { const p = b.sides[me].cells, e = b.sides[3 - me].cells; return Math.round(p / Math.max(p + e, 1) * 100); });
+    why += ` Nothing but the seed changed between the rounds, so this match-up is close: your share of the living tissue at the end ran from ${Math.min(...shares)}% to ${Math.max(...shares)}%.`;
+  } else why += win ? ' A clean sweep.' : ' Not one went your way.';
+  const cur = rs.includes(S.battle) ? S.battle : rs[rs.length - 1];
+  const rows = rs.map((b, k) => `<li data-round="${k}" tabindex="0" aria-current="${cur === b}"${cur === b ? ' class="cur"' : ''} title="Show round ${k + 1} in detail"><i class="dot" style="background:${b.result.winner === 1 ? COL.p : COL.e}"></i><span class="rn">Round ${k + 1} · ${fmt(b.result.tick)}</span><span class="how"><span class="rw">${b.result.winner === me ? 'Won' : 'Lost'}</span> · ${esc(roundHow(b))}</span><button class="btn" data-rewatch="${k}" title="Watch round ${k + 1} again from the start">Rewatch ›</button></li>`).join('');
+  const next = !vs && M.level + 1 < LEVELS.length && playable(M.level + 1);
+  R.innerHTML = `<div class="card" role="dialog" aria-label="Match summary">
+    <div><div class="eyebrow"><span>${plateLabel(M)} · Best of ${M.n}</span><button class="x" id="rClose" aria-label="Close the summary" title="Close (Esc)">✕</button></div><div class="verdict ${win ? 'win' : 'lose'}">${win ? 'Dish conquered' : 'Overrun'}</div><div class="why">${esc(why)}</div></div>
+    ${M.newGenes.length ? `<div class="reward"><div class="sub-h">New genes isolated</div><b>${M.newGenes.map(G => esc(G.name)).join(' · ')}</b><div class="note">${M.newGenes.length === 1 ? 'It is' : 'They are'} in the gene lab now, ready for your next strain.</div></div>` : ''}
+    ${!vs && win && M.level === LEVELS.length - 1 ? '<div class="unlock">Every plate on the rack is yours. Try beating each dish with a smaller genome.</div>' : ''}
     ${vs ? `<div class="unlock" id="vsNote">${pvpResultNote(vs)}</div>` : ''}
-    <div><div class="sub-h">Field notes</div><ul class="notes">${notes.map(n => `<li>${esc(n)}</li>`).join('')}</ul></div>
+    <ol class="rounds" aria-label="Rounds">${rows}</ol>
+    <div class="rdetail" id="rdetail">${roundDetail(M, cur)}</div>
     <div class="acts">
-      <button class="btn" id="rReplay">Watch replay</button>
       <button class="btn${win && next ? '' : ' primary'}" id="rLab">${vs ? 'Back to the match' : 'Revise genome'}</button>
       ${win && next ? '<button class="btn primary" id="rNext">Next dish</button>' : ''}
     </div></div>`;
   R.hidden = false;
-  $('rReplay').addEventListener('click', () => { R.hidden = true; seek(0); S.playing = true; S.resultShown = false; setPlayIcon(); });
-  $('rLab').addEventListener('click', () => openLab(b.level));
-  if ($('rNext')) $('rNext').addEventListener('click', () => openLab(b.level + 1));
+  R.querySelectorAll('.rounds li').forEach(li => {
+    li.addEventListener('click', () => selectRound(+li.dataset.round));
+    li.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); selectRound(+li.dataset.round); } });
+  });
+  R.querySelectorAll('[data-rewatch]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); viewRound(+b.dataset.rewatch, true); }));
+  $('rClose').addEventListener('click', closeSummary);
+  $('rLab').addEventListener('click', () => openLab(M.level));
+  if ($('rNext')) $('rNext').addEventListener('click', () => openLab(M.level + 1));
 }
 
 // ===================== Loop =====================
@@ -3109,10 +3311,11 @@ function frame(now) {
   const time = now / 1000;
   if (S.anim) surfUniforms.uTime.value = time;
   beamMat.uniforms.uTime.value = time; probeMat.uniforms.uTime.value = time;
-  if (S.mode === 'battle' && S.battle) {
-    const b = S.battle;
-    stepSim(b.frames.length - S.playhead < 60 ? 14 : 6);
-    if (b.done && b.pvp && !b.pvp.settled) pvpSettle(b);
+  if (S.mode === 'battle' && S.match && S.battle) {
+    const M = S.match, b = S.battle;
+    stepMatch(M.summaryPending ? 40 : b.frames.length - S.playhead < 60 ? 14 : 6);
+    if (M.decided && M.pvp && !M.pvp.settled) pvpSettle(M);
+    if (M.summaryPending && M.decided) showSummary();
     if (S.playing) {
       const prev = S.playhead;
       S.playhead = Math.min(lastTick(), S.playhead + dt * S.speed / TICK_SEC);
@@ -3121,8 +3324,10 @@ function frame(now) {
     if (S.playhead > S.revealed) S.revealed = S.playhead;
     if (visibleEvents() !== S.logN) { renderLog(); S.shownEvt = -1; }
     if (b.done && S.playhead >= lastTick() - 0.01 && !S.resultShown && !scrubDrag) {
+      const watched = S.playing; // reached by watching; a seek to the end (scrubber, step or jump) arrives paused
       S.playing = false; setPlayIcon(); S.resultShown = true;
-      setTimeout(() => { if (S.mode === 'battle' && S.battle === b) showResult(); }, 700);
+      if (!M.reviewed) setTimeout(() => { if (S.mode === 'battle' && S.battle === b) roundOver(b); }, 700);
+      else if (watched) setTimeout(() => { if (S.mode === 'battle' && S.battle === b && S.playhead >= lastTick() - 0.01) openSummary(); }, 700);
     }
     const t = Math.floor(S.playhead);
     showFrame(b, t, S.playhead - t, dt);

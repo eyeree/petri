@@ -42,13 +42,31 @@ recovering the energy in its body, rather than withering in place.
 half an hour), or hold more of the dish when the incubation ends. A lean strain parked
 on regrowing food can outlast a bloomer that ate the plate bare.
 
+**Match.** A plate is settled over a match: the best of three, five or seven rounds,
+chosen in the lab before you inoculate. Every round reruns the same two strains on the
+same plate from a fresh random seed, so a close match-up shows itself as a split series
+rather than one lucky culture, and the match ends as soon as one side cannot be caught.
+Each round opens with a short count, the rounds run on one after another, and the
+summary at the end gives the verdict across all of them and lists the rounds; pick a
+round from that list and the card shows its numbers, losses and field notes, and puts it
+on the stage behind the summary. Each round's Rewatch button plays it again from the
+start (same seed, same outcome). A rewatch that plays to its end brings the summary back;
+scrubbing to the end does not. The clock names the round on show, and the bar under the
+timeline steps between rounds, ends the match and opens the results.
+Re-running a match deals new seeds. Plates themselves are fixed: no plate's layout
+depends on a seed.
+
 ## Controls
 
 Drag to orbit, right-drag (or two fingers) to pan, scroll or pinch to zoom in close.
 Click a cell to inspect it. Space plays and pauses, the arrow keys step (with Shift,
-ten minutes), `[` and `]` jump between events, Home resets the view, and P shows the
-exploration probes. A freezes the surface animation (flow pulses, throb and hub glow), a
-debugging aid for judging the vein geometry on its own. The timeline only reveals as far as you have watched, so a first
+ten minutes), `[` and `]` jump between events, Home resets the view, P shows the
+exploration probes, and Escape closes the match summary. The bar under the timeline has
+the same steps and jumps as buttons, previous and next round outside them, a speed slider
+from real time to 10000×, End match to go back to the lab, and Match results to open the
+summary. A freezes the surface
+animation (flow pulses, throb and hub glow), a debugging aid for judging the vein
+geometry on its own. The timeline only reveals as far as you have watched, so a first
 viewing never gives away the ending.
 
 ## Playing a friend
@@ -59,14 +77,16 @@ to each other directly over WebRTC. There is no server of ours in the way, no da
 and no account: [Trystero](https://github.com/dmotz/trystero) uses public Nostr relays
 only to carry the connection handshake, and the browsers talk to each other after that.
 
-Once connected, either player can change the plate and the kilobase cap. Each of you
-picks a saved strain that fits the cap (or saves the one in the lab) and presses Ready;
-the culture starts when both are. Both browsers run the same deterministic simulation
-from the same inputs, so nothing but the two genomes ever crosses the wire. Between
-matches you edit, save and switch strains exactly as in solo play. Every saved strain
-keeps a win and loss count against other players, and the *send* button beside a saved
-strain hands a copy to the other player, who can rename it before keeping it, or
-discard it.
+Once connected, either player can change the plate, the kilobase cap and the length of
+the match. Each of you picks a saved strain that fits the cap (or saves the one in the
+lab) and presses Ready; the match starts when both are. Both browsers run the same
+deterministic simulation from the same inputs, so nothing but the two genomes and the
+round seeds ever crosses the wire: the browser with the lower code deals one seed per
+round and sends them with its ready signal, and neither player ever sees or types one.
+Between matches you edit, save and switch strains exactly as in solo play. Every saved
+strain keeps a win and loss count of matches against other players, and the *send*
+button beside a saved strain hands a copy to the other player, who can rename it before
+keeping it, or discard it.
 
 Sides on a plate are not symmetric, so the lobby says which corner you start in and has
 a Swap button. The code is good for the page's lifetime; reload and you get a new one.
@@ -79,7 +99,10 @@ Everything is in `index.html`: the simulation, the three.js renderer and the int
 The simulation block at the top of the script (from `MYXO SIMULATION` to the
 `module.exports` line) has no DOM dependencies and runs under Node, which is how
 balance is checked: extract it with `sed`, require it, and run every plate against a
-set of genomes before and after a change.
+set of genomes before and after a change. `Battle(levelIdx, genomeP, genomeE, seed)`
+takes the round's seed as its fourth argument; left out, a fixed seed per plate is used,
+which keeps a harness run repeatable. Because a close match-up can go either way on the
+seed alone, a balance check of such a pairing should average over several seeds.
 
 Serve the folder with any static server (for example `python3 -m http.server`) or just
 open `index.html`; there is no build step. The game is published with GitHub Pages.
@@ -88,9 +111,9 @@ The versus code is the `Versus` section of the script. It loads Trystero from js
 on demand, so solo play never touches the network. Messages are small JSON objects
 (`hello`, `set`, `ready`, `unready`, `name`, `share`, `verdict`, `bye`), every one
 numbered so that a copy arriving through a second shared room is dropped. The match
-inputs are the plate, the cap, which player takes the gold corner, and the two genomes;
-after the simulation each side sends a digest of its outcome and the result card notes
-if the two browsers disagreed.
+inputs are the plate, the cap, the number of rounds, which player takes the gold corner,
+the two genomes and the seeds; after the match each side sends a digest of its outcome
+and the summary notes if the two browsers disagreed.
 
 ## Reference material
 
