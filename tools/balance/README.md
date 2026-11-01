@@ -19,10 +19,12 @@ side's share of the living tissue when the round ended, and the tail counts how 
 | `arena.js` | Round robin of builds on a neutral plate: which genes dominate at equal cost. |
 | `gating.js` | How much of each plate's food a strain can reach and eat by terrain key. |
 | `costs.js` | The proposed catalogue and roster of `game-play-design.md`, costed, with the budget rule. Reads nothing from the game. |
+| `oppclimb.js` | Strengthen an opponent: hill-climb its genome against challengers (the default, the previous plate's opponents, or any genome) under a kb cap, keeping the genes it must keep. How the roster was tuned. |
+| `pool.js` | Not a script: a worker-thread pool. `series` and `climb` with the same results as `harness.js`, run on every core (set `POOL` to limit). |
 
 Genome options take `default`, `rival:<level>[:<index>]` or JSON, for example
 `--genome '{"vigor":3,"density":2,"sense":2,"genes":["amylase","protease","prune"],"taxis":{"food":4,"hunt":1,"explore":3}}'`.
-Scripts take the plate's single `rival` today and its `rivals` list once the roster lands.
+Every plate has a `rivals` list of three; `rival:<level>:<index>` names one.
 
 The acceptance tests these scripts serve, and the numbers to hit, are in section 11 of
 `game-play-design.md`.

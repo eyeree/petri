@@ -598,3 +598,48 @@ Each over 8 seeds unless noted.
   is fixed.
 - Chilled agar halves upkeep for everyone. If a carried strain ends up parking on the shelf to wait
   out the round, the halving can be limited to adapted strains.
+
+## 14. Implementation status (2026-11-01)
+
+Implemented in `index.html`: all 39 genes, mycelial mat, oil, detritus, antibiotic discs and halos, glass beads,
+chilled agar, Brine Glands' laid salt, the lamp cycle, ten plates as placement records (`layout`, no code), three
+opponents per plate, the opponent picker, `prog.beaten` / `prog.pick`, the kb line in the summary, the budget
+headroom mark, the Sensing category, sun and moon on the clock, nights on the timeline, the new field notes, and
+copying a beaten opponent to the saved strains. The versus protocol is bumped to 3, since the simulation changed.
+Old saves keep plates 1 to 5; a cleared old D-06 (the Elder) is not carried over, since it is now D-10.
+
+### 14.1 Where the code departs from this proposal
+
+| Item | Proposed | Implemented | Why |
+|---|---|---|---|
+| Oxalic Acid contact damage | 1.8 | 1.1 (0.55 on contested cells) | at 1.8 the acid build still took 59/64 in the arena |
+| Antibiotic Haze | 0.55/min, Slime ×0.5 | 0.3/min, Slime ×0.35 | at 1.1 acid, haze took 60/64 and Slime lost to it 1/8 |
+| Thermogenesis | warm with ≥ 5 own neighbours | ≥ 4 to eat, thicken and pay upkeep; ≥ 3 to grow into the cold | at 5 a sheet's front was always cold and Snowbank never left its start |
+| Circadian Reserve | pays out evenly over 120 min | pays 1/90 of the bank a minute | a bank that splits and merges with fragments cannot keep a schedule |
+| Bacterial Bloom discs | three | four, two mirrored pairs | every placement is mirrored, so only a disc at the centre comes alone |
+| Oat Flake Plate layout | lower oat pile at (14, 35), r 1.7 | (15, 33), r 1.8: the mirror of the upper pile across the start row | the upper pile was the only food in the default's sensor range at the start, so every round opened toward it although the two looked equally near; now the seed picks (163 to 137 over 300 seeds). The three opponents were retuned for it |
+| Cold Shelf layout | oats and bark in the band, lawn at the rim | band 23 cells wide, an extra oat pile on its near edge | the rim lawn fed every strain just enough to stall there |
+| Opponent genomes | section 7 | tuned with `oppclimb.js` and random search; the current list is `LEVELS` | the proposed genomes for Snowbank, the Yellow Sheet and the Plague could not grow from their start (high upkeep, no food in reach); others lost to carried strains |
+| Ring squatter | Slime | no Slime, Protease | the climb found Slime useless on its plate |
+
+### 14.2 Measured (8 seeds unless noted)
+
+- Goal 3 (16 seeds, after the Oat Flake pile move). The default loses to every plate 1 opponent: Rusher 4/16,
+  Healer 4/16, Miser 4/16 as gold, and 4, 4 and 8 of 16 from the pink corner. Best counters within two edits of the
+  default, under 12 kb, found by exhaustive search: Rusher, Vigor +1 Explore −1, 11/16 (6/16 from pink); Healer,
+  Density +1 Explore −1 or drop Crush for Healing, 12/16; Miser, Vigor +1 Seek −1, 11/16. Mirrors 7 to 10 of 16.
+- Goal 4, carried opponents. Each opponent of plate k−1 against each opponent of plate k, on plate k: 0/8 or 1/8 in
+  all but 3 of the 81 pairings on D-03 to D-10. The exceptions: Salt grazer against Shade-runner, 4/8 (the
+  Shade-runner is the plate's easy one); on D-02, the plate 1 Miser beats the Wall-runner (also easy) 4/8 and the
+  Rusher beats the Ring squatter 3/8. Granite gates weakly, as section 2.3 found.
+- Default against every later opponent: 0/8 to 1/8, except D-02 (Acid-eater 3/8, Wall-runner 4/8, Ring squatter
+  2/8) and D-05 (Carrion 2/8).
+- Goal 2. Every opponent loses 6/8 or better to some genome within its plate's budget: most to another opponent of
+  the same plate; the Frost raider to Snowbank + Alkaline Slime (26 kb, 8/8); the Yellow Sheet to a V5 Algal
+  Symbiont + Photolyase + Spore Cannons build (33 kb, 7/8); the Elder (41 kb) to several 32 to 35 kb builds (6/8).
+- Balance. Arena of section 2.3 after the changes: Acid 46, Necrotrophy 46, Haze 44, Healing 38 of 64. Acid build
+  against Density 3, 6/8; equal-cost Slime against Acid 4/8 and against Haze 4/8.
+- Mirror matches: 2/8 to 6/8 except Frost raider 7/8 and Day-shift 2/8 (side bias on those two plates).
+
+Not yet run: the goal 4 hill-climb of carried strains at each plate's budget, the 200-random-genome test, and
+the P9 test of a Symbiont strain carried from P4. `tools/balance/costs.js` still holds the proposed roster.

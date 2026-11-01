@@ -13,9 +13,23 @@ fight for the agar over a twelve-hour incubation. Every battle is recorded minut
 minute: rewind it, scrub it, step through it, zoom into the fights and click cells to
 see what happened to them. Each plate you win isolates new genes for the next one.
 
+**Plates.** The rack holds ten plates. Each one sets a new problem in the dish (bark
+sealed in a granite ring, food on salt, light that burns, antibiotic discs, a fungal mat
+that keeps spreading, a chilled shelf, a glass-bead labyrinth with oil at the rim, a lamp
+that goes out every two hours) and introduces three or four genes, one of which answers
+it. A strain carried in from the plate before almost always loses until it takes one of
+them, and the budget never rises by more than half the kilobases the new genes cost, so
+the new answer has to be paid for by dropping something old.
+
+**Opponents.** Every plate is home to three strains: a brawler, an economist and a
+specialist, each marked easy, medium or hard, with its cost shown against your budget
+(the hard ones may run over it). The lab picks one at random for the match unless you
+choose; the same strain plays every round. Beat any one to clear the plate, all three to
+clear its rack. A beaten opponent can be copied to your saved strains to study.
+
 **Genome.** Traits (Vigor, Density, Sensor range), three behaviour drives (Seek food,
-Hunt rival, Explore) and a set of genes for metabolism, defence, offence and network
-management all cost kilobases, so every strain is a trade-off. Save a strain under its
+Hunt rival, Explore) and 39 genes for metabolism, defence, offence, network management
+and sensing all cost kilobases, so every strain is a trade-off. Save a strain under its
 name and load it on any plate: plates differ only in their kilobase budget, so a strain
 bred for a later plate shows as over budget on an earlier one until it is trimmed.
 
@@ -113,6 +127,8 @@ which keeps a harness run repeatable. Because a close match-up can go either way
 seed alone, a balance check of such a pairing should average over several seeds.
 The scripts in `tools/balance/` do exactly this and need nothing extracted:
 `node tools/balance/baseline.js` runs the standard checks, and that folder's README lists the rest.
+The gene catalogue, plates and opponents follow `game-play-design.md`; each plate in
+`LEVELS` is plain data (a budget, three opponent genomes and a list of placement records).
 
 Serve the folder with any static server (for example `python3 -m http.server`) or just
 open `index.html`; there is no build step. The game is published with GitHub Pages.
