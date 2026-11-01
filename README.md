@@ -111,6 +111,8 @@ set of genomes before and after a change. `Battle(levelIdx, genomeP, genomeE, se
 takes the round's seed as its fourth argument; left out, a fixed seed per plate is used,
 which keeps a harness run repeatable. Because a close match-up can go either way on the
 seed alone, a balance check of such a pairing should average over several seeds.
+The scripts in `tools/balance/` do exactly this and need nothing extracted:
+`node tools/balance/baseline.js` runs the standard checks, and that folder's README lists the rest.
 
 Serve the folder with any static server (for example `python3 -m http.server`) or just
 open `index.html`; there is no build step. The game is published with GitHub Pages.

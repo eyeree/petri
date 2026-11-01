@@ -1487,7 +1487,7 @@ Battle.prototype.record = function () {
   this.frames.push({ dens, flags, matter, aux, probes, frag, frags, route });
   for (const s of [1, 2]) { const S = this.sides[s]; S.area += S.cells; this.stats.cells[s].push(S.cells); this.stats.energy[s].push(S.energy); }
 };
-if (typeof module !== 'undefined') module.exports = { Battle, LEVELS, GENES, genomeCost, normGenome, deriveSide, SENSE_RANGE, DRIVE_COST, TRAIT_COST, MAXT, N, NN, makeDish };
+if (typeof module !== 'undefined') module.exports = { Battle, LEVELS, GENES, genomeCost, normGenome, deriveSide, SENSE_RANGE, DRIVE_COST, TRAIT_COST, MAXT, N, NN, makeDish, T_VOID, T_AGAR, T_ROCK, T_SALT, T_LIGHT, F_SUGAR, F_PROT, F_LIGN, FOOD_NAMES, EAT_RATE, YIELD, CORE_P, CORE_E };
 
 // ===================== MYXO APP =====================
 (function () {
