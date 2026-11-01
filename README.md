@@ -19,6 +19,14 @@ management all cost kilobases, so every strain is a trade-off. Save a strain und
 name and load it on any plate: plates differ only in their kilobase budget, so a strain
 bred for a later plate shows as over budget on an earlier one until it is trimmed.
 
+New games and progress resets start with a randomly named strain already saved in
+the rack. Names combine reviewed color and flower lists from
+[Darius Kazemi's Corpora](https://github.com/dariusk/corpora) (CC0), embedded in the
+HTML with no naming dependency or network request. Use the save icon to update a
+strain, or the copy icon to save the current edits under a fresh name while keeping
+the original saved version. Each rack entry also has a copy-and-load button. Focus
+the name field to generate another name, or type your own; save to keep that name.
+
 **Sensing.** A strain only knows about food and rival tissue within its sensor range of
 some cell it owns, and granite blocks that. Food it has sensed stays remembered. Instead
 of wandering at random, a strain with Explore sends out exploratory spikes into open
