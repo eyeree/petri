@@ -21,11 +21,10 @@ it. A strain carried in from the plate before almost always loses until it takes
 them, and the budget never rises by more than half the kilobases the new genes cost, so
 the new answer has to be paid for by dropping something old.
 
-**Opponents.** Every plate is home to three strains: a brawler, an economist and a
-specialist, each marked easy, medium or hard, with its cost shown against your budget
-(the hard ones may run over it). The lab picks one at random for the match unless you
-choose; the same strain plays every round. Beat any one to clear the plate, all three to
-clear its rack. A beaten opponent can be copied to your saved strains to study.
+**Opponents.** Every plate is home to one rival strain, bred for that plate and to beat
+what a player most likely brought from the plate before: the trade-offs that won the last
+dish are the ones it exploits. The lab shows its genome and its cost against your budget
+(the later ones may run over it). Once beaten it can be copied to your saved strains.
 
 **Genome.** Traits (Vigor, Density, Sensor range), three behaviour drives (Seek food,
 Hunt rival, Explore) and 39 genes for metabolism, defence, offence, network management
@@ -110,8 +109,10 @@ strain keeps a win and loss count of matches against other players, and the *sen
 button beside a saved strain hands a copy to the other player, who can rename it before
 keeping it, or discard it.
 
-Sides on a plate are not symmetric, so the lobby says which corner you start in and has
-a Swap button. The code is good for the page's lifetime; reload and you get a new one.
+The two corners are fair: every plate is the same seen from either side (each placement is
+mirrored through the centre), both strains grow, capture and kill at the same moment each
+minute, and every tie the simulation breaks by position is broken in mirror image for the
+other side. The lobby says which corner you start in and has a Swap button. The code is good for the page's lifetime; reload and you get a new one.
 A direct connection needs both networks to allow WebRTC; without a TURN relay a pair
 of strict NATs may fail to connect.
 
@@ -128,7 +129,8 @@ seed alone, a balance check of such a pairing should average over several seeds.
 The scripts in `tools/balance/` do exactly this and need nothing extracted:
 `node tools/balance/baseline.js` runs the standard checks, and that folder's README lists the rest.
 The gene catalogue, plates and opponents follow `game-play-design.md`; each plate in
-`LEVELS` is plain data (a budget, three opponent genomes and a list of placement records).
+`LEVELS` is plain data (a budget, one opponent genome and a list of placement records), and
+`tools/balance/chain.js` tunes the opponents.
 
 Serve the folder with any static server (for example `python3 -m http.server`) or just
 open `index.html`; there is no build step. The game is published with GitHub Pages.

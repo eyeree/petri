@@ -7,7 +7,7 @@ const DEFAULT = { vigor: 2, density: 2, sense: 2, genes: ['amylase', 'protease',
 const SEEDS = [11, 22, 33, 44, 55, 66, 77, 88];
 const seeds = n => Array.from({ length: n }, (_, i) => SEEDS[i] != null ? SEEDS[i] : 101 + i * 37);
 const clone = g => JSON.parse(JSON.stringify(g));
-// Plates carry one rival today and a list once the roster lands; the scripts take either.
+// Each plate has one opponent (L.rival); the scripts loop over a list so an older roster of several still runs.
 const rivalsOf = L => L.rivals || [L.rival];
 const rivalName = r => r.tag ? `${r.name} (${r.tag})` : r.name;
 // Gene ids a player can use on plate `level` (the unlock rule of isolated() in index.html).

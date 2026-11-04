@@ -11,3 +11,6 @@ const end = html.indexOf('\n', exp);
 const m = { exports: {} };
 new Function('module', html.slice(start, end))(m);
 module.exports = m.exports;
+// A fingerprint of the simulation's rules, for caches of round results: the block without the opponents' genome lines
+// (which only say who plays, and are rewritten by tuning), so any change to the rules or the plates starts a new cache.
+module.exports.SIM_HASH = require('crypto').createHash('sha1').update(html.slice(start, end).replace(/^\s*rival: .*$/gm, '')).digest('hex').slice(0, 16);

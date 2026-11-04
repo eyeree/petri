@@ -602,8 +602,8 @@ Each over 8 seeds unless noted.
 ## 14. Implementation status (2026-11-01)
 
 Implemented in `index.html`: all 39 genes, mycelial mat, oil, detritus, antibiotic discs and halos, glass beads,
-chilled agar, Brine Glands' laid salt, the lamp cycle, ten plates as placement records (`layout`, no code), three
-opponents per plate, the opponent picker, `prog.beaten` / `prog.pick`, the kb line in the summary, the budget
+chilled agar, Brine Glands' laid salt, the lamp cycle, ten plates as placement records (`layout`, no code), one
+opponent per plate (section 14.3; the three-opponent roster and its picker were tried first and dropped), the kb line in the summary, the budget
 headroom mark, the Sensing category, sun and moon on the clock, nights on the timeline, the new field notes, and
 copying a beaten opponent to the saved strains. The versus protocol is bumped to 3, since the simulation changed.
 Old saves keep plates 1 to 5; a cleared old D-06 (the Elder) is not carried over, since it is now D-10.
@@ -622,7 +622,7 @@ Old saves keep plates 1 to 5; a cleared old D-06 (the Elder) is not carried over
 | Opponent genomes | section 7 | tuned with `oppclimb.js` and random search; the current list is `LEVELS` | the proposed genomes for Snowbank, the Yellow Sheet and the Plague could not grow from their start (high upkeep, no food in reach); others lost to carried strains |
 | Ring squatter | Slime | no Slime, Protease | the climb found Slime useless on its plate |
 
-### 14.2 Measured (8 seeds unless noted)
+### 14.2 Measured with three opponents per plate (8 seeds unless noted; superseded by 14.3)
 
 - Goal 3 (16 seeds, after the Oat Flake pile move). The default loses to every plate 1 opponent: Rusher 4/16,
   Healer 4/16, Miser 4/16 as gold, and 4, 4 and 8 of 16 from the pink corner. Best counters within two edits of the
@@ -643,3 +643,71 @@ Old saves keep plates 1 to 5; a cleared old D-06 (the Elder) is not carried over
 
 Not yet run: the goal 4 hill-climb of carried strains at each plate's budget, the 200-random-genome test, and
 the P9 test of a Symbiont strain carried from P4. `tools/balance/costs.js` still holds the proposed roster.
+
+### 14.3 One opponent per plate
+
+Three opponents per plate, one drawn at random for each match unless the player picked, was confusing: a player
+adjusting the genome after a loss could be adjusting for a strain they would not meet next time, and beating all
+three earned nothing. Each plate now has one opponent (`LEVELS[i].rival`; no difficulty, no picker, no
+`prog.beaten` or `prog.pick`), tuned by `tools/balance/chain.js` after the corner-fairness fixes (section 14.4).
+
+- **D-01** is climbed on balance: the default must lose, and a cost-neutral two-edit trade-off of the default must
+  win. The best two-edit counter is what the player carries on.
+- **D-02 to D-10**, plate by plate: the opponent is hill-climbed (cap: its cost or the budget + 2, keeping its genes
+  from that plate; the first round tries the plate's opponent, its alternatives and the carried strain given the
+  plate's new genes, and keeps the best) to beat the counter carried from the plate before, that plate's opponent,
+  and every counter found that uses older genes only. From the second round the climb is two-sided: it must also
+  lose to the best counter that uses the plate's new genes. That counter is carried on.
+- Every decision is made on fresh seeds in both corners; the climbs use 8 tuning seeds per corner, the checks 32.
+
+Targets, as a strain's share of wins over both corners: default ≤ 25%, carried counter ≤ 15%, best old-gene
+counter ≤ 35%, best new-gene counter ≥ 65%. The table is the final report: 64 more fresh seeds per corner (128
+rounds), old-gene from the tuning checks, and Mirror is gold's wins of 200 rounds of the opponent against itself.
+
+| Plate | Opponent | kb / budget | Default | Carried | Counter | Old-gene | Counter's new genes | Mirror |
+|---|---|---|---|---|---|---|---|---|
+| D-01 | Healer | 13 / 12 | 16% | (default) | 82% | – | Density +1, Explore −1 | 52% |
+| D-02 | Wall-runner | 17 / 15 | 0% | 0% | 73% | 0% | Ligninase, Granite Scent | 54% |
+| D-03 | Salt grazer | 19 / 17 | 0% | 0% | 60% | 0% | Osmotic Pumps | 50% |
+| D-04 | Solar brawler | 19 / 19 | 0% | 0% | 100% | 0% | Algal Symbiont | 47% |
+| D-05 | Lawn haze | 22 / 22 | 0% | 16% | 100% | 28% | Necrotrophy, Efflux Pumps | 51% |
+| D-06 | Mat warden | 25 / 25 | 1% | 0% | 100% | 2% | Chitinase | 47% |
+| D-07 | Snowbank | 29 / 28 | 0% | 0% | 85% | 0% | Torpor | 53% |
+| D-08 | Vein-cutter | 32 / 31 | 0% | 0% | 91% | 2% | Lipase | 52% |
+| D-09 | the Yellow Sheet | 31 / 33 | 19% | 1% | 97% | **94%** | Negative Phototaxis, Photolyase | 49% |
+| D-10 | the Elder | 41 / 35 | 2% | 8% | 82% | – | (no new genes) | 49% |
+
+Gaps.
+
+- **D-09 fails the old-gene gate.** By D-09 nearly every strain family beats any one opponent with a small change
+  (most often + Algal Symbiont): the carried strain + Symbiont 72 to 88%, the D-09 alternative + Crush 94%. Four
+  rounds of two-sided shaping closed one route and opened another. Options: relax the old-gene rule on late plates,
+  give the opponent more room (D-10 has budget + 6), or accept it, since the carried strain and the default lose.
+- **D-03's counter** reaches 67% in tuning but 60% in the report; the plate is tight.
+- **D-04 to D-06**: the counter is the carried strain plus the plate's new gene and wins every round, so these
+  plates are easy once the gene is found.
+- **D-08's opponent** is the carried strain plus Lipase and Lytic Enzymes: in effect a mirror match against an
+  upgraded copy of the player's own likely strain. The first try kept the plate's own Vein-cutter line, which lost
+  to the carried strain every time (default 36%, carried 83%).
+- The chain follows one counter per plate, so later opponents are tuned against one line of play.
+
+
+### 14.4 Fair corners
+
+Mirror matches had leaned towards one corner on some plates (the Healer on D-01: gold 42.5% of 1000). Every plate
+is point-mirrored through its centre, so any lean came from the simulation resolving gold before pink. Now:
+
+- **Growth is simultaneous.** Both sides pick their growth from the same state; a cell both picked goes to one side
+  by a seeded coin flip and the other is refunded. Contest captures and deaths are collected during the scan and
+  applied after it.
+- **Ties break in mirror image.** Pink scans cells in reverse order and walks neighbours in the mirrored order in
+  growth, fragment labelling, hub choice, vein routing (whose hash uses min(i, N² − 1 − i)) and combat targets, so
+  each side breaks a tie the way the other would from its own corner. Probe and spore coordinates round
+  symmetrically about the centre.
+- **One-side-then-the-other steps alternate.** Acid on granite and sporulation run gold first on even ticks, pink
+  first on odd ones.
+- **End-of-match ties** go to a coin flip (both eliminated), or on time to the larger network, then the larger mass,
+  then a coin flip.
+
+After the fixes the D-01 mirror is 49.5% of 1000, and the ten plates run 47% to 54% of 200 (section 14.3), within
+the noise of 200 rounds.

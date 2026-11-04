@@ -105,17 +105,7 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 .tag.yes .mk { color: var(--ok); } .tag.no .mk { color: var(--bad); }
 .rival-name { font-family: var(--f-display); font-weight: 700; font-size: 16px; color: var(--rival); font-style: italic; }
 .rival-stats { font-family: var(--f-mono); font-size: 11.5px; color: var(--dim); }
-/* opponent picker: Random or one of the plate's strains, each with difficulty pips, kb and a tick once beaten */
-.opp-seg { display: flex; flex-wrap: wrap; border-radius: 10px; border: 1px solid var(--line); overflow: hidden; justify-self: stretch; }
-.opp-seg button { flex: 1 1 0; min-width: 0; background: var(--raised); border: 0; min-height: 44px; padding: 5px 8px; cursor: pointer; display: grid; gap: 1px; justify-items: center; align-content: center; color: var(--dim); }
-.opp-seg button + button { border-left: 1px solid var(--line); }
-.opp-seg button .on { font-style: italic; font-weight: 600; font-size: 12.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-.opp-seg button .om { font-family: var(--f-mono); font-size: 10.5px; display: flex; gap: 5px; align-items: center; }
-.opp-seg button[aria-pressed="true"] { background: #33202a; box-shadow: inset 0 -2px 0 var(--rival); }
-.pips2 { display: inline-flex; gap: 2px; } .pips2 i { width: 5px; height: 5px; border-radius: 50%; background: var(--line); } .pips2 i.on { background: var(--rival); }
-.beat { color: var(--ok); font-weight: 600; }
-.opp-cards { display: grid; gap: 8px; }
-.opp-cards.small { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+/* the plate's opponent in the lab */
 .opp-card { display: grid; gap: 4px; padding: 9px 10px; border-radius: var(--r-sm); background: var(--raised); border: 1px solid var(--line); min-width: 0; }
 .opp-card .top { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
 .opp-card .tg { font-family: var(--f-mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
@@ -123,9 +113,6 @@ h1, h2, h3 { margin: 0; text-wrap: balance; }
 .opp-card .kb.over { color: var(--rival); }
 .opp-card .bl { color: var(--dim); font-size: 12.5px; }
 .opp-card .act { justify-self: start; }
-.opp-cards.small .chips, .opp-cards.small .rival-stats { display: none; }
-.chip.clear { color: var(--ok); border-color: #4a6b3c; }
-.dish .rv .beat { font-style: normal; }
 .sec { display: grid; gap: 10px; }
 .sec-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .sec-h h3 { font-family: var(--f-display); font-weight: 700; font-size: 18px; }
@@ -468,6 +455,8 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 
 // Deterministic cellular battle between two plasmodia on a petri dish.
 const N = 52, NN = N * N, MAXT = 720;
 const CXf = (N - 1) / 2, DISH_R = N / 2 - 1.0;
+const MID = i => Math.min(i, N * N - 1 - i);
+const RSYM = v => v < CXf ? Math.ceil(v - 0.5) : Math.floor(v + 0.5);
 // Terrain. Granite (acid dissolves it), the paper of an antibiotic disc and glass beads block growth; granite and glass
 // also block sensing (Granite Scent sees through both). A disc's halo is agar that poisons whatever grows on it, and
 // chilled agar slows every strain not adapted to the cold.
@@ -488,6 +477,11 @@ const LAY_MAT = 160, LAY_DET = 12; // frame layer scale: food amounts shown at f
 
 const DX = [1, -1, 0, 0, 1, 1, -1, -1], DY = [0, 0, 1, -1, 1, -1, 1, -1];
 const NB = new Int32Array(NN * 8).fill(-1);
+// Every plate is mirrored through its centre, so the pink corner sees the gold corner's plate turned half a turn. To keep
+// the rules the same for both, every tie the simulation breaks by position is broken in mirror image for pink: OPP[k]
+// is the direction opposite k, MIRK[s] the order a side looks at its neighbours in, and MID(i) a key a cell shares with
+// its mirror cell. RSYM rounds a coordinate to a cell the same way on both sides of the centre.
+const OPP = [1, 0, 3, 2, 7, 6, 5, 4], MIRK = [null, [0, 1, 2, 3, 4, 5, 6, 7], OPP];
 for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
   const i = y * N + x;
   for (let k = 0; k < 8; k++) {
@@ -611,23 +605,20 @@ function deriveSide(g0) {
 }
 
 // ---------------- Levels ----------------
-// A plate is static data: a budget, three opponent genomes and a layout of placement records, each [op, ...numbers]
+// A plate is static data: a budget, one opponent genome and a layout of placement records, each [op, ...numbers]
 // with no code and no randomness, so the same plate is always the same dish and a plate can be written down and shared
 // as plain JSON. Every placement is mirrored through the centre of the dish, so both corners face the same plate.
 // Records: ['pile', food, x, y, r, amount] · ['mat', x, y, r, amount] (spreading mycelial mat) · ['rock' | 'salt' |
 // 'light' | 'glass' | 'cold', x, y, r] · ['abx', x, y] (an antibiotic disc and its halo) · ['line', x0, y0, x1, y1,
 // w, terrain] · ['ring', x, y, r, w, [gap angles], terrain]. Food: 1 oats, 2 lawn, 3 bark, 5 oil. Flags: cycle (the
-// lamp runs on a cycle of that many minutes, on for the first half). An opponent is an ordinary genome plus a name, a
-// tag, a blurb and a difficulty from 1 to 3; it uses only genes a player can have on its plate.
+// lamp runs on a cycle of that many minutes, on for the first half). The opponent is an ordinary genome plus a name, a
+// tag and a blurb; it uses only genes a player can have on its plate, and it is tuned to beat the strain a player most
+// likely brings from the plate before (tools/balance/chain.js).
 const LEVELS = [
   {
     name: 'Oat Flake Plate', code: 'D-01', budget: 12,
     blurb: 'Plain 2% agar scattered with rolled oats. A gentle first culture.',
-    rivals: [
-      { name: 'Fuligo minor', tag: 'Rusher', diff: 2, blurb: 'Dense, lean and pushy: it fights from the first contact and rarely gives ground.', vigor: 2, density: 3, sense: 2, genes: ['amylase', 'protease', 'crush', 'chitin', 'prune'], taxis: { food: 3, hunt: 2, explore: 1 } },
-      { name: 'Didymium ferox', tag: 'Healer', diff: 1, blurb: 'Armoured and self-healing, it spreads slowly and wears down whatever touches it.', vigor: 2, density: 2, sense: 4, genes: ['amylase', 'crush', 'regen', 'chitin', 'prune'], taxis: { food: 1, hunt: 1, explore: 0 } },
-      { name: 'Diderma lentum', tag: 'Miser', diff: 2, blurb: 'Lean and everywhere: it spikes out across the plate, eats first and waits for 12:00.', vigor: 2, density: 2, sense: 2, genes: ['amylase', 'protease', 'chitin', 'regen', 'prune'], taxis: { food: 4, hunt: 1, explore: 2 } },
-    ],
+    rival: { name: 'Didymium ferox', tag: 'Healer', blurb: 'Armoured and self-healing, it spreads slowly and wears down whatever touches it.', vigor: 2, density: 2, sense: 3, genes: ['amylase', 'crush', 'regen', 'chitin', 'prune'], taxis: { food: 1, hunt: 2, explore: 0 } },
     layout: [
       ['pile', 1, 25.5, 25.5, 2.4, 110],
       ['pile', 1, 15, 17, 1.8, 90], ['pile', 1, 15, 33, 1.8, 90],
@@ -638,11 +629,7 @@ const LEVELS = [
   {
     name: 'Granite Maze', code: 'D-02', budget: 15,
     blurb: 'Crushed granite walls split the plate. Bark chips fill the centre ring.',
-    rivals: [
-      { name: 'Lycogala corrodens', tag: 'Acid-eater', diff: 2, blurb: 'Eats the bark in the ring and burns through the walls to you.', vigor: 1, density: 2, sense: 3, genes: ['amylase', 'acid', 'ligninase'], taxis: { food: 4, hunt: 3, explore: 1 } },
-      { name: 'Comatricha tenax', tag: 'Wall-runner', diff: 1, blurb: 'Knows every oat pile through the walls and takes them first. It cannot eat bark.', vigor: 3, density: 2, sense: 4, genes: ['amylase', 'protease', 'prune', 'rockscent'], taxis: { food: 4, hunt: 1, explore: 3 } },
-      { name: 'Diderma saxicola', tag: 'Ring squatter', diff: 3, blurb: 'Sits dense on the bark behind its acid and a chitin rind.', vigor: 2, density: 3, sense: 3, genes: ['amylase', 'protease', 'ligninase', 'acid', 'chitin'], taxis: { food: 3, hunt: 2, explore: 2 } },
-    ],
+    rival: { name: 'Comatricha tenax', tag: 'Wall-runner', blurb: 'Knows every pile through the walls and gets there before you.', vigor: 2, density: 1, sense: 4, genes: ['amylase', 'protease', 'prune', 'rockscent', 'chitin'], taxis: { food: 5, hunt: 1, explore: 2 } },
     layout: [
       ['line', 14, 12, 14, 40, 0.9, 'rock'],
       ['line', 14, 11, 19, 8, 0.8, 'glass'], ['line', 14, 41, 19, 44, 0.8, 'glass'],
@@ -656,11 +643,7 @@ const LEVELS = [
   {
     name: 'Salt Pan', code: 'D-03', budget: 17,
     blurb: 'Brine has dried into crusts. The best food lies inside the salt.',
-    rivals: [
-      { name: 'Stemonitis lorica', tag: 'Salt grazer', diff: 2, blurb: 'Eats everything on the salt while you starve on the rim.', vigor: 2, density: 3, sense: 3, genes: ['amylase', 'protease', 'ligninase', 'chitin', 'osmo', 'regen', 'prune'], taxis: { food: 4, hunt: 2, explore: 1 } },
-      { name: 'Mucilago crustacea', tag: 'Crust', diff: 1, blurb: 'Prunes and salts behind itself, walling the centre in.', vigor: 2, density: 3, sense: 2, genes: ['amylase', 'ligninase', 'osmo', 'brine', 'prune', 'chitin'], taxis: { food: 4, hunt: 1, explore: 1 } },
-      { name: 'Badhamia salina', tag: 'Salt raider', diff: 3, blurb: 'Crosses the salt fast and attacks you on it.', vigor: 3, density: 2, sense: 3, genes: ['amylase', 'protease', 'osmo', 'crush', 'acid'], taxis: { food: 3, hunt: 4, explore: 2 } },
-    ],
+    rival: { name: 'Stemonitis lorica', tag: 'Salt grazer', blurb: 'Eats everything on the salt while you starve on the rim.', vigor: 2, density: 3, sense: 3, genes: ['amylase', 'protease', 'ligninase', 'chitin', 'osmo', 'regen', 'prune'], taxis: { food: 4, hunt: 2, explore: 1 } },
     layout: [
       ['line', 17, 3, 21, 48, 2.6, 'salt'],
       ['salt', 25.5, 25.5, 6.5],
@@ -673,11 +656,7 @@ const LEVELS = [
   {
     name: 'Sunlit Shallows', code: 'D-04', budget: 19,
     blurb: 'A thin film of agar under a lamp. Little food, lots of light, harsh UV.',
-    rivals: [
-      { name: 'Ceratiomyxa lumina', tag: 'Light-feeder', diff: 2, blurb: 'Lives on light you cannot touch, and sleeps through a famine.', vigor: 3, density: 3, sense: 3, genes: ['chloro', 'amylase', 'sclero', 'prune'], taxis: { food: 3, hunt: 2, explore: 2 } },
-      { name: 'Lamproderma scintillans', tag: 'Shade-runner', diff: 1, blurb: 'Spikes out to the bark under the lamps and eats it wearing melanin. Thin.', vigor: 3, density: 2, sense: 3, genes: ['amylase', 'ligninase', 'melanin', 'prune', 'tipdom'], taxis: { food: 4, hunt: 1, explore: 3 } },
-      { name: 'Physarum solare', tag: 'Solar brawler', diff: 3, blurb: 'Fed by the lamp, it has no piles to defend and hunts you instead.', vigor: 3, density: 3, sense: 3, genes: ['chloro', 'crush', 'acid', 'sclero'], taxis: { food: 2, hunt: 3, explore: 1 } },
-    ],
+    rival: { name: 'Physarum solare', tag: 'Solar brawler', blurb: 'Fed by the lamp, it has no piles to defend and hunts you instead.', vigor: 3, density: 3, sense: 3, genes: ['chloro', 'crush', 'acid', 'sclero'], taxis: { food: 2, hunt: 3, explore: 0 } },
     layout: [
       ['light', 25.5, 25.5, 6.5], ['light', 15, 12, 4.5], ['light', 15, 40, 4.0],
       ['pile', 1, 12, 30, 1.1, 50], ['pile', 1, 22, 18, 1.1, 50],
@@ -688,11 +667,7 @@ const LEVELS = [
   {
     name: 'Bacterial Bloom', code: 'D-05', budget: 22,
     blurb: 'A lawn of bacteria has bloomed overnight, and antibiotic discs guard most of it.',
-    rivals: [
-      { name: 'Badhamia vorax', tag: 'Glutton', diff: 3, blurb: 'Grazes inside the halos and runs you down.', vigor: 4, density: 2, sense: 4, genes: ['protease', 'amylase', 'acid', 'crush', 'efflux'], taxis: { food: 3, hunt: 4, explore: 1 } },
-      { name: 'Physarum cinereum', tag: 'Lawn haze', diff: 2, blurb: 'Poisons the lawn’s edge and sits on the regrowing food.', vigor: 2, density: 3, sense: 3, genes: ['protease', 'toxin', 'mucus', 'efflux', 'prune', 'crush'], taxis: { food: 4, hunt: 2, explore: 1 } },
-      { name: 'Metatrichia vesparium', tag: 'Carrion', diff: 2, blurb: 'Every fight feeds it, and it ignores the halos.', vigor: 3, density: 2, sense: 3, genes: ['protease', 'amylase', 'sapro', 'necro', 'crush', 'efflux'], taxis: { food: 3, hunt: 4, explore: 3 } },
-    ],
+    rival: { name: 'Physarum cinereum', tag: 'Lawn haze', blurb: 'Poisons the lawn’s edge and sits on the regrowing food.', vigor: 2, density: 3, sense: 3, genes: ['protease', 'toxin', 'mucus', 'efflux', 'prune', 'crush', 'chitin'], taxis: { food: 4, hunt: 2, explore: 1 } },
     layout: [
       ['abx', 16, 16], ['abx', 15, 36], ['abx', 23, 41],
       ['pile', 2, 13, 14, 1.4, 115], ['pile', 2, 19, 18, 1.5, 85], ['pile', 2, 12, 33, 1.6, 95], ['pile', 2, 18, 38, 1.5, 95],
@@ -704,11 +679,7 @@ const LEVELS = [
   {
     name: 'Mycelial Mat', code: 'D-06', budget: 25,
     blurb: 'A fungus is creeping across the agar. Its mat keeps spreading wherever nothing grows.',
-    rivals: [
-      { name: 'Badhamia utricularis', tag: 'Mat grazer', diff: 1, blurb: 'Follows the mat as it spreads and leaves nothing behind.', vigor: 3, density: 3, sense: 3, genes: ['chitinase', 'amylase', 'prune', 'nomad', 'regen'], taxis: { food: 5, hunt: 1, explore: 2 } },
-      { name: 'Cribraria aurantiaca', tag: 'Sporulator', diff: 2, blurb: 'Its sporelings land on every patch of mat.', vigor: 2, density: 2, sense: 4, genes: ['chitinase', 'spores', 'granules', 'prune', 'amylase', 'chitin'], taxis: { food: 4, hunt: 1, explore: 3 } },
-      { name: 'Stemonitis fusca', tag: 'Mat warden', diff: 3, blurb: 'Holds the mat behind a haze.', vigor: 3, density: 3, sense: 3, genes: ['chitinase', 'toxin', 'efflux', 'chitin', 'crush'], taxis: { food: 3, hunt: 3, explore: 1 } },
-    ],
+    rival: { name: 'Stemonitis fusca', tag: 'Mat warden', blurb: 'Holds the mat behind a haze.', vigor: 3, density: 3, sense: 3, genes: ['chitinase', 'toxin', 'efflux', 'chitin', 'crush', 'regen', 'acid'], taxis: { food: 2, hunt: 2, explore: 2 } },
     layout: [
       ['line', 25.5, 3, 25.5, 21, 0.9, 'glass'],
       ['mat', 19, 13, 1.3, 70], ['mat', 21, 25, 1.3, 70], ['mat', 19, 38, 1.3, 70],
@@ -718,11 +689,7 @@ const LEVELS = [
   {
     name: 'Cold Shelf', code: 'D-07', budget: 28,
     blurb: 'A chilled shelf crosses the dish with the best food on it. Upkeep is halved in the cold, if you can eat there.',
-    rivals: [
-      { name: 'Lamproderma columbinum', tag: 'Shelf grazer', diff: 1, blurb: 'Eats the shelf at full rate and keeps fed all day on very little.', vigor: 3, density: 2, sense: 4, genes: ['amylase', 'ligninase', 'antifreeze', 'prune', 'torpor', 'granules', 'regen'], taxis: { food: 4, hunt: 2, explore: 2 } },
-      { name: 'Diderma niveum', tag: 'Snowbank', diff: 2, blurb: 'A dense sheet that warms itself and encysts whatever you cut off.', vigor: 3, density: 3, sense: 3, genes: ['amylase', 'protease', 'ligninase', 'thermo', 'chitin', 'encyst', 'regen', 'crush'], taxis: { food: 3, hunt: 3, explore: 1 } },
-      { name: 'Physarum alpinum', tag: 'Frost raider', diff: 3, blurb: 'Fast on the shelf, and it hunts you across it, tracking what it has seen.', vigor: 4, density: 2, sense: 4, genes: ['amylase', 'protease', 'antifreeze', 'crush', 'acid', 'rmem', 'efflux'], taxis: { food: 3, hunt: 4, explore: 2 } },
-    ],
+    rival: { name: 'Diderma niveum', tag: 'Snowbank', blurb: 'A dense sheet that warms itself and encysts whatever you cut off.', vigor: 4, density: 4, sense: 2, genes: ['amylase', 'protease', 'ligninase', 'thermo', 'chitin', 'encyst', 'regen', 'crush', 'necro'], taxis: { food: 3, hunt: 3, explore: 1 } },
     layout: [
       ['line', 25.5, 0, 25.5, 51, 11.5, 'cold'],
       ['line', 25.5, 6, 25.5, 17, 0.8, 'glass'],
@@ -735,11 +702,7 @@ const LEVELS = [
   {
     name: 'Glass Bead Labyrinth', code: 'D-08', budget: 31,
     blurb: 'Glass beads fill the middle of the dish. Oil droplets, few and far apart, sit at the rim.',
-    rivals: [
-      { name: 'Trichia favoginea', tag: 'Prospector', diff: 1, blurb: 'Finds every droplet first, on long thin veins.', vigor: 3, density: 2, sense: 4, genes: ['lipase', 'amylase', 'tipdom', 'prune', 'rockscent'], taxis: { food: 4, hunt: 1, explore: 4 } },
-      { name: 'Arcyria incisa', tag: 'Vein-cutter', diff: 3, blurb: 'Severs the trunks between your droplets and starves the pieces.', vigor: 3, density: 2, sense: 4, genes: ['lipase', 'lytic', 'rmem', 'crush', 'acid'], taxis: { food: 3, hunt: 4, explore: 2 } },
-      { name: 'Hemitrichia serpula', tag: 'the Net', diff: 2, blurb: 'Cannot be cut apart, and holds its droplets all day.', vigor: 2, density: 3, sense: 3, genes: ['lipase', 'anast', 'armour', 'granules', 'prune', 'amylase', 'regen'], taxis: { food: 4, hunt: 2, explore: 2 } },
-    ],
+    rival: { name: 'Arcyria incisa', tag: 'Vein-cutter', blurb: 'Poisons your edge, cuts your trunks and feeds on whatever dies.', vigor: 2, density: 3, sense: 3, genes: ['chitinase', 'toxin', 'efflux', 'chitin', 'crush', 'regen', 'acid', 'necro', 'amylase', 'torpor', 'lipase', 'lytic'], taxis: { food: 2, hunt: 1, explore: 2 } },
     layout: [
       ['ring', 25.5, 25.5, 5, 0.8, [1.571, 4.712], 'glass'],
       ['ring', 25.5, 25.5, 9.5, 0.8, [0, 3.1416], 'glass'],
@@ -754,11 +717,7 @@ const LEVELS = [
     name: 'Day and Night', code: 'D-09', budget: 33,
     blurb: 'Lamps over the best food, switched on and off every four hours. Bacteria regrow only in the dark.',
     cycle: 240,
-    rivals: [
-      { name: 'Didymium nigripes', tag: 'Night-shift', diff: 1, blurb: 'Thin and fast, it takes the lit piles every dusk and withdraws at dawn, healing overnight.', vigor: 4, density: 2, sense: 4, genes: ['amylase', 'protease', 'ligninase', 'negphoto', 'photolyase', 'melanin', 'prune', 'tipdom'], taxis: { food: 4, hunt: 2, explore: 3 } },
-      { name: 'Physarum viride', tag: 'Day-shift', diff: 2, blurb: 'Fed by the lamp by day and by its bank by night; sleeps if the bank runs dry.', vigor: 3, density: 3, sense: 4, genes: ['chloro', 'circadian', 'amylase', 'ligninase', 'sclero', 'prune', 'regen'], taxis: { food: 3, hunt: 3, explore: 2 } },
-      { name: 'Fuligo septica', tag: 'the Yellow Sheet', diff: 3, blurb: 'A dense day-fed tank with the reserves to fight all night.', vigor: 4, density: 3, sense: 4, genes: ['chloro', 'circadian', 'chitin', 'crush', 'acid', 'mucus', 'amylase', 'protease', 'regen'], taxis: { food: 3, hunt: 3, explore: 1 } },
-    ],
+    rival: { name: 'Fuligo septica', tag: 'the Yellow Sheet', blurb: 'A dense, slow sheet that banks what it eats, outlasts you and seeds spores across the plate.', vigor: 3, density: 4, sense: 4, genes: ['circadian', 'chitin', 'crush', 'mucus', 'amylase', 'protease', 'regen', 'photolyase', 'torpor', 'spores'], taxis: { food: 3, hunt: 3, explore: 1 } },
     layout: [
       ['light', 25.5, 25.5, 8], ['light', 16, 11, 5.5],
       ['pile', 1, 16, 11, 2.0, 100], ['pile', 3, 25.5, 25.5, 2.4, 110], ['pile', 1, 21, 31, 1.4, 80],
@@ -770,11 +729,7 @@ const LEVELS = [
     name: 'The Elder Plasmodium', code: 'D-10', budget: 35,
     blurb: 'Ancient strains hold this plate. Granite, brine, light by day, cold, antibiotics, mat and oil, all at once.',
     cycle: 240,
-    rivals: [
-      { name: 'Physarum senex', tag: 'the Elder', diff: 3, blurb: 'Eats everything, everywhere, day and night.', vigor: 3, density: 3, sense: 5, genes: ['amylase', 'protease', 'ligninase', 'acid', 'mucus', 'chitin', 'regen', 'osmo', 'prune', 'chloro', 'efflux', 'chitinase', 'lipase', 'antifreeze'], taxis: { food: 3, hunt: 3, explore: 2 } },
-      { name: 'Brefeldia maxima', tag: 'the Hydra', diff: 2, blurb: 'An unkillable network that wins on territory at 12:00.', vigor: 2, density: 3, sense: 4, genes: ['amylase', 'protease', 'chitinase', 'lipase', 'anast', 'armour', 'regen', 'granules', 'prune', 'thermo', 'osmo', 'sapro'], taxis: { food: 4, hunt: 2, explore: 2 } },
-      { name: 'Leocarpus fragilis', tag: 'the Plague', diff: 3, blurb: 'Pure aggression, fed by what it kills, and hard to see coming.', vigor: 4, density: 2, sense: 4, genes: ['protease', 'amylase', 'sapro', 'toxin', 'lytic', 'surge', 'acid', 'efflux', 'cryptic'], taxis: { food: 3, hunt: 5, explore: 1 } },
-    ],
+    rival: { name: 'Physarum senex', tag: 'the Elder', blurb: 'Eats nearly everything, everywhere, day and night.', vigor: 3, density: 3, sense: 5, genes: ['amylase', 'protease', 'ligninase', 'acid', 'mucus', 'chitin', 'regen', 'osmo', 'prune', 'chloro', 'efflux', 'chitinase', 'lipase', 'antifreeze'], taxis: { food: 3, hunt: 3, explore: 2 } },
     layout: [
       ['ring', 25.5, 25.5, 8.0, 1.0, [1.2, 2.8, 4.4, 6.0], 'rock'],
       ['light', 25.5, 25.5, 5.0],
@@ -909,7 +864,7 @@ function Battle(levelIdx, genomeP, genomeE, seed) {
   this.dby = new Uint8Array(NN);
   this.queue = new Int32Array(NN);
   this.stamp = new Int32Array(NN); this.stampId = 1;
-  this.tmpA = new Uint8Array(NN); this.tmpB = new Uint8Array(NN);
+  this.tmpA = new Uint8Array(NN); this.tmpB = new Uint8Array(NN); this.picks = [null, [], []]; this.caps = []; this.dead = [];
   this.candJ = new Int32Array(NN); this.candS = new Float32Array(NN); this.candK = new Uint8Array(NN); this.candF = new Int32Array(NN);
   this.kids = new Uint8Array(NN); this.bq = Array.from({ length: 32 }, () => []); // Dial's buckets: one per distance, modulo 32 (wider than any step cost)
   // per cell: Circadian Reserve's share of the bank, minutes its fragment has gone unfed (Encystment); per side: the
@@ -999,7 +954,9 @@ Battle.prototype.label = function (s) {
   const frags = S.frags = [];
   for (let i = 0; i < NN; i++) if (owner[i] === s) comp[i] = -1;
   let main = 0;
-  for (let i = 0; i < NN; i++) {
+  const mk = MIRK[s]; // pink labels in mirror order, so its fragments are numbered and walked as gold's would be
+  for (let ii = 0; ii < NN; ii++) {
+    const i = s === 1 ? ii : NN - 1 - ii;
     if (owner[i] !== s || comp[i] >= 0) continue;
     // bank: Circadian Reserve; feed: what it ate this minute; coldW: upkeep weight of its cells on chilled agar that get
     // the cold's discount; idleAge: minutes since it last fed; starvAge: minutes it has been starving; minFd: walking
@@ -1021,7 +978,7 @@ Battle.prototype.label = function (s) {
       if (intake[c] > 0) F.feeding++;
       const sc = (intake[c] > 0 ? 1000 : 0) + fp[c] + mass[c] * 0.01;
       if (sc > F.hubScore) { F.hubScore = sc; F.hub = c; }
-      for (let k = 0; k < 8; k++) { const j = NB[c * 8 + k]; if (j >= 0 && owner[j] === s && comp[j] < 0) { comp[j] = id; q[t++] = j; } }
+      for (let k = 0; k < 8; k++) { const j = NB[c * 8 + mk[k]]; if (j >= 0 && owner[j] === s && comp[j] < 0) { comp[j] = id; q[t++] = j; } }
     }
     F.starving = F.energy <= 0 || (F.energy < 20 && F.starvCells * 2 > F.cells);
     if (F.cells > frags[main].cells) main = id;
@@ -1049,7 +1006,7 @@ Battle.prototype.hubs = function (s) {
     const G = groups[comp[i]]; let g = G.get(k);
     if (!g) G.set(k, g = { intake: 0, best: i, score: -1 });
     g.intake += intake[i];
-    if (fp[i] > g.score) { g.score = fp[i]; g.best = i; }
+    if (fp[i] > g.score || (s === 2 && fp[i] === g.score)) { g.score = fp[i]; g.best = i; }
   }
   for (const H of S.hubs) {
     if (owner[H.cell] !== s) { if (H.src >= 0) S.orphan.set(H.src, { w: H.w, t: T }); continue; }
@@ -1071,7 +1028,7 @@ Battle.prototype.hubs = function (s) {
     if (!list.length) list.push({ cell: F.hub, w: Math.min(1, F.cells / 60), src: -1, frag: F.id, target: 0 });
     let mx = 0; for (const H of list) if (H.target > mx) mx = H.target;
     if (mx > 0) for (const H of list) H.w += (H.target / mx - H.w) * HUB_K;
-    list.sort((a, b) => (b.w - a.w) || (a.cell - b.cell));
+    list.sort((a, b) => (b.w - a.w) || (s === 1 ? a.cell - b.cell : b.cell - a.cell));
     F.hub = list[0].cell; F.hubW = list[0].w;
     for (let q = 0; q < list.length; q++) { const H = list[q]; if (q === 0 || (q < HUB_MAX && (H.target > 0 || H.w >= HUB_MIN))) out.push(H); }
   }
@@ -1100,13 +1057,13 @@ Battle.prototype.connect = function (s) {
       for (let n = 0; n < list.length; n++) {
         const i = list[n]; pending--;
         if (d[i] !== dd) continue; // reached by a shorter way since it was queued
-        const fi = fp[i] + ((i * 2654435761) >>> 29) * 0.07;
+        const fi = fp[i] + ((MID(i) * 2654435761) >>> 29) * 0.07;
         for (let k = 0; k < 8; k++) {
           const j = NB[i * 8 + k];
           if (j < 0 || owner[j] !== s) continue;
-          const nd = dd + (k < 4 ? DW : DD) + (((j * 2246822519) >>> 27) & 1), dj = d[j];
+          const nd = dd + (k < 4 ? DW : DD) + (((MID(j) * 2246822519) >>> 27) & 1), dj = d[j];
           if (dj < 0 || nd < dj) { d[j] = nd; p[j] = i; bq[nd & 31].push(j); pending++; }
-          else if (dj === nd) { const q = p[j]; if (fi > fp[q] + ((q * 2654435761) >>> 29) * 0.07) p[j] = i; }
+          else if (dj === nd) { const q = p[j], fq = fp[q] + ((MID(q) * 2654435761) >>> 29) * 0.07; if (fi > fq || (fi === fq && (s === 1 ? i < q : i > q))) p[j] = i; }
         }
       }
       list.length = 0;
@@ -1134,7 +1091,7 @@ Battle.prototype.connect = function (s) {
   }
   S.connected = t;
   // weighted distance strictly decreases from a cell to its parent, so sorting on it lists children before parents
-  ord.subarray(0, t).sort((a, b) => (eff[b] - eff[a]) || (a - b));
+  ord.subarray(0, t).sort((a, b) => (eff[b] - eff[a]) || (s === 1 ? a - b : b - a));
   for (let k = 0; k < t; k++) { const i = ord[k]; flow[i] = 0; kids[i] = 0; }
   for (let k = 0; k < t; k++) { const i = ord[k]; flow[i] += 1 + intake[i] * 6; const p = par[i]; if (p >= 0) { flow[p] += flow[i]; kids[p]++; } }
   let fmax = 8;
@@ -1234,7 +1191,7 @@ Battle.prototype.probe = function (s) {
       const dx = Math.cos(ang), dy = Math.sin(ang);
       let run = 0;
       for (let r = 1; r <= S.reach; r++) {
-        const xx = Math.round(x + dx * r), yy = Math.round(y + dy * r);
+        const xx = RSYM(x + dx * r), yy = RSYM(y + dy * r);
         if (xx < 0 || yy < 0 || xx >= N || yy >= N) break;
         const j = yy * N + xx; if (owner[j] || !canPass(j)) break; run++;
       }
@@ -1466,8 +1423,8 @@ Battle.prototype.step = function () {
   for (let i = 0; i < NN; i++) {
     const s = owner[i]; if (!s || dorm[i]) continue;
     const S = this.sides[s], o = 3 - s;
-    let best = -1, bh = 1e9;
-    for (let k = 0; k < 4; k++) { const j = NB[i * 8 + k]; if (j >= 0 && owner[j] === o) { const v = hp[j] - (S.lytic ? vein[j] * 12 : 0); if (v < bh) { bh = v; best = j; } } }
+    let best = -1, bh = 1e9; const mk = MIRK[s];
+    for (let k = 0; k < 4; k++) { const j = NB[i * 8 + mk[k]]; if (j >= 0 && owner[j] === o) { const v = hp[j] - (S.lytic ? vein[j] * 12 : 0); if (v < bh) { bh = v; best = j; } } }
     if (best < 0) continue;
     if (!this.contact) { this.contact = true; this.event(0, 'contact', i); }
     cf[i] |= 2;
@@ -1478,13 +1435,15 @@ Battle.prototype.step = function () {
     if (S.lytic && vein[best] > 0.05 && F && F.energy > 1) { this.addDmg(best, base * 1.5 * vein[best], S_SEVER, s); F.energy -= 0.03; }
     if (S.acid && F && F.energy > 1) { this.addDmg(best, 1.1 * vigour * (O.mucus ? 0.25 : 1) * dm, S_ACID, s); F.energy -= 0.06; }
   }
-  // 6b. contested cells: rival tendrils inside a thin cell push against the occupant
+  // 6b. contested cells: rival tendrils inside a thin cell push against the occupant. Captures are applied after the
+  // scan, so every cell is judged against the same plate
+  const caps = this.caps; caps.length = 0;
   for (let i = 0; i < NN; i++) {
     const c = contest[i]; if (c <= 0) continue;
     const o = owner[i]; if (!o) { contest[i] = 0; continue; }
     const k = 3 - o, K = this.sides[k], O = this.sides[o];
     let sup = 0, supHp = 0, supCell = -1;
-    for (let q = 0; q < 8; q++) { const j = NB[i * 8 + q]; if (j >= 0 && owner[j] === k && !dorm[j]) { sup++; supHp += hp[j] / K.maxHP; supCell = j; } }
+    for (let q = 0; q < 8; q++) { const j = NB[i * 8 + MIRK[k][q]]; if (j >= 0 && owner[j] === k && !dorm[j]) { sup++; supHp += hp[j] / K.maxHP; supCell = j; } }
     if (!sup) { contest[i] = Math.max(0, c - 0.2); continue; }
     cf[i] |= 2;
     const KF = this.fragOf(supCell);
@@ -1501,10 +1460,11 @@ Battle.prototype.step = function () {
       const OF = this.fragOf(i); if (OF) { OF.energy -= cellE[i]; OF.bank -= this.cellB[i]; }
       O.lastLost = i;
       this.detritus(i, mass[i]);
-      this.setCell(i, k, K.maxHP * 0.4, 0.2, comp[supCell]); contest[i] = 0.3;
+      caps.push(i, k, comp[supCell]);
       if (K.necro && KF) { KF.energy += 6; K.eaten += 6; }
     } else contest[i] = nc < 0.02 ? 0 : nc;
   }
+  for (let q = 0; q < caps.length; q += 3) { const i = caps[q], k = caps[q + 1]; this.setCell(i, k, this.sides[k].maxHP * 0.4, 0.2, caps[q + 2]); contest[i] = 0.3; }
   for (const s of [1, 2]) {
     const S = this.sides[s]; if (!S.toxin) continue;
     const MF = S.frags[S.mainFrag]; if (!MF || MF.energy < 2) continue;
@@ -1521,8 +1481,9 @@ Battle.prototype.step = function () {
       if (m) { this.addDmg(i, 0.3 * (O.mucus ? 0.35 : 1) * (dorm[i] ? 0.4 : 1), S_TOXIN, s); MF.energy -= 0.012; }
     }
   }
-  // 7. acid on granite
-  for (const s of [1, 2]) {
+  // 7. acid on granite. Steps that run one side and then the other take turns going first, minute by minute
+  const ord = T & 1 ? [1, 2] : [2, 1];
+  for (const s of ord) {
     const S = this.sides[s]; if (!S.acid) continue;
     for (let i = 0; i < NN; i++) {
       if (terr[i] !== T_ROCK) continue;
@@ -1537,7 +1498,9 @@ Battle.prototype.step = function () {
       }
     }
   }
-  // 8. apply damage (Sclerotised Veins halve it on thick veins); the dead leave detritus
+  // 8. apply damage (Sclerotised Veins halve it on thick veins); the dead leave detritus. All the dead are removed
+  // before any killer moves in, so no cell's fate depends on where it sits in the scan
+  const dead = this.dead; dead.length = 0;
   for (let i = 0; i < NN; i++) {
     let d = this.dmg[i]; if (d <= 0) continue;
     const o = owner[i]; if (!o) continue;
@@ -1545,23 +1508,31 @@ Battle.prototype.step = function () {
     if (S.armour && vein[i] >= 0.5) d *= 0.5;
     S.dmgTaken[src] += d;
     hp[i] -= d;
-    if (hp[i] <= 0) {
-      S.lost[src]++;
-      const hadRival = contest[i] > 0.15, m0 = mass[i];
-      const OF = this.fragOf(i); if (OF) { OF.energy -= cellE[i]; OF.bank -= this.cellB[i]; }
-      owner[i] = 0; hp[i] = 0; dorm[i] = 0; mass[i] = 0; contest[i] = 0; cellE[i] = 0; this.cellB[i] = 0; comp[i] = -1;
-      S.lastLost = i;
-      this.detritus(i, m0);
-      const k = this.dby[i];
-      if (k && (src === S_ENGULF || src === S_ACID || src === S_TOXIN || src === S_SEVER)) {
-        const K = this.sides[k]; K.kills++;
-        let adj = -1; for (let q = 0; q < 8; q++) { const j = NB[i * 8 + q]; if (j >= 0 && owner[j] === k) { adj = j; break; } }
-        const KF = adj >= 0 ? this.fragOf(adj) : K.frags[K.mainFrag];
-        if (K.necro && KF) { KF.energy += 6; K.eaten += 6; }
-        if ((src === S_ENGULF || src === S_ACID || src === S_SEVER) && KF && KF.energy > K.growCost && (adj >= 0 || hadRival)) {
-          this.setCell(i, k, K.maxHP * 0.35, 0.15, adj >= 0 ? comp[adj] : K.mainFrag); KF.energy -= K.growCost * 0.6;
-        }
-      }
+    if (hp[i] <= 0) dead.push(i, contest[i] > 0.15 ? 1 : 0, mass[i]);
+  }
+  for (let q = 0; q < dead.length; q += 3) {
+    const i = dead[q], o = owner[i], S = this.sides[o], src = this.dsrc[i];
+    S.lost[src]++;
+    const OF = this.fragOf(i); if (OF) { OF.energy -= cellE[i]; OF.bank -= this.cellB[i]; }
+    owner[i] = 0; hp[i] = 0; dorm[i] = 0; mass[i] = 0; contest[i] = 0; cellE[i] = 0; this.cellB[i] = 0; comp[i] = -1;
+    S.lastLost = i;
+    this.detritus(i, dead[q + 2]);
+  }
+  // the killer's neighbouring cell, found once every dead cell is gone
+  for (let q = 0; q < dead.length; q += 3) {
+    const i = dead[q], k = this.dby[i], src = this.dsrc[i];
+    dead[q + 2] = -1;
+    if (!k || !(src === S_ENGULF || src === S_ACID || src === S_TOXIN || src === S_SEVER)) continue;
+    for (let r = 0; r < 8; r++) { const j = NB[i * 8 + MIRK[k][r]]; if (j >= 0 && owner[j] === k) { dead[q + 2] = j; break; } }
+  }
+  for (let q = 0; q < dead.length; q += 3) {
+    const i = dead[q], hadRival = dead[q + 1], adj = dead[q + 2], k = this.dby[i], src = this.dsrc[i];
+    if (!k || !(src === S_ENGULF || src === S_ACID || src === S_TOXIN || src === S_SEVER)) continue;
+    const K = this.sides[k]; K.kills++;
+    const KF = adj >= 0 ? this.fragOf(adj) : K.frags[K.mainFrag];
+    if (K.necro && KF) { KF.energy += 6; K.eaten += 6; }
+    if ((src === S_ENGULF || src === S_ACID || src === S_SEVER) && KF && KF.energy > K.growCost && (adj >= 0 || hadRival)) {
+      this.setCell(i, k, K.maxHP * 0.35, 0.15, adj >= 0 ? comp[adj] : K.mainFrag); KF.energy -= K.growCost * 0.6;
     }
   }
   // 8b. maturation
@@ -1569,10 +1540,11 @@ Battle.prototype.step = function () {
   // 9. exploration and growth
   if (T % PROBE_EVERY === 0) for (const s of [1, 2]) if (this.sides[s].explore) this.probe(s);
   for (const s of [1, 2]) this.grow(s);
+  this.resolveGrowth();
   // 10. pruning
   if (T % 5 === 0) for (const s of [1, 2]) if (this.sides[s].prune) this.prune(s);
   // 11. spores
-  if (T % 45 === 40) for (const s of [1, 2]) if (this.sides[s].spores) this.sporulate(s);
+  if (T % 45 === 40) for (const s of ord) if (this.sides[s].spores) this.sporulate(s);
 
   this.count();
   for (const s of [1, 2]) this.settle(s);
@@ -1593,14 +1565,16 @@ Battle.prototype.step = function () {
   for (const s of [1, 2]) { const S = this.sides[s]; this.domRun[s] = (S.cells / tot >= DOM_SHARE && S.cells >= DOM_MIN) ? this.domRun[s] + 1 : 0; }
   if (p.cells === 0 || e.cells === 0) {
     this.done = true;
-    this.result = { winner: e.cells === 0 && p.cells > 0 ? 1 : 2, reason: 'elim', tick: T };
+    this.result = { winner: e.cells === 0 && p.cells > 0 ? 1 : p.cells === 0 && e.cells > 0 ? 2 : (this.rnd() < 0.5 ? 1 : 2), reason: 'elim', tick: T };
   } else if (this.domRun[1] >= DOM_TICKS || this.domRun[2] >= DOM_TICKS) {
     this.done = true;
     const w = this.domRun[1] >= DOM_TICKS ? 1 : 2;
     this.result = { winner: w, reason: 'dom', tick: T, share: this.sides[w].cells / tot };
   } else if (T >= MAXT) {
     this.done = true;
-    this.result = { winner: p.cells >= e.cells ? 1 : 2, reason: 'time', tick: T, share: p.cells / tot };
+    // a dead heat at 12:00 goes to the strain with more living mass, and failing that to a seeded coin flip
+    const pm = p.massSum + p.massDorm, em = e.massSum + e.massDorm;
+    this.result = { winner: p.cells !== e.cells ? (p.cells > e.cells ? 1 : 2) : pm !== em ? (pm > em ? 1 : 2) : (this.rnd() < 0.5 ? 1 : 2), reason: 'time', tick: T, share: p.cells / tot };
   }
   if (this.done) { const L = this.sides[3 - this.result.winner]; this.event(this.result.winner, 'end', L.cells ? L.hub : L.lastLost); }
 };
@@ -1623,8 +1597,10 @@ Battle.prototype.spreadMat = function () {
   }
 };
 
+// Both strains choose their growth from the same picture of the plate: grow() only records each side's picks (paying
+// for them), and resolveGrowth() then applies both sides' picks together.
 Battle.prototype.grow = function (s) {
-  const S = this.sides[s]; if (!S.cells) return;
+  const S = this.sides[s], picks = this.picks[s]; picks.length = 0; if (!S.cells) return;
   const owner = this.owner, terr = this.terrain, rnd = this.rnd, fd = this.fd[s], ed = this.ed[s], mass = this.mass, contest = this.contest, dorm = this.dorm, o = 3 - s, comp = this.comp, food = this.food, pile = this.pile, ft = this.ft, vein = this.vein, lit = this.lit;
   S.growAcc += S.k0 + S.k1 * Math.sqrt(S.cells);
   let n = Math.floor(S.growAcc); S.growAcc -= n;
@@ -1640,11 +1616,15 @@ Battle.prototype.grow = function (s) {
   const jit = 0.08 + 0.6 * (S.wF * 0.25 + S.wH * 0.2);
   const multi = S.anast && S.frags.length > 1;
   let m = 0;
-  for (let i = 0; i < NN; i++) {
+  // pink scans the plate and each cell's neighbours in mirror order, so whichever cell reaches a candidate first (and
+  // with it the fragment it joins and whether the step is diagonal) is the mirror of what gold would see
+  const mk = MIRK[s];
+  for (let ii = 0; ii < NN; ii++) {
+    const i = s === 1 ? ii : NN - 1 - ii;
     if (owner[i] !== s || dorm[i]) continue;
     const ci = comp[i]; if (ci < 0 || !can[ci]) continue;
     for (let k = 0; k < 8; k++) {
-      const j = NB[i * 8 + k];
+      const j = NB[i * 8 + mk[k]];
       if (j < 0 || stamp[j] === sid) continue;
       const oj = owner[j];
       // a rival's thin tendril can be infiltrated; anything thicker must be engulfed from outside. Chemorepulsion never does
@@ -1697,8 +1677,26 @@ Battle.prototype.grow = function (s) {
     const cost = S.growCost * (infil ? 0.5 : (t === T_SALT && !S.osmo ? 1.4 : t === T_COLD && !this.warmGrow(S, this.ownN(j, s)) ? COLD_GROW : 1));
     if (F.energy < cost + reserveOf(F)) { c--; continue; }
     F.energy -= cost; S.spent += cost;
-    if (infil) { contest[j] = Math.min(0.95, contest[j] + 0.3 + rnd() * 0.15); S.pushes++; }
-    else { this.setCell(j, s, S.maxHP * 0.5, 0.12, ci); F.cells++; }
+    if (!infil) F.cells++;
+    picks.push(j, infil, ci, cost);
+  }
+};
+// Apply both sides' growth. An empty cell both strains reached this minute goes to one of them on a seeded coin flip,
+// and the other gets its ATP back.
+Battle.prototype.resolveGrowth = function () {
+  const claim = this.tmpA, contest = this.contest, rnd = this.rnd;
+  for (const s of [1, 2]) { const P = this.picks[s]; for (let q = 0; q < P.length; q += 4) if (!P[q + 1]) claim[P[q]] = 0; }
+  for (const s of [1, 2]) { const P = this.picks[s]; for (let q = 0; q < P.length; q += 4) if (!P[q + 1]) claim[P[q]] |= s; }
+  for (const s of [1, 2]) { const P = this.picks[s]; for (let q = 0; q < P.length; q += 4) { const j = P[q]; if (!P[q + 1] && claim[j] === 3) claim[j] = rnd() < 0.5 ? 5 : 6; } }
+  for (const s of [1, 2]) {
+    const S = this.sides[s], P = this.picks[s];
+    for (let q = 0; q < P.length; q += 4) {
+      const j = P[q], infil = P[q + 1], ci = P[q + 2], cost = P[q + 3];
+      if (infil) { contest[j] = Math.min(0.95, contest[j] + 0.3 + rnd() * 0.15); S.pushes++; continue; }
+      const c = claim[j];
+      if (c === s || c === s + 4) this.setCell(j, s, S.maxHP * 0.5, 0.12, ci);
+      else { const F = S.frags[ci]; F.energy += cost; S.spent -= cost; F.cells--; }
+    }
   }
 };
 
@@ -1735,7 +1733,7 @@ Battle.prototype.sporulate = function (s) {
     for (let a = 0; a < 40; a++) {
       const src = own[Math.floor(rnd() * own.length)];
       const ang = rnd() * Math.PI * 2, rad = 6 + rnd() * 9;
-      const x = Math.round(src % N + Math.cos(ang) * rad), y = Math.round(Math.floor(src / N) + Math.sin(ang) * rad);
+      const x = RSYM(src % N + Math.cos(ang) * rad), y = RSYM(Math.floor(src / N) + Math.sin(ang) * rad);
       if (x < 0 || y < 0 || x >= N || y >= N) continue;
       const j = y * N + x, t = terr[j];
       if (owner[j] || BLOCKS(t) || (t === T_SALT && !S.osmo) || (t === T_LIGHT && lit && !S.chloro) || (t === T_HALO && !S.efflux)) continue;
@@ -1821,7 +1819,6 @@ const COL = { p: '#f4c53c', e: '#e2508a', n: '#ece5d3' };
 const SRC_COL = ['#000', '#ff6a2e', '#c6ff3d', '#a98bff', '#f2f6f8', '#fff3a8', '#8a7a62', '#7ea6c4'];
 const FOOD_COL = ['', '#d8c08a', '#efd6c6', '#6b4527', '#e6e0cc', '#e0a93a', '#5a4632'];
 const FOOD_ENZ = ['', 'amylase', 'protease', 'ligninase', 'chitinase', 'lipase', 'sapro'];
-const DIFF_NAMES = ['', 'easy', 'medium', 'hard'];
 
 // ---------------- Progress ----------------
 const KEY = 'myxo.petri.v1';
@@ -1847,13 +1844,12 @@ const ROUNDS_OPTS = [3, 5, 7], ROUNDS_DEFAULT = 3; // a match is the best of 3, 
 // The player breeds one strain at a time (prog.name + prog.genome) and carries it from plate to plate; plates differ only in their kb budget,
 // so a strain bred for a later plate can be loaded on an earlier one and simply shows as over budget until it is trimmed.
 // prog.strains is the rack of saved strains: { name, genome, t, w, l }, names unique ignoring case; w and l count matches against other players.
-// prog.rounds is the match length (best of) for solo play. prog.cleared[i]: plate i won against any of its opponents;
-// prog.beaten[i][k]: opponent k of plate i beaten; prog.pick[i]: the opponent picked for plate i, -1 for a random draw.
+// prog.rounds is the match length (best of) for solo play. prog.cleared[i]: plate i's opponent beaten.
 const genomeKey = g => { const n = normGenome(g); return JSON.stringify([n.vigor, n.density, n.sense, n.taxis.food, n.taxis.hunt, n.taxis.explore, [...n.genes].sort()]); };
 const sameName = (a, b) => String(a).trim().toLowerCase() === String(b).trim().toLowerCase();
 const freshProg = () => {
   const name = generateStrainName(), genome = normGenome(DEFAULT_GENOME);
-  return { v: 2, cleared: LEVELS.map(() => false), beaten: LEVELS.map(L => L.rivals.map(() => false)), pick: LEVELS.map(() => -1), name, genome,
+  return { v: 2, cleared: LEVELS.map(() => false), name, genome,
     strains: [{ name, genome: normGenome(genome), t: Date.now(), w: 0, l: 0 }], rounds: ROUNDS_DEFAULT };
 };
 let prog = freshProg();
@@ -1864,10 +1860,6 @@ function migrateProg(s) {
   // before the ten-plate rack (v2) the Elder Plasmodium was plate 6; it is plate 10 now, so a cleared plate 6 is not carried over
   const cl = s.v >= 2 ? s.cleared : s.cleared.slice(0, 5);
   p.cleared = p.cleared.map((c, i) => !!cl[i]);
-  if (s.v >= 2) {
-    p.beaten = p.beaten.map((row, i) => row.map((c, k) => !!(Array.isArray(s.beaten) && Array.isArray(s.beaten[i]) && s.beaten[i][k])));
-    p.pick = p.pick.map((c, i) => { const k = Array.isArray(s.pick) ? Math.round(+s.pick[i]) : -1; return k >= 0 && k < LEVELS[i].rivals.length ? k : -1; });
-  }
   p.name = String(s.name || DEFAULT_NAME).slice(0, NAME_MAX);
   p.rounds = ROUNDS_OPTS.includes(+s.rounds) ? +s.rounds : ROUNDS_DEFAULT;
   p.genome = normGenome(s.genome || s.lastGenome || old[Object.keys(old).pop()] || DEFAULT_GENOME);
@@ -2628,17 +2620,15 @@ function thumb(levelIdx) {
 function renderRack() {
   const R = $('rack');
   R.innerHTML = `<div class="eyebrow">Culture rack · ${LEVELS.length} plates</div><h1>Breed a slime mould. Take the dish.</h1>
-  <p class="lede">Each plate holds a rival plasmodium, one of three strains that live there. Write your strain's genome, inoculate, then watch the two organisms grow, feed and fight for the agar. Every win isolates new genes for the next plate, and the budget never grows enough to take them all.</p>`;
+  <p class="lede">Each plate holds a rival plasmodium, bred to beat the strain you are likely to bring from the plate before. Write your strain's genome, inoculate, then watch the two organisms grow, feed and fight for the agar. Every win isolates new genes for the next plate, and the budget never grows enough to take them all.</p>`;
   const ol = el('ol', 'dishes');
   LEVELS.forEach((L, i) => {
     const li = el('li'); const ok = playable(i);
     const b = el('button', 'dish' + (i === S.level ? ' sel' : ''));
     b.disabled = !ok;
     b.appendChild(thumb(i));
-    const bt = prog.beaten[i], nb = bt.filter(Boolean).length;
-    const st = nb === bt.length ? '<span class="chip clear">Rack clear</span>' : prog.cleared[i] ? '<span class="chip won">Conquered</span>' : ok ? '<span class="chip ready">Ready</span>' : '<span class="chip">Sealed</span>';
-    const ticks = nb ? ` <span class="beat" aria-label="${nb} beaten">${bt.map(x => x ? '✓' : '·').join('')}</span>` : '';
-    b.insertAdjacentHTML('beforeend', `<div class="meta"><span class="code">${L.code} · ${L.budget} kb</span><b>${esc(L.name)}</b><span class="rv">vs. ${L.rivals.length} strains${ticks}</span></div>${st}`);
+    const st = prog.cleared[i] ? '<span class="chip won">Conquered</span>' : ok ? '<span class="chip ready">Ready</span>' : '<span class="chip">Sealed</span>';
+    b.insertAdjacentHTML('beforeend', `<div class="meta"><span class="code">${L.code} · ${L.budget} kb</span><b>${esc(L.name)}</b><span class="rv">vs. ${esc(L.rival.name)}</span></div>${st}`);
     b.addEventListener('click', () => openLab(i));
     b.addEventListener('pointerenter', () => { if (ok && S.mode === 'rack') previewLevel(i); });
     li.appendChild(b); ol.appendChild(li);
@@ -2665,12 +2655,9 @@ function renderRack() {
     else { b.dataset.armed = '1'; b.textContent = 'Tap again to erase every conquered dish and saved strain'; }
   });
 }
-// The opponent picked for plate i (-1: a random draw), and the one shown in previews: the pick, or the first for Random.
-const pickOf = i => { const k = prog.pick[i]; return k >= 0 && k < LEVELS[i].rivals.length ? k : -1; };
-const shownRival = i => LEVELS[i].rivals[Math.max(0, pickOf(i))];
 function previewLevel(i) {
   if (!renderer) return;
-  const b = new Battle(i, S.genome, shownRival(i));
+  const b = new Battle(i, S.genome, LEVELS[i].rival);
   if (!world || world.dish.level !== i) { buildWorld(b.dish); }
   S.preview = b; shown.battle = null; setGenes(b);
   showFrame(b, 0, 0);
@@ -2724,7 +2711,6 @@ function plateIntel(i, g) {
 function renderLab() {
   const i = S.level, L = LEVELS[i], g = S.genome, vs = S.pvp;
   const Lab = $('lab');
-  const pick = pickOf(i), rivals = L.rivals;
   const sideD = deriveSide(g);
   const head = vs
     ? `<div class="lab-title"><span class="eyebrow">Versus · Gene lab</span><h2>${vsConnected() ? 'Set up the match' : 'Find a player'}</h2><p>${vsConnected()
@@ -2734,9 +2720,7 @@ function renderLab() {
     : `<div class="lab-title"><span class="eyebrow">${L.code} · Gene lab</span><h2>${esc(L.name)}</h2><p>${esc(L.blurb)}</p></div>
     <div class="intel">
       ${plateIntel(i, g)}
-      <div class="row"><span class="lbl">Opponent</span><div class="opp-seg" id="oppSeg" role="group" aria-label="Opponent">${oppButtons(i)}</div>
-        <div class="opp-cards${pick < 0 ? ' small' : ''}">${(pick < 0 ? rivals.map((r, k) => k) : [pick]).map(k => oppCard(i, k, pick < 0)).join('')}</div>
-        ${pick < 0 ? '<span class="rival-stats">Inoculate draws one of the three at random, and it plays every round of the match.</span>' : ''}</div>
+      <div class="row"><span class="lbl">Opponent</span>${oppCard(i)}</div>
       <div class="row"><span class="lbl">Match</span><div class="seg" id="roundsSeg">${roundsSeg(prog.rounds)}</div></div>
     </div>`;
   Lab.innerHTML = `<div class="lab-body">
@@ -2785,8 +2769,7 @@ function renderLab() {
     refreshLab();
   }));
   $('inoc').addEventListener('click', () => S.pvp ? pvpReady() : startMatch());
-  Lab.querySelectorAll('[data-opp]').forEach(b => b.addEventListener('click', () => { prog.pick[i] = +b.dataset.opp; save(); refreshLab(); }));
-  Lab.querySelectorAll('[data-copyopp]').forEach(b => b.addEventListener('click', () => copyOpponent(i, +b.dataset.copyopp, b)));
+  const cp = $('copyOpp'); if (cp) cp.addEventListener('click', () => copyOpponent(i, cp));
   const seg = $('roundsSeg');
   if (seg) seg.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
     prog.rounds = +b.dataset.rounds; save();
@@ -2794,25 +2777,18 @@ function renderLab() {
   }));
   updateBudget();
 }
-// The opponent picker: Random, then each of the plate's strains by genus with difficulty pips, kb and a tick once beaten.
-const diffPips = d => `<span class="pips2" aria-label="${DIFF_NAMES[d]}" title="${DIFF_NAMES[d]}">${[1, 2, 3].map(n => `<i class="${n <= d ? 'on' : ''}"></i>`).join('')}</span>`;
-function oppButtons(i) {
-  const pick = pickOf(i), L = LEVELS[i];
-  return `<button type="button" data-opp="-1" aria-pressed="${pick < 0}" title="Draw one of the ${L.rivals.length} at random"><span class="on">Random</span><span class="om">any of ${L.rivals.length}</span></button>`
-    + L.rivals.map((r, k) => `<button type="button" data-opp="${k}" aria-pressed="${pick === k}" title="${esc(r.name)}, ${esc(r.tag)} (${DIFF_NAMES[r.diff]})"><span class="on">${esc(r.name.split(' ')[0])}</span><span class="om">${diffPips(r.diff)} ${genomeCost(r)} kb${prog.beaten[i][k] ? ' <span class="beat" aria-label="beaten">✓</span>' : ''}</span></button>`).join('');
-}
-// An opponent's card: its strain, cost against the player's budget, blurb, traits and genes. Once beaten it can be copied
-// into the rack like any strain (genes not yet isolated are stripped when it is loaded).
-function oppCard(i, k, small) {
-  const r = LEVELS[i].rivals[k], c = genomeCost(r), B = LEVELS[i].budget, beat = prog.beaten[i][k];
-  return `<div class="opp-card"><div class="top"><span class="rival-name">${esc(r.name)}</span><span class="tg">${esc(r.tag)}</span>${diffPips(r.diff)}<span class="kb${c > B ? ' over' : ''}">${c} kb${c > B ? ` · over your ${B}` : ''}</span></div>
-    <div class="bl">${esc(r.blurb)}${beat ? ' <span class="beat">✓ beaten</span>' : ''}</div>
+// The plate's opponent: its strain, cost against the player's budget, blurb, traits and genes. Once beaten it can be
+// copied into the rack like any strain (genes not yet isolated are stripped when it is loaded).
+function oppCard(i) {
+  const r = LEVELS[i].rival, c = genomeCost(r), B = LEVELS[i].budget, beat = prog.cleared[i];
+  return `<div class="opp-card"><div class="top"><span class="rival-name">${esc(r.name)}</span><span class="tg">${esc(r.tag)}</span><span class="kb${c > B ? ' over' : ''}">${c} kb${c > B ? ` · over your ${B}` : ''}</span></div>
+    <div class="bl">${esc(r.blurb)}</div>
     <span class="rival-stats">Vigor ${r.vigor} · Density ${r.density} · Senses ${SENSE_RANGE[r.sense]} cells · Food ${r.taxis.food} / Hunt ${r.taxis.hunt} / Explore ${r.taxis.explore}</span>
     <div class="chips">${r.genes.map(id => `<span class="tag">${esc(GENE_BY_ID[id].name)}</span>`).join('')}</div>
-    ${beat && !small ? `<button type="button" class="btn act" data-copyopp="${k}" title="Save ${esc(r.name)} to your saved strains">Copy to saved strains</button>` : ''}</div>`;
+    ${beat ? `<button type="button" class="btn act" id="copyOpp" title="Save ${esc(r.name)} to your saved strains">Copy to saved strains</button>` : ''}</div>`;
 }
-function copyOpponent(i, k, btn) {
-  const r = LEVELS[i].rivals[k]; let name = r.name.slice(0, NAME_MAX);
+function copyOpponent(i, btn) {
+  const r = LEVELS[i].rival; let name = r.name.slice(0, NAME_MAX);
   for (let n = 2; strainAt(name) >= 0; n++) name = `${r.name.slice(0, NAME_MAX - String(n).length - 1)} ${n}`;
   prog.strains.unshift({ name, genome: normGenome(r), t: Date.now(), w: 0, l: 0 }); save();
   S.libOpen = true; const lib = $('lib'); if (lib) lib.open = true; renderLibrary();
@@ -3317,10 +3293,8 @@ function startMatch(opts) {
     const g = cloneG(S.genome);
     if (genomeCost(g) > LEVELS[S.level].budget) return;
     persistGenome();
-    const name = prog.name || DEFAULT_NAME, rivals = LEVELS[S.level].rivals;
-    // the opponent plays every round of the match: the one picked, or one drawn at random, like the seeds
-    const k = pickOf(S.level) >= 0 ? pickOf(S.level) : newSeed() % rivals.length;
-    M = { level: S.level, rival: k, gold: g, pink: rivals[k], names: [null, name, rivals[k].name], me: 1, pvp: null, seeds: newSeeds(prog.rounds) };
+    const name = prog.name || DEFAULT_NAME, rv = LEVELS[S.level].rival;
+    M = { level: S.level, gold: g, pink: rv, names: [null, name, rv.name], me: 1, pvp: null, seeds: newSeeds(prog.rounds) };
   }
   Object.assign(M, { n: M.seeds.length, need: Math.floor(M.seeds.length / 2) + 1, rounds: [], wins: [0, 0, 0], played: 0, decided: false, winner: 0, reviewed: false, summaryPending: false, newGenes: null });
   cancelCountdown();
@@ -3758,15 +3732,13 @@ function showSummary() {
   M.summaryPending = false;
   const me = M.me, rs = M.rounds.slice(0, M.played), win = M.winner === me, vs = M.pvp, rv = M.names[3 - me], w = M.wins[me], l = M.wins[3 - me];
   if (!M.newGenes) { // settled once: the summary is shown again after every rewatch
-    M.newGenes = []; M.firstBeat = false;
+    M.newGenes = [];
     if (win && !vs) {
-      if (!prog.beaten[M.level][M.rival]) { prog.beaten[M.level][M.rival] = true; M.firstBeat = true; }
       if (!prog.cleared[M.level]) { prog.cleared[M.level] = true; M.newGenes = GENES.filter(G => G.unlock === M.level + 2); }
       save(); renderProgress();
     }
   }
   const nextL = LEVELS[M.level + 1], newKb = M.newGenes.reduce((a, G) => a + G.cost, 0), rise = nextL ? nextL.budget - LEVELS[M.level].budget : 0;
-  const bt = vs ? null : prog.beaten[M.level], nBeat = bt ? bt.filter(Boolean).length : 0;
   let why = (win ? `You took ${w} of ${rs.length} round${rs.length === 1 ? '' : 's'}` : `${rv} took ${l} of ${rs.length} round${rs.length === 1 ? '' : 's'}`) + (rs.length < M.n ? `, settling a best of ${M.n} early.` : '.');
   if (w && l) {
     const shares = rs.map(b => { const p = b.sides[me].cells, e = b.sides[3 - me].cells; return Math.round(p / Math.max(p + e, 1) * 100); });
@@ -3778,7 +3750,6 @@ function showSummary() {
   R.innerHTML = `<div class="card" role="dialog" aria-label="Match summary">
     <div><div class="eyebrow"><span>${plateLabel(M)} · Best of ${M.n}</span><button class="x" id="rClose" aria-label="Close the summary" title="Close (Esc)">✕</button></div><div class="verdict ${win ? 'win' : 'lose'}">${win ? 'Dish conquered' : 'Overrun'}</div><div class="why">${esc(why)}</div></div>
     ${M.newGenes.length ? `<div class="reward"><div class="sub-h">New genes isolated</div><b>${M.newGenes.map(G => esc(G.name)).join(' · ')}</b><div class="note">${newKb} kb of new options; your budget rose by ${rise}, to ${nextL.budget} kb on ${nextL.code}. ${M.newGenes.length === 1 ? 'It is' : 'They are'} in the gene lab now: choose among them, or trim what you carry to make room.</div></div>` : ''}
-    ${M.firstBeat && !M.newGenes.length ? `<div class="unlock">${nBeat === bt.length ? `Rack clear: every strain on ${LEVELS[M.level].code} beaten.` : `${nBeat} of ${bt.length} strains on ${LEVELS[M.level].code} beaten. The others want a different answer.`}</div>` : ''}
     ${!vs && win && M.level === LEVELS.length - 1 ? '<div class="unlock">Every plate on the rack is yours. Try beating each dish with a smaller genome.</div>' : ''}
     ${vs ? `<div class="unlock" id="vsNote">${pvpResultNote(vs)}</div>` : ''}
     <ol class="rounds" aria-label="Rounds">${rows}</ol>
