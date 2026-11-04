@@ -81,14 +81,11 @@ depends on a seed.
 
 Drag to orbit, right-drag (or two fingers) to pan, scroll or pinch to zoom in close.
 Click a cell to inspect it. Space plays and pauses, the arrow keys step (with Shift,
-ten minutes), `[` and `]` jump between events, Home resets the view, P shows the
-exploration probes, and Escape closes the match summary. The bar under the timeline has
-the same steps and jumps as buttons, previous and next round outside them, a speed slider
-from real time to 10000×, End match to go back to the lab, and Match results to open the
-summary. A freezes the surface
-animation (flow pulses, throb and hub glow), a debugging aid for judging the vein
-geometry on its own. The timeline only reveals as far as you have watched, so a first
-viewing never gives away the ending.
+ten minutes), `[` and `]` jump between events, Home resets the view, and Escape closes
+the match summary. The bar under the timeline has the same steps and jumps as buttons,
+previous and next round outside them, a speed slider from real time to 10000×, End match
+to go back to the lab, and Match results to open the summary. The timeline only reveals
+as far as you have watched, so a first viewing never gives away the ending.
 
 ## Playing a friend
 

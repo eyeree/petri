@@ -225,7 +225,6 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 
 .keys i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 .keys i.two { background: linear-gradient(90deg, var(--gold) 50%, var(--rival) 50%); border-radius: 2px; }
 .vbtn { width: 38px; height: 38px; border-radius: 10px; font-size: 17px; }
-.vbtn[aria-pressed="true"] { border-color: var(--gold); color: var(--gold); }
 @media (max-width: 600px) { .keys { display: none; } }
 .inspect { position: absolute; left: 12px; bottom: 12px; width: min(270px, calc(100% - 24px)); padding: 12px 14px; border-radius: var(--r-md); background: rgba(16,22,24,.94); border: 1px solid var(--line); display: grid; gap: 6px; font-size: 13px; }
 .inspect header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
@@ -412,8 +411,6 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 
       <div class="hint" id="hint">Drag to orbit · pinch or scroll to zoom</div>
       <div class="corner" id="corner">
         <div class="keys" id="keys" hidden aria-label="Close-up legend"><span><i style="background:#ff6a2e"></i>engulf</span><span><i style="background:#c6ff3d"></i>acid</span><span><i style="background:#a98bff"></i>antibiotic</span><span><i style="background:#f2f6f8"></i>salt</span><span><i style="background:#fff3a8"></i>UV</span><span><i class="two"></i>contested</span></div>
-        <button class="ib vbtn" id="bProbes" hidden aria-label="Show exploration probes" aria-pressed="false" title="Show exploration probes (P)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="7" cy="17" r="2.5"/><path d="M9 15l10-10M14 5h5v5"/></svg></button>
-        <button class="ib vbtn" id="bAnim" hidden aria-label="Freeze surface animation" aria-pressed="false" title="Freeze surface animation (A): judge the vein geometry without the pulses"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 3v18M4.2 7.5l15.6 9M4.2 16.5l15.6-9M12 3l-2.5 2.5M12 3l2.5 2.5M12 21l-2.5-2.5M12 21l2.5-2.5"/></svg></button>
         <button class="ib vbtn" id="bView" hidden aria-label="Reset view" title="Reset view (Home)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg></button>
       </div>
       <div class="inspect" id="inspect" hidden></div>
@@ -1800,9 +1797,8 @@ Battle.prototype.record = function () {
     }
   }
   for (const s of [1, 2]) for (const H of this.sides[s].hubs) if (owner[H.cell] === s) route[H.cell] = 15 | (Math.round(Math.min(1, Math.max(0, H.w)) * 15) << 4);
-  const probes = [null, ...[1, 2].map(s => { const S = this.sides[s]; return S.probes.map(p => [p.x, p.y, p.dx, p.dy, S.reach]); })];
   const frags = [null, this.sides[1].frags.map(F => [F.cells, Math.round(Math.max(0, F.energy)), F.starving ? 1 : 0]), this.sides[2].frags.map(F => [F.cells, Math.round(Math.max(0, F.energy)), F.starving ? 1 : 0])];
-  this.frames.push({ dens, flags, matter, aux, probes, frag, frags, route, layer });
+  this.frames.push({ dens, flags, matter, aux, frag, frags, route, layer });
   for (const s of [1, 2]) { const S = this.sides[s]; S.area += S.cells; this.stats.cells[s].push(S.cells); this.stats.energy[s].push(S.energy); }
 };
 if (typeof module !== 'undefined') module.exports = { Battle, LEVELS, GENES, GENE_BY_ID, genomeCost, normGenome, deriveSide, SENSE_RANGE, DRIVE_COST, TRAIT_COST, MAXT, N, NN, makeDish, BLOCKS, T_VOID, T_AGAR, T_ROCK, T_SALT, T_LIGHT, T_DISC, T_HALO, T_GLASS, T_COLD, F_SUGAR, F_PROT, F_LIGN, F_MAT, F_OIL, F_DET, FOOD_NAMES, EAT_RATE, YIELD, CORE_P, CORE_E };
@@ -1900,7 +1896,7 @@ const cloneG = g => normGenome(g);
 const strainAt = name => prog.strains.findIndex(s => sameName(s.name, name));
 
 // ---------------- App state ----------------
-const S = { mode: 'rack', level: 0, genome: cloneG(prog.genome), match: null, battle: null, libOpen: false, playhead: 0, revealed: 0, playing: false, speed: 1500, sel: -1, resultShown: false, shownEvt: -1, lastFx: 0, logN: 0, showProbes: false, anim: true, pvp: null }; // match: the match being played or reviewed and battle the round of it on show (see Match below); pvp: the versus session (see Versus below), null when playing solo
+const S = { mode: 'rack', level: 0, genome: cloneG(prog.genome), match: null, battle: null, libOpen: false, playhead: 0, revealed: 0, playing: false, speed: 1500, sel: -1, resultShown: false, shownEvt: -1, lastFx: 0, logN: 0, pvp: null }; // match: the match being played or reviewed and battle the round of it on show (see Match below); pvp: the versus session (see Versus below), null when playing solo
 // Playback speed is a multiple of real time. A tick is one minute of incubation, so Nx advances N/60 ticks a wall
 // second: 1x plays the 12 h incubation in 12 h, 2000x in 21.6 s. Frames t and t+1 are crossfaded by the fractional
 // playhead, so at the slower rates growth, veins and food piles move continuously instead of stepping once a minute.
@@ -1970,12 +1966,12 @@ function dataTex(filter) {
 }
 const texA = dataTex(THREE.LinearFilter), texB = dataTex(THREE.LinearFilter);
 const texAuxA = dataTex(THREE.NearestFilter), texAuxB = dataTex(THREE.NearestFilter);
-const texStatus = dataTex(THREE.NearestFilter), texTerr = dataTex(THREE.LinearFilter), texPhase = dataTex(THREE.LinearFilter);
+const texStatA = dataTex(THREE.NearestFilter), texStatB = dataTex(THREE.NearestFilter), texTerr = dataTex(THREE.LinearFilter);
 const texRouteA = dataTex(THREE.NearestFilter), texRouteB = dataTex(THREE.NearestFilter);
 const texTerr2 = dataTex(THREE.LinearFilter), texLayA = dataTex(THREE.LinearFilter), texLayB = dataTex(THREE.LinearFilter);
 
 const surfUniforms = {
-  uDensA: { value: texA }, uDensB: { value: texB }, uAuxA: { value: texAuxA }, uAuxB: { value: texAuxB }, uStatus: { value: texStatus }, uTerr: { value: texTerr }, uPhase: { value: texPhase }, uRouteA: { value: texRouteA }, uRouteB: { value: texRouteB }, uAnim: { value: 1 },
+  uDensA: { value: texA }, uDensB: { value: texB }, uAuxA: { value: texAuxA }, uAuxB: { value: texAuxB }, uStatusA: { value: texStatA }, uStatusB: { value: texStatB }, uTerr: { value: texTerr }, uRouteA: { value: texRouteA }, uRouteB: { value: texRouteB },
   uTerr2: { value: texTerr2 }, uLayA: { value: texLayA }, uLayB: { value: texLayB }, uLamp: { value: 1 },
   uNoise: { value: noiseRT ? noiseRT.texture : null }, uMix: { value: 0 }, uTime: { value: 0 }, uSize: { value: SIZE }, uDishR: { value: DISH_UV },
   uPCol: { value: new THREE.Color(0xf6c52e) }, uECol: { value: new THREE.Color(0xe0457f) }, uAgar: { value: new THREE.Color(0x6f6650) },
@@ -1984,16 +1980,17 @@ const surfUniforms = {
 // Shared sampling. Frame textures: dens (bilinear) carries per-side density, hub distance and damage; aux (nearest)
 // carries mass, vein strength, routing code and contest; route (nearest) carries the direction toward the second-nearest
 // hub and how deep the cell sits in the overlap band between two hubs' networks, or a hub cell's weight. Frames t and
-// t+1 are blended by uMix for smooth playback. uAnim at 0 freezes every time-driven effect (a debugging aid).
-// phase (bilinear) is the displayed hub distance, relaxed over time by updatePhase; R holds the whole part and G the
-// fraction (both in dist×3 units), so the decode is linear and bilinear filtering stays exact.
+// t+1 are blended by uMix for smooth playback.
 const SURF_COMMON = `
-    uniform sampler2D uDensA, uDensB, uAuxA, uAuxB, uNoise, uTerr, uPhase, uRouteA, uRouteB, uTerr2, uLayA, uLayB;
-    uniform float uMix, uTime, uSize, uGridN, uAnim, uLamp;
+    uniform sampler2D uDensA, uDensB, uAuxA, uAuxB, uNoise, uTerr, uRouteA, uRouteB, uTerr2, uLayA, uLayB;
+    uniform float uMix, uTime, uSize, uGridN, uLamp;
     vec4 layAt(vec2 uv){ return mix(texture2D(uLayA,uv),texture2D(uLayB,uv),uMix); }
-    vec4 densAt(vec2 uv){ return mix(texture2D(uDensA,uv),texture2D(uDensB,uv),uMix); }
     vec4 auxAt(vec2 uv){ return mix(texture2D(uAuxA,uv),texture2D(uAuxB,uv),uMix); }
-    float hubAt(vec2 uv){ vec4 p=texture2D(uPhase,uv); return p.r*255.0+p.g; }
+    // Each side's presence on a cell (sampled at its centre), crossfaded: 1 where the cell is occupied in that tick.
+    // Shape comes from presence rather than density because an occupied cell records a density of 0.3 to 1, so a
+    // crossfaded density saturated partway through the tick: a new cell swelled in the first half and sat still for
+    // the rest, a dying one held its size until the end, and at slow rates growth pulsed once a tick.
+    vec2 presAt(vec2 uv){ return mix(step(0.002,texture2D(uDensA,uv).rg),step(0.002,texture2D(uDensB,uv).rg),uMix); }
     vec2 warpAt(vec2 uv, vec4 nz){ return vec2(nz.r-0.5, texture2D(uNoise,uv.yx*0.93+0.31).r-0.5)*0.9; }`;
 const surfMat = new THREE.ShaderMaterial({
   uniforms: surfUniforms,
@@ -2005,15 +2002,18 @@ const surfMat = new THREE.ShaderMaterial({
       vec2 a=auxAt(c).rg, b=auxAt(c+vec2(tx,0.0)).rg, cc=auxAt(c+vec2(0.0,tx)).rg, d=auxAt(c+vec2(tx,tx)).rg;
       return mix(mix(a,b,f.x),mix(cc,d,f.x),f.y);
     }
+    vec2 presBi(vec2 uv){
+      float tx=1.0/uGridN; vec2 g=uv*uGridN-0.5; vec2 f=fract(g); vec2 c=(floor(g)+0.5)*tx;
+      return mix(mix(presAt(c),presAt(c+vec2(tx,0.0)),f.x),mix(presAt(c+vec2(0.0,tx)),presAt(c+vec2(tx,tx)),f.x),f.y);
+    }
     float hAt(vec2 uv){
       vec4 nz=texture2D(uNoise,uv);
       vec2 w=uv+warpAt(uv,nz)*(0.5/uGridN);
-      vec4 d=densAt(w); float m=max(d.r,d.g);
+      vec2 pr=presBi(w); float m=max(pr.x,pr.y);
       vec2 mv=auxBi(w);
-      vec4 dc=densAt((floor(w*uGridN)+0.5)/uGridN);
-      float body=smoothstep(0.10,0.30,m+(nz.r-0.5)*0.15)*step(0.004,max(dc.r,dc.g));
-      float ph=hubAt(w)*0.55+3.5*sin(uTime*0.7); float pulse=mix(0.5,0.5+0.5*sin(ph-uTime*2.2),uAnim);
-      float h=body*(0.004+0.085*mv.x*mv.x)*(0.92+0.08*pulse)+body*mv.y*mv.y*0.10*(0.85+0.15*pulse);
+      vec2 pc=presAt((floor(w*uGridN)+0.5)/uGridN);
+      float body=smoothstep(0.10,0.30,m+(nz.r-0.5)*0.15)*step(0.004,max(pc.x,pc.y));
+      float h=body*(0.004+0.085*mv.x*mv.x)*0.96+body*mv.y*mv.y*0.10*0.925;
       vec4 t=texture2D(uTerr,uv); vec4 ly=layAt(uv);
       h+=(t.r+ly.b)*0.035*nz.b+ly.r*0.012*nz.g;
       return h;
@@ -2029,10 +2029,12 @@ const surfMat = new THREE.ShaderMaterial({
       gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);
     }`,
   fragmentShader: SURF_COMMON + GLSL_NOISE + `
-    uniform sampler2D uStatus; uniform float uDishR; uniform vec3 uPCol, uECol, uAgar, uSel; uniform vec4 uGenes;
+    uniform sampler2D uStatusA, uStatusB; uniform float uDishR; uniform vec3 uPCol, uECol, uAgar, uSel; uniform vec4 uGenes;
     varying vec2 vUv; varying vec3 vN; varying vec3 vPos;
     vec2 hash2(vec2 p){ p=vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3))); return fract(sin(p)*43758.5453); }
     float hash1(vec2 p){ return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453); }
+    // damage of kind k on a cell, crossfaded: each tick's damage counts only if that tick's source was k
+    float hurt(float sa, float sb, float da, float db, float k){ return step(abs(sa-k),0.5)*da+step(abs(sb-k),0.5)*db; }
     // cellular noise: distance to nearest and second-nearest feature point, plus the nearest point's id
     vec3 worley(vec2 p){
       vec2 ip=floor(p), fp=fract(p); float f1=8.0, f2=8.0, id=0.0;
@@ -2067,9 +2069,9 @@ const surfMat = new THREE.ShaderMaterial({
       vec2 c0=floor(gw);
       float fP=0.0, fE=0.0, bP=0.0, bE=0.0; vec2 cP=c0, cE=c0;
       for(int dy=-1;dy<=1;dy++) for(int dx=-1;dx<=1;dx++){
-        vec2 cc=c0+vec2(float(dx),float(dy)); vec4 d=densAt((cc+0.5)*tx);
+        vec2 cc=c0+vec2(float(dx),float(dy)); vec2 pr=presAt((cc+0.5)*tx);
         vec2 rel=gw-(cc+0.5); float kk=max(0.0,1.0-dot(rel,rel)/2.25); kk*=kk;
-        float wp=kk*min(1.0,d.r/0.3), we=kk*min(1.0,d.g/0.3);
+        float wp=kk*pr.x, we=kk*pr.y;
         fP+=wp; fE+=we;
         if(wp>bP){ bP=wp; cP=cc; } if(we>bE){ bE=we; cE=cc; }
       }
@@ -2078,20 +2080,22 @@ const surfMat = new THREE.ShaderMaterial({
       vec2 cA=fP>=fE?cP:cE; vec2 c0uv=(cA+0.5)*tx;
       float ea=fwidth(fT)*0.7+1e-4;
       float occ=smoothstep(0.8-ea,0.8+ea,fT+(nz.b-0.5)*0.25);
-      vec4 a0=auxAt(c0uv); vec4 st=texture2D(uStatus,c0uv);
-      float code0=floor(texture2D(uAuxA,c0uv).b*255.0+0.5);
-      float heal=mod(floor(code0/16.0),2.0), fight=floor(code0/32.0);
+      vec4 a0=auxAt(c0uv); vec4 stA=texture2D(uStatusA,c0uv), stB=texture2D(uStatusB,c0uv);
+      float crustK=mix(stA.r,stB.r,uMix);
+      float code0A=floor(texture2D(uAuxA,c0uv).b*255.0+0.5), code0B=floor(texture2D(uAuxB,c0uv).b*255.0+0.5);
+      float heal=mix(mod(floor(code0A/16.0),2.0),mod(floor(code0B/16.0),2.0),uMix);
       // neighbourhood pass: smoothed mass, vein tubes along the routing tree, direction of the nearest rival
       float massS=0.0, wS=0.0, tube=0.0, tubeV=0.0, tube2=0.0, tubeV2=0.0, rival=0.0; vec2 atk=vec2(0.0);
       for(int dy=-1;dy<=1;dy++) for(int dx=-1;dx<=1;dx++){
         vec2 off=vec2(float(dx),float(dy)); vec2 cc=c0+off; vec2 cuv=(cc+0.5)*tx;
-        vec4 d=densAt(cuv); float own=d.r>0.004?1.0:(d.g>0.004?2.0:0.0);
+        vec2 pr=presAt(cuv); float own=pr.x>0.004?1.0:(pr.y>0.004?2.0:0.0);
         if(own<0.5) continue;
         vec4 a=auxAt(cuv); float codeA=floor(texture2D(uAuxA,cuv).b*255.0+0.5), codeB=floor(texture2D(uAuxB,cuv).b*255.0+0.5);
         vec2 rel=gw-(cc+0.5); float dr=length(rel);
         float same=abs(own-o0)<0.5?1.0:0.0;
         float w=max(0.0,1.0-dr*0.7); w*=w;
-        massS+=a.r*w*same; wS+=w*same;
+        float pw=own<1.5?pr.x:pr.y; // a cell joins (or leaves) the smoothed mass as it fades in (or out)
+        massS+=a.r*w*same*pw; wS+=w*same*pw;
         if(same<0.5 && occ>0.5){ atk+=off; rival+=1.0; }
         // the tube towards the routing parent; when a cell re-roots between the two ticks the old tube fades into the new
         float rad=0.045+0.32*pow(a.g,1.6);
@@ -2131,46 +2135,40 @@ const surfMat = new THREE.ShaderMaterial({
       float ct=a0.a;
       float im=step(1.0-ct,fract(wy.z+0.04*sin(uTime*2.0+wy.z*30.0)))*step(0.01,ct);
       vec3 base=mix(own,riv,im);
-      float ph=hubAt(uv)*0.55+3.5*sin(uTime*0.7); float flow=mix(0.5,0.5+0.5*sin(ph-uTime*2.2),uAnim); float flow2=mix(0.5,0.5+0.5*sin(ph*2.3+uTime*3.1),uAnim);
       vec3 mold=base*(0.72+0.28*m2)*(0.9+0.2*nz.r);
       mold=mix(mold,mold*0.82+vec3(0.06,0.03,0.0),sheet*0.6);
       mold*=1.0-0.2*sheet*max(0.0,0.5-wy.x);
-      vec3 veinCol=base*(0.5+0.55*flow)+vec3(0.08)*flow2*tubeV;
+      vec3 veinCol=base*0.775+vec3(0.04)*tubeV;
       mold=mix(mold,veinCol*0.9,tube2*(0.4+0.5*tubeV2)); // the farther hub's tendril runs underneath
       mold=mix(mold,veinCol,tube*(0.45+0.55*tubeV));
       float alpha=cov*(0.5+0.5*max(m2,max(tube*tubeV,tube2*tubeV2*0.8)));
       // attacks: what hurt this cell this minute
-      float src=floor(st.b*255.0/28.0+0.5); float dmg=st.a;
-      float isE=step(abs(src-1.0),0.5), isA=step(abs(src-2.0),0.5), isT=step(abs(src-3.0),0.5), isS=step(abs(src-4.0),0.5), isU=step(abs(src-5.0),0.5), isSt=step(abs(src-6.0),0.5), isSv=step(abs(src-7.0),0.5);
+      float srcA=floor(stA.b*255.0/28.0+0.5), srcB=floor(stB.b*255.0/28.0+0.5);
+      float dmA=texture2D(uDensA,c0uv).a*(1.0-uMix), dmB=texture2D(uDensB,c0uv).a*uMix;
+      float hE=hurt(srcA,srcB,dmA,dmB,1.0), hA=hurt(srcA,srcB,dmA,dmB,2.0), hT=hurt(srcA,srcB,dmA,dmB,3.0), hS=hurt(srcA,srcB,dmA,dmB,4.0), hU=hurt(srcA,srcB,dmA,dmB,5.0), hSt=hurt(srcA,srcB,dmA,dmB,6.0), hSv=hurt(srcA,srcB,dmA,dmB,7.0);
       vec2 ad=rival>0.0?normalize(atk+vec2(1e-4,0.0)):vec2(1.0,0.0);
       float wave=0.5+0.5*sin(dot(gw-(c0+0.5),ad)*8.0+uTime*7.0); wave*=wave;
-      mold+=riv*isE*dmg*(0.25+0.9*wave);
-      alpha*=1.0-isE*dmg*0.35*wave;
+      mold+=riv*hE*(0.25+0.9*wave);
+      alpha*=1.0-hE*0.35*wave;
       float fz=step(0.9,hash1(floor(gw*8.0)+floor(uTime*9.0)*0.37));
-      mold+=vec3(0.55,1.0,0.2)*isA*dmg*(0.3+1.4*fz);
-      alpha*=1.0-isA*dmg*0.5*fz;
-      mold=mix(mold,vec3(0.9,0.92,0.95)*(0.7+0.4*nz.b),isS*dmg*0.7);
-      mold+=vec3(1.0,0.95,0.7)*isU*dmg*(0.3+0.5*step(0.5,fract(uTime*6.0+nz.r*3.0)));
-      mold=mix(mold,vec3(0.45,0.42,0.35),isSt*dmg*0.7);
-      mold=mix(mold,vec3(0.4,0.47,0.55),isSv*dmg*0.7);
-      // sclerotia crust; each feeding hub glows in proportion to its weight (a hub's route byte is 15 | weight×15 << 4)
+      mold+=vec3(0.55,1.0,0.2)*hA*(0.3+1.4*fz);
+      alpha*=1.0-hA*0.5*fz;
+      mold=mix(mold,vec3(0.9,0.92,0.95)*(0.7+0.4*nz.b),hS*0.7);
+      mold+=vec3(1.0,0.95,0.7)*hU*(0.3+0.5*step(0.5,fract(uTime*6.0+nz.r*3.0)));
+      mold=mix(mold,vec3(0.45,0.42,0.35),hSt*0.7);
+      mold=mix(mold,vec3(0.4,0.47,0.55),hSv*0.7);
+      // sclerotia crust
       vec3 crust=vec3(0.36,0.24,0.12)+base*0.12;
-      mold=mix(mold,crust*(0.8+0.4*nz.b),st.r*0.8); alpha=max(alpha,st.r*occ*0.95);
-      float r0A=floor(texture2D(uRouteA,c0uv).r*255.0+0.5), r0B=floor(texture2D(uRouteB,c0uv).r*255.0+0.5);
-      float hw=mix(mod(r0A,16.0)>14.5?floor(r0A/16.0)/15.0:0.0, mod(r0B,16.0)>14.5?floor(r0B/16.0)/15.0:0.0, uMix);
-      float hub=hw*(1.0-smoothstep(0.3,0.55+0.4*hw,length(gw-(cA+0.5)))); // a soft disc, not the whole cell
-      mold+=base*hub*(0.35+0.25*mix(0.0,sin(uTime*3.5),uAnim)); alpha=max(alpha,hub*occ*0.9);
+      mold=mix(mold,crust*(0.8+0.4*nz.b),crustK*0.8); alpha=max(alpha,crustK*occ*0.95);
       // defences: chitin rind darkens the thread edges, alkaline slime films the pockets
       float chi=o0<1.5?uGenes.x:uGenes.z; float muc=o0<1.5?uGenes.y:uGenes.w;
       float rim=smoothstep(0.0,0.3,cov)*(1.0-smoothstep(0.3,0.7,cov));
       mold=mix(mold,vec3(0.3,0.19,0.08),chi*rim*0.7*smoothstep(0.3,0.6,m2));
       mold*=1.0-0.12*chi;
-      // healing shimmer and fighting throb
-      float sp=step(0.975,hash1(floor(gw*10.0)+floor(uTime*8.0)*0.61));
-      mold+=vec3(0.7,1.0,0.75)*heal*sp*0.9;
-      float throb=mix(0.5,0.5+0.5*sin(uTime*7.0+nz.r*12.0),uAnim);
-      alpha=min(1.0,alpha+fight*occ*0.12*throb*lace); mold*=1.0+0.1*fight*throb;
-      vec3 moldLit=mold*(0.4+0.7*diff)+spec*(0.5+0.4*max(tube,tube2*0.7))*(1.0-st.r)+fres*base*0.35+base*0.2*tube*flow;
+      // healing: a cell knitting itself back together takes a pale green cast. Driven by the sim, not the clock, so it
+      // holds still when paused and fades with the tick crossfade (a random sparkle here read as jumping highlights).
+      mold=mix(mold,mold*0.7+vec3(0.14,0.30,0.17),heal*0.45);
+      vec3 moldLit=mold*(0.4+0.7*diff)+spec*(0.5+0.4*max(tube,tube2*0.7))*(1.0-crustK)+fres*base*0.35+base*0.1*tube;
       // agar
       vec3 agar=uAgar*(0.9+0.16*nz.r)+vec3(0.1,0.12,0.1)*nz.a*0.35;
       // terrain 2: R chilled agar (frosted blue), G antibiotic halo (a violet stain, darkest by the disc)
@@ -2193,7 +2191,7 @@ const surfMat = new THREE.ShaderMaterial({
       vec3 col=mix(agarLit,moldLit,alpha);
       // antibiotic haze drifts above the surface
       float hz=0.5+0.5*snoise(gw*0.7+vec2(uTime*0.3,-uTime*0.2));
-      col=mix(col,vec3(0.62,0.5,1.0),isT*dmg*hz*0.75);
+      col=mix(col,vec3(0.62,0.5,1.0),hT*hz*0.75);
       if(uSel.z>0.5){
         float ds=length((uv-uSel.xy)*uGridN);
         col+=vec3(1.0)*(smoothstep(0.16,0.0,abs(ds-1.15))*(0.7+0.3*sin(uTime*5.0)));
@@ -2357,31 +2355,20 @@ function applyMatter(mA, mB, mix) {
 function resetMatter() { if (world) for (const g of world.groups) g.last.fill(-1); } // a new round on the same dish: every pile is full again
 
 // --- frame upload ---
+// Every channel the shader reads comes as an A/B pair, frames t and t+1, crossfaded by the fractional playhead, so
+// the dish changes continuously through a tick instead of stepping at its end. Categorical bytes (vein routing codes,
+// the healing bit, the attack source) cannot be interpolated, so the shader fades the effect each one drives instead.
 let shown = { battle: null, t: -1, t2: -1 };
-// Flow-pulse phase. The pulse rides on each cell's routing distance from its fragment's hub, and a hub that moves by
-// one cell shifts that distance for nearly every cell of the fragment at once; shown as recorded, a whole colony's
-// vein shading jumped each time a hub relocated. The displayed distance instead relaxes toward the recorded one
-// (time constant PHASE_TAU, in wall seconds), snapping only on a seek, a new battle or a newly occupied cell.
-const PHASE_TAU = 0.3;
-const phase = new Float32Array(NN).fill(-1);
-function updatePhase(F, F2, mix, dt, snap) {
-  const pd = texPhase.image.data, da = F.dens, db = F2.dens, k = snap ? 1 : 1 - Math.exp(-dt / PHASE_TAU);
-  for (let i = 0; i < NN; i++) {
-    const j = i * 4, oa = da[j] + da[j + 1] > 0, ob = db[j] + db[j + 1] > 0;
-    if (!oa && !ob) { phase[i] = -1; pd[j] = pd[j + 1] = 0; continue; }
-    const target = oa && ob ? da[j + 2] + (db[j + 2] - da[j + 2]) * mix : oa ? da[j + 2] : db[j + 2];
-    const p = phase[i] < 0 ? target : phase[i] + (target - phase[i]) * k;
-    phase[i] = p;
-    const fl = Math.floor(p);
-    pd[j] = fl; pd[j + 1] = Math.round((p - fl) * 255);
-  }
-  texPhase.needsUpdate = true;
+function putStatus(d, F) { // R sclerotia crust; B attack source ×28 (the damage itself is the dens alpha)
+  for (let i = 0; i < NN; i++) { const f = F.flags[i]; d[i * 4] = (f & 4) ? 255 : 0; d[i * 4 + 2] = (f >> 4) * 28; }
 }
-function showFrame(b, t, frac, dt) {
+function putLayer(d, Lr) { // the layer of mat, detritus and laid brine (one byte a cell: kind in the top two bits, amount in the low six)
+  for (let i = 0; i < NN; i++) { const v = Lr ? Lr[i] : 0, k = v >> 6, a = Math.round((v & 63) / 63 * 255); d[i * 4] = k === 1 ? a : 0; d[i * 4 + 1] = k === 2 ? a : 0; d[i * 4 + 2] = k === 3 ? 255 : 0; d[i * 4 + 3] = 255; }
+}
+function showFrame(b, t, frac) {
   const last = b.frames.length - 1;
   t = clamp(t, 0, last);
   const t2 = Math.min(t + 1, last);
-  const snap = shown.battle !== b || Math.abs(t - shown.t) > 8;
   if (shown.battle !== b || shown.t !== t || shown.t2 !== t2) {
     const F = b.frames[t], F2 = b.frames[t2];
     texA.image.data = F.dens; texA.needsUpdate = true;
@@ -2391,20 +2378,10 @@ function showFrame(b, t, frac, dt) {
     const ra = texRouteA.image.data, rb = texRouteB.image.data;
     for (let i = 0; i < NN; i++) { ra[i * 4] = F.route[i]; rb[i * 4] = F2.route[i]; }
     texRouteA.needsUpdate = true; texRouteB.needsUpdate = true;
-    const sd = texStatus.image.data;
-    for (let i = 0; i < NN; i++) {
-      const f = F.flags[i];
-      sd[i * 4] = (f & 4) ? 255 : 0; sd[i * 4 + 1] = (f & 8) ? 255 : 0;
-      sd[i * 4 + 2] = (f >> 4) * 28; sd[i * 4 + 3] = F.dens[i * 4 + 3];
-    }
-    texStatus.needsUpdate = true;
-    // the layer of mat, detritus and laid brine (one byte a cell: kind in the top two bits, amount in the low six)
-    for (const [tex, Lr] of [[texLayA, F.layer], [texLayB, F2.layer]]) {
-      const d = tex.image.data;
-      for (let i = 0; i < NN; i++) { const v = Lr ? Lr[i] : 0, k = v >> 6, a = Math.round((v & 63) / 63 * 255); d[i * 4] = k === 1 ? a : 0; d[i * 4 + 1] = k === 2 ? a : 0; d[i * 4 + 2] = k === 3 ? 255 : 0; d[i * 4 + 3] = 255; }
-      tex.needsUpdate = true;
-    }
-    showProbes(F);
+    putStatus(texStatA.image.data, F); texStatA.needsUpdate = true;
+    putStatus(texStatB.image.data, F2); texStatB.needsUpdate = true;
+    putLayer(texLayA.image.data, F.layer); texLayA.needsUpdate = true;
+    putLayer(texLayB.image.data, F2.layer); texLayB.needsUpdate = true;
     shown = { battle: b, t, t2 };
   }
   const mix = t2 > t ? clamp(frac, 0, 1) : 0;
@@ -2412,48 +2389,10 @@ function showFrame(b, t, frac, dt) {
   const lamp = (b.lampAt(t) ? 1 : 0) * (1 - mix) + (b.lampAt(t2) ? 1 : 0) * mix;
   surfUniforms.uLamp.value = lamp; beamMat.uniforms.uOn.value = lamp;
   applyMatter(b.frames[t].matter, b.frames[t2].matter, mix);
-  updatePhase(b.frames[t], b.frames[t2], mix, dt || 0, snap);
 }
 function setGenes(b) {
   const P = b.sides[1], E = b.sides[2];
   surfUniforms.uGenes.value.set(P.chitin ? 1 : 0, P.mucus ? 1 : 0, E.chitin ? 1 : 0, E.mucus ? 1 : 0);
-}
-
-// --- exploration probes: thin ribbons with a pulse travelling outward along each active spike's ray ---
-const PROBE_MAX = 12;
-const probeGeo = new THREE.BufferGeometry();
-probeGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(PROBE_MAX * 4 * 3), 3));
-probeGeo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(PROBE_MAX * 4 * 2), 2));
-probeGeo.setAttribute('aCol', new THREE.BufferAttribute(new Float32Array(PROBE_MAX * 4 * 3), 3));
-const probeIdx = new Uint16Array(PROBE_MAX * 6);
-for (let i = 0; i < PROBE_MAX; i++) probeIdx.set([i * 4, i * 4 + 1, i * 4 + 2, i * 4 + 2, i * 4 + 1, i * 4 + 3], i * 6);
-probeGeo.setIndex(new THREE.BufferAttribute(probeIdx, 1));
-const probeMat = new THREE.ShaderMaterial({
-  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, uniforms: { uTime: { value: 0 } },
-  vertexShader: 'attribute vec3 aCol; varying vec2 vUv; varying vec3 vC; void main(){ vUv=uv; vC=aCol; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
-  fragmentShader: 'uniform float uTime; varying vec2 vUv; varying vec3 vC; void main(){ float u=vUv.x; float dash=smoothstep(0.3,0.6,0.5+0.5*sin(u*50.0-uTime*7.0)); float pulse=exp(-12.0*abs(fract(u-uTime*0.35)-0.5)); float edge=1.0-smoothstep(0.05,0.5,abs(vUv.y-0.5)); float a=(1.0-u)*(0.12+0.35*dash+0.6*pulse)*edge; gl_FragColor=vec4(vC*a,a); }'
-});
-const probeLines = new THREE.Mesh(probeGeo, probeMat);
-probeLines.frustumCulled = false; probeLines.visible = false; scene.add(probeLines);
-function showProbes(F) {
-  const pos = probeGeo.attributes.position.array, uv = probeGeo.attributes.uv.array, col = probeGeo.attributes.aCol.array;
-  let n = 0;
-  const hw = CELL * 0.45;
-  for (const s of [1, 2]) {
-    const c = s === 1 ? [0.96, 0.77, 0.18] : [0.88, 0.31, 0.54];
-    for (const p of (F.probes ? F.probes[s] : [])) {
-      if (n >= PROBE_MAX) break;
-      const [x0, z0] = cellXZ(Math.round(p[1]) * N + Math.round(p[0]));
-      const dx = p[2], dz = -p[3], nx = -dz * hw, nz = dx * hw;
-      const L = CELL * (p[4] || PROBE_REACH), x1 = x0 + dx * L, z1 = z0 + dz * L;
-      pos.set([x0 + nx, 0.14, z0 + nz, x0 - nx, 0.14, z0 - nz, x1 + nx, 0.14, z1 + nz, x1 - nx, 0.14, z1 - nz], n * 12);
-      uv.set([0, 0, 0, 1, 1, 0, 1, 1], n * 8);
-      col.set([c[0], c[1], c[2], c[0], c[1], c[2], c[0], c[1], c[2], c[0], c[1], c[2]], n * 12);
-      n++;
-    }
-  }
-  probeGeo.setDrawRange(0, n * 6);
-  probeGeo.attributes.position.needsUpdate = true; probeGeo.attributes.uv.needsUpdate = true; probeGeo.attributes.aCol.needsUpdate = true;
 }
 
 // --- FX: rings & spores ---
@@ -2584,11 +2523,6 @@ stage.addEventListener('wheel', e => {
   updateCamera(); hideHint();
 }, { passive: false });
 $('bView').addEventListener('click', resetView);
-function toggleProbes() { S.showProbes = !S.showProbes; $('bProbes').setAttribute('aria-pressed', String(S.showProbes)); probeLines.visible = S.showProbes && S.mode === 'battle'; }
-$('bProbes').addEventListener('click', toggleProbes);
-// debugging aid (A): freeze the surface animation (flow pulses, throb, hub glow) so the vein geometry can be judged alone
-function toggleAnim() { S.anim = !S.anim; surfUniforms.uAnim.value = S.anim ? 1 : 0; $('bAnim').setAttribute('aria-pressed', String(!S.anim)); }
-$('bAnim').addEventListener('click', toggleAnim);
 
 function onTap(cx, cy) {
   if (S.mode !== 'battle' || !S.battle) return;
@@ -2607,7 +2541,6 @@ function setMode(m) {
   $('rack').hidden = m !== 'rack'; $('lab').hidden = m !== 'lab';
   $('hud').hidden = m !== 'battle'; $('transport').hidden = m !== 'battle';
   if (m !== 'battle') { cancelCountdown(); $('result').hidden = true; $('inspect').hidden = true; $('log').hidden = true; $('toast').style.opacity = 0; $('keys').hidden = true; $('bView').hidden = true; selectCell(-1); }
-  $('bProbes').hidden = m !== 'battle'; $('bAnim').hidden = m !== 'battle'; probeLines.visible = S.showProbes && m === 'battle';
   cam.auto = m !== 'battle'; cam.zoom = 1; cam.target.copy(HOME); cam.theta = 0; cam.phi = m === 'battle' ? 0.72 : 0.82;
   hint.textContent = m === 'battle'
     ? (COARSE ? 'One finger orbits · two fingers pan and zoom · tap a cell' : 'Drag to orbit · right-drag to pan · scroll to zoom in close · click a cell')
@@ -3608,8 +3541,6 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'ArrowRight') { e.preventDefault(); stepBy(e.shiftKey ? 10 : 1); }
   else if (e.key === '[') jumpEvent(-1); else if (e.key === ']') jumpEvent(1);
   else if (e.key === 'Home' || e.key === '0') resetView();
-  else if (e.key === 'p' || e.key === 'P') toggleProbes();
-  else if (e.key === 'a' || e.key === 'A') toggleAnim();
   else if (e.key === 'Escape') closeSummary();
 });
 
@@ -3771,8 +3702,7 @@ let lastT = performance.now(), uiState = { keys: null, view: null };
 function frame(now) {
   const dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
   const time = now / 1000;
-  if (S.anim) surfUniforms.uTime.value = time;
-  beamMat.uniforms.uTime.value = time; probeMat.uniforms.uTime.value = time;
+  surfUniforms.uTime.value = time; beamMat.uniforms.uTime.value = time;
   if (S.mode === 'battle' && S.match && S.battle) {
     const M = S.match, b = S.battle;
     stepMatch(M.summaryPending ? 40 : b.frames.length - S.playhead < 60 ? 14 : 6);
@@ -3792,13 +3722,13 @@ function frame(now) {
       else if (watched) setTimeout(() => { if (S.mode === 'battle' && S.battle === b && S.playhead >= lastTick() - 0.01) openSummary(); }, 700);
     }
     const t = Math.floor(S.playhead);
-    showFrame(b, t, S.playhead - t, dt);
+    showFrame(b, t, S.playhead - t);
     updateHud(); updateToast(); drawScrub(); updateInspect();
     const keys = cam.zoom < 0.55, view = viewMoved() || Math.abs(cam.theta) > 0.05;
     if (keys !== uiState.keys) { uiState.keys = keys; $('keys').hidden = !keys; }
     if (view !== uiState.view) { uiState.view = view; $('bView').hidden = !view; }
   } else if (S.preview) {
-    showFrame(S.preview, 0, 0, dt);
+    showFrame(S.preview, 0, 0);
   }
   if (cam.auto && !pointers.size) { cam.theta += dt * 0.08; updateCamera(); }
   updateFx(dt);
