@@ -217,6 +217,9 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 
 .toast { position: absolute; left: 50%; top: 78px; transform: translateX(-50%); max-width: calc(100% - 32px); padding: 7px 12px; border-radius: 999px; background: rgba(13,18,20,.88); border: 1px solid var(--line); font-size: 13px; display: flex; gap: 8px; align-items: center; pointer-events: none; transition: opacity .3s; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .toast .tt { font-family: var(--f-mono); font-size: 11px; color: var(--faint); }
 .toast .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.showcase { position: absolute; inset: 0; pointer-events: none; }
+.showcase .lbl { position: absolute; left: 0; top: 0; font-family: var(--f-mono); font-size: 11px; color: #e9efe9; text-shadow: 0 1px 3px #000, 0 0 6px #000a; white-space: nowrap; }
+.showcase .cap { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); font-family: var(--f-mono); font-size: 11px; color: #e9efe9; background: #0009; padding: 4px 10px; border-radius: 6px; }
 .hint { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); font-family: var(--f-mono); font-size: 11px; color: var(--faint); pointer-events: none; transition: opacity .6s; white-space: nowrap; }
 .corner { position: absolute; right: 12px; bottom: 12px; display: flex; align-items: center; gap: 8px; pointer-events: none; }
 .corner .ib { pointer-events: auto; }
@@ -1991,7 +1994,16 @@ const SURF_COMMON = `
     // crossfaded density saturated partway through the tick: a new cell swelled in the first half and sat still for
     // the rest, a dying one held its size until the end, and at slow rates growth pulsed once a tick.
     vec2 presAt(vec2 uv){ return mix(step(0.002,texture2D(uDensA,uv).rg),step(0.002,texture2D(uDensB,uv).rg),uMix); }
-    vec2 warpAt(vec2 uv, vec4 nz){ return vec2(nz.r-0.5, texture2D(uNoise,uv.yx*0.93+0.31).r-0.5)*0.9; }`;
+    vec2 warpAt(vec2 uv, vec4 nz){ return vec2(nz.r-0.5, texture2D(uNoise,uv.yx*0.93+0.31).r-0.5)*0.9; }
+    // each strain's presence on a cell, contest included: a rival pushing into a cell (contest c, the share of it the
+    // rival has won) is present there with weight c while the occupant's hold weakens to 1-0.6c, so contested ground
+    // carries both strains in proportion and a capture finds the winner already in place (after it, the loser's
+    // residual push fades the same way). Crossfaded like presAt.
+    vec2 sideAt(vec2 uv){
+      vec2 pA=step(0.002,texture2D(uDensA,uv).rg), pB=step(0.002,texture2D(uDensB,uv).rg);
+      float cA=texture2D(uAuxA,uv).a, cB=texture2D(uAuxB,uv).a;
+      return mix(pA*(1.0-0.6*cA)+pA.yx*cA,pB*(1.0-0.6*cB)+pB.yx*cB,uMix);
+    }`;
 // Cell behaviour effects: contested pockets, attack flashes, sclerotia crust, defence and healing tints, antibiotic haze,
 // the event rings and spore arcs, and the close-up legend for them. Off while the strains' natural look is reworked.
 const CELL_FX = false;
@@ -2023,9 +2035,13 @@ const surfMat = new THREE.ShaderMaterial({
       // The swell follows the smooth field, so it rises and falls with the tissue instead of stepping at cell edges.
       float body=smoothstep(0.25,1.5,fieldAt(w*uGridN));
       vec2 mv=auxBi(w);
-      float h=body*(0.002+0.015*mv.x*mv.x+0.02*mv.y*mv.y);
-      vec4 t=texture2D(uTerr,uv); vec4 ly=layAt(uv);
+      vec4 t=texture2D(uTerr,uv), ly=layAt(uv), t2=texture2D(uTerr2,uv);
+      // under a pile, a stone or a bead the swell lies flat, so the tissue runs under the prop rather than up through
+      // it (the prop draws the strains over itself)
+      float pm=clamp((t2.b*smoothstep(0.0,0.08,ly.a)+t2.a)*1.6,0.0,1.0);
+      float h=body*(0.002+0.015*mv.x*mv.x+0.02*mv.y*mv.y)*(1.0-0.85*pm);
       h+=(t.r+ly.b)*0.035*nz.b+ly.r*0.012*nz.g;
+      h+=t.a*ly.a*0.004; // the bacterial lawn, a low film that thins as it is eaten
       return h;
     }
     void main(){
@@ -2113,15 +2129,6 @@ const surfMat = new THREE.ShaderMaterial({
       float hL=smax(smax(L1.y*0.012,L2.y*0.010,0.004),smax(L3.y*0.007,L4.y*0.003,0.003),0.004);
       float h=smax(smax(th.x,th.y*0.85,0.04)*cw*1.1,hL,0.008);
       return vec3(cov,h,clamp(tc.y*0.5+vm,0.0,1.0));
-    }
-    // each strain's presence on a cell, contest included: a rival pushing into a cell (contest c, the share of it the
-    // rival has won) is present there with weight c while the occupant's hold weakens to 1-0.6c, so contested ground
-    // carries both strains in proportion and a capture finds the winner already in place (after it, the loser's
-    // residual push fades the same way). Crossfaded like presAt.
-    vec2 sideAt(vec2 uv){
-      vec2 pA=step(0.002,texture2D(uDensA,uv).rg), pB=step(0.002,texture2D(uDensB,uv).rg);
-      float cA=texture2D(uAuxA,uv).a, cB=texture2D(uAuxB,uv).a;
-      return mix(pA*(1.0-0.6*cA)+pA.yx*cA,pB*(1.0-0.6*cB)+pB.yx*cB,uMix);
     }
     // the strains' colours, toned down from the HUD's
     vec3 tone(vec3 c){ float l=dot(c,vec3(0.299,0.587,0.114)); return mix(vec3(l),c,0.72)*0.97; }
@@ -2226,7 +2233,36 @@ const surfMat = new THREE.ShaderMaterial({
       float fth=mix(0.2,0.75,smoothstep(0.35,0.65,nz.r));
       vec2 fl=m2*vec2(tpP,tpE)-0.6*vec2(tpE,tpP)-fth; vec2 fla=fwidth(fl)+1e-3;
       vec2 film=smoothstep(-fla,fla,fl);
-      float hF=smax(TP.y,TE.y,0.006)+max(film.x,film.y)*0.002;
+      // what lies on the agar under the strains, with its relief. The bacterial lawn: a glistening cream film of
+      // colonies, thinning into patches as it is eaten and filling back in as it regrows (A: the matter left).
+      // (their masks are read at a warped point, so their edges wander rather than follow the grid)
+      vec4 ly=layAt(uv);
+      vec2 uvw=(gw+vec2(snoise(gw*0.9+7.0),snoise(gw*0.9+3.0))*0.35)*tx;
+      vec4 trw=texture2D(uTerr,uvw), lyw=layAt(uvw);
+      // (each is worked out only where its mask reaches)
+      float lwA=trw.a*lyw.a, lwC=0.0, lwU=0.0, hLw=0.0;
+      if(trw.a>0.004){
+        vec3 wl=worley(gw*2.6+vec2(5.0,1.0));
+        lwC=smoothstep(0.12,0.22,lwA*1.3+(nz.r-0.5)*0.5-wl.x*0.35);
+        lwU=snoise(gw*0.8+11.0);
+        hLw=lwC*(0.0015+0.0012*lwU+0.0012*(1.0-smoothstep(0.0,0.6,wl.x))*(1.0-smoothstep(0.3,0.8,lwA)))*min(1.0,lwA*2.0+0.3);
+      }
+      // salt: a crust of little cubic crystals, packed where the brine dried thickest and scattered toward its edge,
+      // each a low pyramid whose faces catch the light
+      float sA=max(trw.r,lyw.b), sCov=0.0, sh=0.0, hS=0.0, slod=smoothstep(3.0,8.0,0.14/px);
+      if(sA>0.002){
+        vec2 sq=mat2(0.8,-0.6,0.6,0.8)*gw*7.0; vec2 si=floor(sq), sf=fract(sq)-0.5; sh=hash1(si);
+        sCov=smoothstep(0.0,0.08,sA*1.25-sh*0.55-0.12);
+        hS=sCov*(0.5-max(abs(sf.x),abs(sf.y)))*(0.003+0.003*sh)*slod;
+      }
+      // granite grit: grains the stones shed round their feet, and the quartz sand acid leaves where one stood
+      vec3 wg=vec3(1.0); float glod=smoothstep(3.0,8.0,0.0625/px), gC=0.0, hG=0.0;
+      if(trw.b>0.004){
+        wg=worley(gw*16.0+vec2(3.0,8.0)); float gp=step(fract(wg.z*7.31),trw.b*trw.b*0.7);
+        gC=mix(trw.b*trw.b*0.2,(1.0-smoothstep(0.24,0.34,wg.x))*gp,glod);
+        hG=(1.0-smoothstep(0.0,0.36,wg.x))*gp*0.002*glod;
+      }
+      float hF=hLw+hS+hG+smax(TP.y,TE.y,0.006)+max(film.x,film.y)*0.002;
       vec3 N=bump(normalize(vN),vPos,hF);
       vec3 L=normalize(vec3(-0.45,1.0,0.55)); vec3 V=normalize(cameraPosition-vPos); vec3 H=normalize(L+V);
       // where the normal swings within a pixel (the rim of a thin strand, a ridge seen edge-on) a sharp highlight
@@ -2277,22 +2313,52 @@ const surfMat = new THREE.ShaderMaterial({
       // agar
       vec3 agar=uAgar*(0.9+0.16*nz.r)+vec3(0.1,0.12,0.1)*nz.a*0.35;
       // terrain 2: R chilled agar (frosted blue), G antibiotic halo (a violet stain, darkest by the disc)
-      vec4 tt2=texture2D(uTerr2,uv); vec4 ly=layAt(uv);
+      vec4 tt2=texture2D(uTerr2,uv);
       agar=mix(agar,vec3(0.55,0.68,0.78)*(0.8+0.25*nz.r)+vec3(0.12)*step(0.72,nz.b),tt2.r*0.5);
       agar=mix(agar,vec3(0.42,0.34,0.55)*(0.85+0.2*nz.b),tt2.g*0.42);
-      agar=mix(agar,vec3(0.86,0.88,0.9)*(0.65+0.45*nz.b),max(tr.r,ly.b)*0.92);
+      // salt: wet brine darkens the agar a little, the crystals over it are white, each its own shade
+      agar=mix(agar,agar*0.9+vec3(0.06,0.07,0.08),smoothstep(0.0,0.3,sA)*0.6);
+      agar=mix(agar,vec3(0.9,0.91,0.92)*mix(0.86,0.72+0.32*sh,slod)*(0.92+0.12*nz.b),sCov*mix(0.82,0.55+0.4*fract(sh*7.7),slod));
       agar+=vec3(1.0,0.84,0.52)*tr.g*(0.22+0.05*sin(uTime*0.9+uv.x*18.0))*uLamp;
       agar=mix(agar,agar*0.82+vec3(0.02,0.03,0.07),tr.g*(1.0-uLamp)*0.6); // lamp off: lit agar is dark agar
-      agar=mix(agar,vec3(0.16,0.15,0.15),tr.b*0.55);
-      // layer: mycelial mat (pale fuzz, thicker with more food), detritus (dark crumbs)
-      float mfz=smoothstep(0.35,0.75,nz.g*0.6+nz.b*0.6);
-      agar=mix(agar,vec3(0.93,0.9,0.8)*(0.75+0.3*nz.b),clamp(ly.r*3.0,0.0,1.0)*(0.6+0.4*mfz));
+      // granite grit: the agar under a stone darkened, and grains of its four minerals round it (their average
+      // from afar, where single grains would only shimmer)
+      agar=mix(agar,agar*0.8,tr.b*0.4);
+      vec3 gcol=wg.z<0.35?vec3(0.74,0.58,0.52):wg.z<0.62?vec3(0.82,0.8,0.76):wg.z<0.9?vec3(0.55,0.56,0.58):vec3(0.12);
+      gcol=mix(vec3(0.66,0.62,0.58),gcol*(1.15-0.8*wg.x),glod);
+      agar=mix(agar,gcol,gC*0.75);
+      // the bacterial lawn: a smooth, faintly translucent cream film (its margin scalloped by the colonies at its edge)
+      vec3 lwCol=vec3(0.87,0.83,0.68)*(0.94+0.06*lwU+0.05*nz.b);
+      agar=mix(agar,lwCol,lwC*(0.5+0.4*min(1.0,lwA*1.5)));
+      // layer: mycelial mat, a cottony felt of hyphae (fine threads running every which way, matted where it is
+      // thick), and detritus (dark crumbs)
+      float mA=clamp(ly.r*3.0,0.0,1.0);
+      if(mA>0.0){
+        float mfz=smoothstep(0.35,0.75,nz.g*0.6+nz.b*0.6);
+        float hy1=abs(snoise(gw*3.1+vec2(2.0,9.0))), hy2=abs(snoise(mat2(0.6,0.8,-0.8,0.6)*gw*5.3+4.0)), hy3=abs(snoise(gw*9.7+1.3));
+        float ppx=1.0/px;
+        float hy=max(max(thread(hy1,0.05+0.06*mA,fwidth(hy1),smoothstep(4.0,10.0,ppx*0.3),0.15).x,
+                         thread(hy2,0.04+0.05*mA,fwidth(hy2),smoothstep(4.0,10.0,ppx*0.19),0.12).x),
+                     thread(hy3,0.05,fwidth(hy3),smoothstep(4.0,10.0,ppx*0.1),0.1).x*0.7);
+        float felt=smoothstep(0.35,0.95,mA+(mfz-0.5)*0.5);
+        agar=mix(agar,vec3(0.94,0.92,0.86)*(0.8+0.2*nz.b),clamp(max(hy*smoothstep(0.0,0.3,mA),felt),0.0,1.0)*0.92);
+      }
       agar=mix(agar,vec3(0.27,0.2,0.13)*(0.8+0.4*nz.r),clamp(ly.g*1.4,0.0,1.0)*0.8*step(0.4,nz.b));
       float rim2=smoothstep(uDishR-0.035,uDishR,rr);
       agar=mix(agar,agar*1.35+0.05,rim2);
-      vec3 agarLit=agar*(0.7+0.35*diff)+spec*0.08;
+      // wet sheen: the lawn glistens, and the faces of the salt crystals glint
+      float gl=pow(max(dot(N,H),0.0),140.0);
+      vec3 agarLit=agar*(0.7+0.35*diff)+spec*(0.08+0.3*lwC+0.2*sCov)+gl*(lwC*0.5+sCov*1.2*slod);
       vec3 col=mix(lay(lay(agarLit,baseP,film.x,TP.x,litP,diff,spec),baseE,film.y,TE.x,litE,diff,spec),
                    lay(lay(agarLit,baseE,film.y,TE.x,litE,diff,spec),baseP,film.x,TP.x,litP,diff,spec),top);
+      // the props' contact shade and the shadow they cast away from the light: beads and discs as they are, food and
+      // granite fading with what is left of them (the most left in or next to the cell, as the shade reaches past it)
+      vec4 t2s=texture2D(uTerr2,uv+vec2(-0.45,-0.55)*tx*0.8);
+      if(tt2.b+tt2.a+t2s.b+t2s.a>0.0){
+        float md=max(max(ly.a,layAt(uv+vec2(tx,0.0)).a),max(max(layAt(uv-vec2(tx,0.0)).a,layAt(uv+vec2(0.0,tx)).a),layAt(uv-vec2(0.0,tx)).a));
+        float mk=smoothstep(0.0,0.15,md);
+        col*=1.0-0.22*clamp(tt2.b*mk+tt2.a,0.0,1.0)-0.16*clamp(t2s.b*mk+t2s.a,0.0,1.0);
+      }
 #if CELL_FX
       // antibiotic haze drifts above the surface
       float hz=0.5+0.5*snoise(gw*0.7+vec2(uTime*0.3,-uTime*0.2));
@@ -2329,35 +2395,305 @@ const shadow = new THREE.Mesh(new THREE.CircleGeometry(DISH_W * 1.45, 64), new T
 }));
 shadow.rotation.x = -Math.PI / 2; shadow.position.y = -0.32; scene.add(shadow);
 
-// --- per-dish instanced props ---
+// --- per-dish props ---
+// Food piles, granite, glass beads and antibiotic discs are instanced meshes drawn by one shader (PROP_FS), each kind
+// with a procedural material of its own. A prop also reads the frame textures the surface reads and draws the strains
+// over itself, so tissue reaching a pile climbs onto it and coats it, and granite that acid is dissolving is swallowed
+// as it goes. Shapes are built from seeds, a few variants a kind, and each prop takes one at random.
 const dishProps = new THREE.Group(); scene.add(dishProps);
-function jitterGeo(geo, amt, seed) {
-  const r = rng(seed), p = geo.attributes.position, map = new Map();
-  for (let i = 0; i < p.count; i++) {
-    const k = p.getX(i).toFixed(3) + ',' + p.getY(i).toFixed(3) + ',' + p.getZ(i).toFixed(3);
-    if (!map.has(k)) map.set(k, [(r() - 0.5) * amt, (r() - 0.5) * amt, (r() - 0.5) * amt]);
-    const j = map.get(k); p.setXYZ(i, p.getX(i) + j[0], p.getY(i) + j[1], p.getZ(i) + j[2]);
+function seatGeo(g) { g.computeVertexNormals(); g.computeBoundingBox(); g.translate(0, -g.boundingBox.min.y, 0); return g; } // resting on y = 0
+// a rolled oat: a thin oval flake with a ragged rim, cupped and buckled, the groat's seam pressed along its length
+function oatGeo(seed) {
+  const r = rng(seed), K = 6, J = 32, pos = [], idx = [];
+  const asp = 0.66 + r() * 0.2, cup = 0.05 + r() * 0.08, th = 0.07 + r() * 0.025, ph = [0, 0, 0, 0].map(() => r() * 6.283);
+  const jit = Array.from({ length: J }, () => (r() - 0.5) * 0.08);
+  const rad = j => { const a = j / J * Math.PI * 2; return 0.5 * (1 + 0.07 * Math.sin(2 * a + ph[0]) + 0.05 * Math.sin(3 * a + ph[1]) + 0.03 * Math.sin(5 * a + ph[2]) + jit[j]); };
+  const mid = (x, z, q) => cup * q * q + 0.025 * Math.sin(x * 5 + ph[3]) * q - 0.02 * Math.exp(-z * z / 0.004) * (1 - q * q);
+  const add = (x, y, z) => pos.push(x, y, z) / 3 - 1;
+  const vert = (k, j, top) => {
+    const q = k / K, a = j / J * Math.PI * 2, rr = rad(j) * q, x = Math.cos(a) * rr, z = Math.sin(a) * rr * asp;
+    return add(x, mid(x, z, q) + (top ? 0.5 : -0.4) * th * Math.sqrt(Math.max(0, 1 - Math.pow(q, 2.4))), z);
+  };
+  const tri = (a, b, c, up) => { // wound so the face looks up (top) or down (underside)
+    const ny = (pos[b * 3 + 2] - pos[a * 3 + 2]) * (pos[c * 3] - pos[a * 3]) - (pos[b * 3] - pos[a * 3]) * (pos[c * 3 + 2] - pos[a * 3 + 2]);
+    if ((ny > 0) === up) idx.push(a, b, c); else idx.push(a, c, b);
+  };
+  const rim = []; for (let j = 0; j < J; j++) rim.push(vert(K, j, true));
+  for (const top of [true, false]) {
+    const c = add(0, mid(0, 0, 0) + (top ? 0.5 : -0.4) * th, 0), rings = [];
+    for (let k = 1; k < K; k++) { const ring = []; for (let j = 0; j < J; j++) ring.push(vert(k, j, top)); rings.push(ring); }
+    rings.push(rim);
+    for (let j = 0; j < J; j++) tri(c, rings[0][j], rings[0][(j + 1) % J], top);
+    for (let k = 0; k < K - 1; k++) for (let j = 0; j < J; j++) {
+      const j1 = (j + 1) % J, a = rings[k][j], b = rings[k][j1], c2 = rings[k + 1][j], d = rings[k + 1][j1];
+      tri(a, c2, d, top); tri(a, d, b, top);
+    }
   }
-  geo.computeVertexNormals(); return geo;
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
+  return seatGeo(g);
 }
+// a chip of crushed granite: a lumpy ball cut by fracture planes into flat broken faces, one of them the face it rests on
+function rockGeo(seed) {
+  const r = rng(seed), g = new THREE.IcosahedronGeometry(0.5, 2), p = g.attributes.position, v = new THREE.Vector3();
+  const sx = 0.85 + r() * 0.4, sy = 0.7 + r() * 0.35, sz = 0.8 + r() * 0.3, planes = [];
+  for (let k = 0; k < 8; k++) planes.push([new THREE.Vector3(r() - 0.5, (r() - 0.5) * 0.9, r() - 0.5).normalize(), 0.25 + r() * 0.17]);
+  planes.push([new THREE.Vector3((r() - 0.5) * 0.2, -1, (r() - 0.5) * 0.2).normalize(), 0.15 + r() * 0.08]);
+  for (let i = 0; i < p.count; i++) { // a function of the vertex's position alone, so the faces' shared corners stay together
+    v.set(p.getX(i) * sx, p.getY(i) * sy, p.getZ(i) * sz);
+    v.multiplyScalar(1 + 0.07 * Math.sin(v.x * 13 + seed) * Math.sin(v.y * 11 + 1.3) * Math.sin(v.z * 9 + 2.1));
+    for (const [n, d] of planes) { const s = v.dot(n) - d; if (s > 0) v.addScaledVector(n, -s); }
+    p.setXYZ(i, v.x, v.y, v.z);
+  }
+  return seatGeo(g);
+}
+// a bark chip: a curled slab furrowed along its grain on the outer face, its ends snapped off unevenly
+function barkGeo(seed) {
+  const r = rng(seed), g = new THREE.BoxGeometry(1, 0.16, 0.42, 18, 3, 10), p = g.attributes.position;
+  const curl = 0.4 + r() * 0.6, tw = (r() - 0.5) * 0.35, ph = r() * 6.283, ph2 = r() * 6.283, ph3 = r() * 6.283, wedge = (r() - 0.5) * 0.12;
+  for (let i = 0; i < p.count; i++) {
+    let x = p.getX(i), y = p.getY(i), z = p.getZ(i);
+    const top = y > 0, u = Math.abs(z) / 0.21; // 0 along the middle of the chip, 1 at its long edges
+    x *= 1 + 0.12 * Math.sin(z * 23 + ph) * Math.pow(Math.abs(x) * 2, 4); // snapped ends
+    z *= 1 - 0.22 * Math.sin(x * 2.8 + ph2) - 0.1 * Math.sin(x * 7.1 + ph3); // uneven width
+    y *= 1 + 0.35 * Math.sin(x * 3.3 + ph3) + wedge * z * 10; // uneven thickness, thinner along one edge
+    if (top) {
+      y += 0.05 * Math.pow(0.5 + 0.5 * Math.sin(z * 30 + 1.5 * Math.sin(x * 4 + ph)), 2) + 0.02 * Math.sin(x * 9 + ph2);
+      y -= 0.07 * Math.pow(u, 3); z *= 1 - 0.12 * u; // the outer face rounds over into the sides
+    }
+    y += curl * z * z + tw * x * z;
+    p.setXYZ(i, x, y, z);
+  }
+  return seatGeo(g);
+}
+const variants = (n, fn, s0) => Array.from({ length: n }, (_, k) => fn(s0 + k * 31));
 const GEO = {
-  rock: jitterGeo(new THREE.IcosahedronGeometry(0.5, 1), 0.22, 7),
-  oat: jitterGeo(new THREE.CylinderGeometry(0.5, 0.46, 0.09, 9, 1), 0.12, 11),
-  prot: new THREE.SphereGeometry(0.5, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2),
-  bark: jitterGeo(new THREE.BoxGeometry(1, 0.32, 0.42, 3, 1, 1), 0.14, 13),
-  glass: new THREE.SphereGeometry(0.5, 14, 10),
-  oil: new THREE.SphereGeometry(0.5, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2),
+  oat: variants(6, oatGeo, 101), rock: variants(6, rockGeo, 7), bark: variants(4, barkGeo, 13),
+  oil: [new THREE.SphereGeometry(0.5, 28, 12, 0, Math.PI * 2, 0, Math.PI / 2)],
+  glass: [new THREE.SphereGeometry(0.5, 32, 20).translate(0, 0.5, 0)],
+  disc: [seatGeo(new THREE.CylinderGeometry(0.5, 0.5, 0.06, 48, 1))],
 };
-const MAT = {
-  rock: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, flatShading: true }),
-  oat: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.75 }),
-  prot: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.22, metalness: 0.0 }),
-  bark: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, flatShading: true }),
-  glass: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.55 }),
-  oil: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.08, metalness: 0.0, transparent: true, opacity: 0.85 }),
-  disc: new THREE.MeshStandardMaterial({ color: 0xf1ede2, roughness: 0.9 }),
-};
-let world = null; // { dish, groups:[{kind, mesh, cells, base[]}] }
+const GLSL_NOISE3 = `
+vec4 permute4(vec4 x){return mod(((x*34.0)+1.0)*x,289.0);}
+float snoise3(vec3 v){
+  const vec2 C=vec2(1.0/6.0,1.0/3.0); const vec4 D=vec4(0.0,0.5,1.0,2.0);
+  vec3 i=floor(v+dot(v,C.yyy)); vec3 x0=v-i+dot(i,C.xxx);
+  vec3 g=step(x0.yzx,x0.xyz); vec3 l=1.0-g; vec3 i1=min(g.xyz,l.zxy); vec3 i2=max(g.xyz,l.zxy);
+  vec3 x1=x0-i1+C.xxx; vec3 x2=x0-i2+C.yyy; vec3 x3=x0-D.yyy;
+  i=mod(i,289.0);
+  vec4 p=permute4(permute4(permute4(i.z+vec4(0.0,i1.z,i2.z,1.0))+i.y+vec4(0.0,i1.y,i2.y,1.0))+i.x+vec4(0.0,i1.x,i2.x,1.0));
+  vec3 ns=0.142857142857*D.wyz-D.xzx;
+  vec4 j=p-49.0*floor(p*ns.z*ns.z); vec4 x_=floor(j*ns.z); vec4 y_=floor(j-7.0*x_);
+  vec4 x=x_*ns.x+ns.yyyy; vec4 y=y_*ns.x+ns.yyyy; vec4 h=1.0-abs(x)-abs(y);
+  vec4 b0=vec4(x.xy,y.xy); vec4 b1=vec4(x.zw,y.zw);
+  vec4 s0=floor(b0)*2.0+1.0; vec4 s1=floor(b1)*2.0+1.0; vec4 sh=-step(h,vec4(0.0));
+  vec4 a0=b0.xzyw+s0.xzyw*sh.xxyy; vec4 a1=b1.xzyw+s1.xzyw*sh.zzww;
+  vec3 p0=vec3(a0.xy,h.x); vec3 p1=vec3(a0.zw,h.y); vec3 p2=vec3(a1.xy,h.z); vec3 p3=vec3(a1.zw,h.w);
+  vec4 nr=1.79284291400159-0.85373472095314*vec4(dot(p0,p0),dot(p1,p1),dot(p2,p2),dot(p3,p3));
+  p0*=nr.x; p1*=nr.y; p2*=nr.z; p3*=nr.w;
+  vec4 m=max(0.6-vec4(dot(x0,x0),dot(x1,x1),dot(x2,x2),dot(x3,x3)),0.0); m=m*m;
+  return 42.0*dot(m*m,vec4(dot(p0,x0),dot(p1,x1),dot(p2,x2),dot(p3,x3)));
+}
+vec3 hash3(vec3 p){ p=vec3(dot(p,vec3(127.1,311.7,74.7)),dot(p,vec3(269.5,183.3,246.1)),dot(p,vec3(113.5,271.9,124.6))); return fract(sin(p)*43758.5453); }
+// cellular noise in 3D: distance to the nearest and second-nearest feature points, and an id for the nearest
+vec3 worley3(vec3 p){
+  vec3 ip=floor(p), fp=fract(p); float f1=8.0, f2=8.0, id=0.0;
+  for(int z=-1;z<=1;z++) for(int y=-1;y<=1;y++) for(int x=-1;x<=1;x++){
+    vec3 o=vec3(float(x),float(y),float(z)); vec3 h=hash3(ip+o); vec3 r=o+h-fp; float d=dot(r,r);
+    if(d<f1){ f2=f1; f1=d; id=fract(h.z*13.7+h.x); } else if(d<f2){ f2=d; }
+  }
+  return vec3(sqrt(f1),sqrt(f2),id);
+}`;
+// Instances carry their matrix and colour, how much of the pile or stone is left (aMat, 0..1) and a seed (aSeed). The
+// prop is seated on the agar's own relief at its foot (salt crust, mat), and vH is a point's height above the agar.
+const PROP_VS = SURF_COMMON + `
+    attribute float aMat, aSeed;
+    varying vec3 vW, vO, vN, vCol; varying float vMat, vSeed, vH;
+    void main(){
+      vec3 sc=vec3(length(instanceMatrix[0].xyz),length(instanceMatrix[1].xyz),length(instanceMatrix[2].xyz));
+      vec2 uv0=vec2(instanceMatrix[3].x/uSize+0.5,0.5-instanceMatrix[3].z/uSize);
+      vec4 t=texture2D(uTerr,uv0), ly=layAt(uv0), nz=texture2D(uNoise,uv0);
+      float seat=0.002+(t.r+ly.b)*0.035*nz.b+ly.r*0.012*nz.g;
+      vec4 w=modelMatrix*instanceMatrix*vec4(position,1.0); w.y+=seat;
+      vW=w.xyz; vO=position; vH=w.y-seat; vCol=instanceColor; vMat=aMat; vSeed=aSeed;
+      vN=normalize(mat3(modelMatrix)*mat3(instanceMatrix)*(normal/(sc*sc)));
+      gl_Position=projectionMatrix*viewMatrix*w;
+    }`;
+const PROP_FS = SURF_COMMON + GLSL_NOISE3 + `
+    uniform vec3 uPCol, uECol;
+    varying vec3 vW, vO, vN, vCol; varying float vMat, vSeed, vH;
+    vec3 tone(vec3 c){ float l=dot(c,vec3(0.299,0.587,0.114)); return mix(vec3(l),c,0.72)*0.97; }
+    vec3 bump(vec3 n, vec3 pos, float h){
+      vec3 sx=dFdx(pos), sy=dFdy(pos); vec3 r1=cross(sy,n), r2=cross(n,sx); float det=dot(sx,r1);
+      vec3 grad=sign(det)*(dFdx(h)*r1+dFdy(h)*r2); return normalize(abs(det)*n-grad);
+    }
+    // the scene's light as the surface takes it: a key from the upper left, a cool fill, sky and ground ambient
+    vec3 shade(vec3 alb, vec3 N, vec3 V, float gloss, float ks){
+      vec3 L=normalize(vec3(-0.45,1.0,0.55)), H=normalize(L+V);
+      float diff=max(dot(N,L),0.0), fl=max(dot(N,normalize(vec3(0.6,0.45,-0.7))),0.0);
+      vec3 amb=mix(vec3(0.16,0.17,0.18),vec3(0.42,0.41,0.38),0.5+0.5*N.y);
+      return alb*(amb+diff*vec3(0.72,0.69,0.62)+fl*vec3(0.08,0.11,0.13))+pow(max(dot(N,H),0.0),gloss)*ks*vec3(1.0,0.97,0.9);
+    }
+    void main(){
+      vec3 V=normalize(cameraPosition-vW);
+      vec3 Ng=normalize(vN); if(!gl_FrontFacing) Ng=-Ng;
+      float m=clamp(vMat,0.0,1.0), e=1.0-m;
+      vec3 o=vO*2.0+vec3(vSeed*1.37,vSeed*0.71,vSeed*2.13); // object space, -1..1 across the prop, offset per instance
+      vec3 alb=vCol, col=vec3(0.0); float gloss=24.0, ks=0.08, hb=0.0, alpha=1.0, ao=1.0; bool lit=true;
+      vec3 L=normalize(vec3(-0.45,1.0,0.55)), H=normalize(L+V);
+#if KIND == 1
+      // rolled oat: cream, streaked along the flake, flecked with bran, its thin rim lit through; nibbled from the rim
+      // inward as it is eaten, and darker and sodden as it is digested
+      float rN=length(vO.xz)*2.0;
+      if(rN>pow(m,0.6)*1.3+snoise3(o*1.8)*0.14*min(1.0,e*5.0)-0.02*e) discard;
+      float st=snoise3(vec3(o.x*2.0,o.y*2.0,o.z*9.0)), fk=snoise3(o*7.0+3.0), gr=snoise3(o*14.0);
+      alb=vCol*(0.95+0.07*st+0.04*gr);
+      alb=mix(alb,vec3(0.66,0.5,0.3),smoothstep(0.55,0.85,fk)*0.45);
+      alb=mix(alb,alb*1.08+vec3(0.06,0.05,0.02),smoothstep(0.65,1.0,rN));
+      alb=mix(alb,vec3(0.56,0.42,0.24)*(0.9+0.1*st),e*0.55);
+      if(!gl_FrontFacing) alb*=1.15; // the underside, seen only past the thin rim, lit through the flake
+      gloss=mix(60.0,18.0,m); ks=mix(0.25,0.05,m);
+      hb=(st*0.6+gr*0.4)*0.0006;
+      ao=mix(0.82,1.0,smoothstep(0.0,0.014,vH));
+#elif KIND == 2
+      // granite: grains of salmon feldspar, milky plagioclase, glassy quartz and black mica on flat fracture faces.
+      // Acid etches it: a chalky crust of oxalate spreads over the stone and pits it as it dissolves.
+      vec3 Nf=normalize(cross(dFdx(vW),dFdy(vW))); if(dot(Nf,V)<0.0) Nf=-Nf; Ng=Nf;
+      // Grains are cells of warped cellular noise, so their outlines are irregular, with mottling inside each; mica
+      // is scattered as small black flakes of its own. (Single grains fade to the stone's average from afar, where
+      // they would only shimmer.)
+      float gs=13.0;
+      float glod=1.0-smoothstep(0.35,0.9,length(fwidth(o*gs)));
+      vec3 mn=vec3(0.66,0.62,0.59); float mk=0.12;
+      if(glod>0.0){
+        vec3 gq=o*gs+0.45*vec3(snoise3(o*3.5),snoise3(o*3.5+7.0),snoise3(o*3.5+13.0));
+        vec3 wg=worley3(gq); float id=wg.z, gb=smoothstep(0.0,0.12,wg.y-wg.x);
+        vec3 wb=worley3(o*gs*1.7+vec3(5.0,2.0,9.0));
+        mn=vec3(0.56,0.57,0.59); mk=0.3; // quartz, grey and glassy
+        if(id<0.4){ mn=vec3(0.78,0.6,0.52); mk=0.06; } // potassium feldspar, salmon pink
+        else if(id<0.72){ mn=vec3(0.85,0.84,0.8); mk=0.08; } // plagioclase, milky white
+        mn*=(0.9+0.2*fract(id*91.7))*(0.9+0.14*snoise3(o*45.0))*mix(0.8,1.0,gb);
+        float mica=(1.0-smoothstep(0.12,0.2,wb.x))*step(fract(wb.z*5.3),0.4);
+        mn=mix(mn,vec3(0.07,0.07,0.08),mica); mk=mix(mk,0.55,mica);
+      }
+      alb=mix(vec3(0.66,0.62,0.59),mn,glod)*vCol*(0.93+0.1*snoise3(o*3.0));
+      mk=mix(0.12,mk,glod);
+      ks=mk; gloss=mk>0.3?90.0:30.0;
+      float et=snoise3(o*2.5+5.0)*0.5+0.5, pit=snoise3(o*14.0);
+      float crust=smoothstep(0.0,0.2,e*1.25-(1.0-et)*0.8), pits=smoothstep(0.35,0.6,pit)*smoothstep(0.0,0.3,e);
+      alb=mix(alb,vec3(0.88,0.86,0.78)*(0.9+0.1*et),crust*0.65); alb*=1.0-0.45*pits; ks*=1.0-crust*0.9;
+      hb=-pits*0.0012;
+      ao=mix(0.6,1.0,smoothstep(0.0,0.03,vH));
+#elif KIND == 3
+      // bark: furrowed, weathered outer bark on top, fibrous reddish wood on the broken faces; eaten from the ends
+      if(abs(vO.x)*2.0>pow(m,0.6)*1.25+snoise3(o*3.0)*0.15*min(1.0,e*5.0)) discard;
+      float fib=snoise3(vec3(o.x*1.5,o.y*16.0,o.z*16.0)), fur=snoise3(vec3(o.x*0.8,o.y*3.0,o.z*7.0)), wz=snoise3(o*9.0);
+      float up=smoothstep(0.35,0.85,Ng.y);
+      vec3 outer=vCol*(0.85+0.3*wz)*mix(0.5,1.15,smoothstep(-0.5,0.4,fur));
+      outer=mix(outer,vec3(0.55,0.47,0.4),smoothstep(0.2,0.7,fur)*smoothstep(0.3,0.7,wz)*0.45); // weathered ridges
+      alb=mix(vec3(0.62,0.38,0.21)*(0.82+0.22*fib),outer,up)*mix(0.6,1.0,m);
+      gloss=18.0; ks=0.04+0.15*e; hb=fib*0.0006+fur*0.0015*up;
+      ao=mix(0.6,1.0,smoothstep(0.0,0.02,vH));
+#elif KIND == 4
+      // an oil droplet: an amber lens, deep at its rim and glowing through the middle, with a hard wet highlight
+      lit=false;
+      float ndv=max(dot(Ng,V),0.0), fres=pow(1.0-ndv,3.0);
+      col=mix(vec3(0.4,0.19,0.03),vCol*1.12,pow(ndv,1.3))*(0.62+0.38*max(dot(Ng,L),0.0));
+      col+=pow(max(dot(Ng,H),0.0),180.0)*1.6+pow(max(dot(Ng,H),0.0),20.0)*0.12+fres*vec3(0.7,0.78,0.82)*0.5;
+      alpha=mix(0.8,0.97,fres);
+#elif KIND == 5
+      // a glass bead: clear and faintly tinted, edged with reflections, a hard highlight and the light it focuses
+      // glowing on the far side
+      lit=false;
+      float ndv=max(dot(Ng,V),0.0), fres=pow(1.0-ndv,2.5);
+      float hl=pow(max(dot(Ng,H),0.0),260.0)*2.0+pow(max(dot(Ng,H),0.0),30.0)*0.15;
+      float caus=pow(max(dot(Ng,normalize(vec3(0.45,0.25,-0.55))),0.0),10.0)*0.4;
+      // solid glass: the agar seen through it lies bright and magnified in the middle, the rim goes dark where it
+      // reflects the room, with a thin bright fresnel edge
+      float rim=smoothstep(0.35,0.9,1.0-ndv);
+      col=mix(vCol*vec3(0.78,0.86,0.82)*(0.75+0.35*max(dot(Ng,L),0.0)),vec3(0.2,0.25,0.27),rim)+fres*vec3(0.72,0.84,0.88)*0.45+vec3(hl)+vec3(0.95,1.0,0.9)*caus;
+      alpha=clamp(0.42+0.45*rim+hl+caus,0.0,1.0);
+#elif KIND == 6
+      // an antibiotic disc: felted white paper, damp at the rim where it wicks the drug into the agar
+      float fb=snoise3(o*24.0), fb2=snoise3(vec3(o.x*60.0,o.y*8.0,o.z*60.0));
+      alb=vCol*(0.93+0.05*fb+0.03*fb2);
+      alb=mix(alb,alb*vec3(0.88,0.91,0.96),smoothstep(0.7,1.0,length(vO.xz)*2.0));
+      ks=0.02; gloss=8.0; hb=fb*0.0004;
+#endif
+      if(lit) col=shade(alb,bump(Ng,vW,hb),V,gloss,ks)*ao;
+#if SLIME
+      // the strains over the prop, from the same fields the surface draws them from (see its taper and tissue)
+      // (first a cheap look, four bilinear taps of the density, for any strain near enough to reach this point)
+      vec2 uv=vec2(vW.x/uSize+0.5,0.5-vW.z/uSize); vec4 nz=texture2D(uNoise,uv);
+      vec2 gw=uv*uGridN+warpAt(uv,nz), c0=floor(gw), f=vec2(0.0), ms=vec2(0.0), ws=vec2(0.0);
+      vec2 gu=gw/uGridN, hx=vec2(0.55/uGridN,0.0), hy=vec2(0.0,0.55/uGridN);
+      vec4 dn=texture2D(uDensA,gu+hx+hy)+texture2D(uDensA,gu-hx-hy)+texture2D(uDensA,gu+hx-hy)+texture2D(uDensA,gu-hx+hy)
+             +texture2D(uDensB,gu+hx+hy)+texture2D(uDensB,gu-hx-hy)+texture2D(uDensB,gu+hx-hy)+texture2D(uDensB,gu-hx+hy);
+      if(dn.r+dn.g>0.0) for(int dy=-1;dy<=1;dy++) for(int dx=-1;dx<=1;dx++){
+        vec2 cc=c0+vec2(float(dx),float(dy)), cuv=(cc+0.5)/uGridN, sw=sideAt(cuv), rel=gw-(cc+0.5);
+        float kk=max(0.0,1.0-dot(rel,rel)/2.25); kk*=kk;
+        float ma=mix(texture2D(uAuxA,cuv).r,texture2D(uAuxB,cuv).r,uMix);
+        f+=kk*sw; ms+=kk*sw*ma; ws+=kk*sw;
+      }
+      if(f.x+f.y>0.003){
+        vec2 m2=vec2(ws.x>0.0?ms.x/ws.x:0.0,ws.y>0.0?ms.y/ws.y:0.0);
+        vec2 tp=vec2(smoothstep(0.08,1.15,f.x+(nz.b-0.5)*0.45*min(1.0,f.x*4.0)),smoothstep(0.08,1.15,f.y+(0.5-nz.b)*0.45*min(1.0,f.y*4.0)));
+        // how high each strain has climbed, in world units: a thin tendril wets the foot of a pile, maturing tissue
+        // rides up and over it, and its front climbs in fingers
+#if KIND == 2
+        // granite being dissolved is swallowed as it goes: the tissue beside it thickens over it as it crumbles
+        vec2 eg=pow(e,0.7)*smoothstep(0.02,0.3,f);
+        tp=max(tp,eg); m2=max(m2,eg*0.75);
+#endif
+        vec2 reach=tp*(0.012+0.06*m2)*CLIMB;
+#if KIND == 2
+        reach+=eg*0.22;
+#endif
+        float cw=uSize/uGridN; vec3 q=vW/cw*1.9;
+        vec2 front=reach-vH+vec2(snoise3(q*0.8),snoise3(q*0.8+vec3(41.3,7.0,17.9)))*0.02*CLIMB;
+        vec2 cov=smoothstep(-0.006,0.002,front);
+        // its tissue, as on the agar: a mesh of strands round pockets of the bare prop, a finer web through it, and a
+        // wet film filling the pockets as it matures
+        vec2 sn=abs(vec2(snoise3(q+vec3(3.1,0.0,0.0)),snoise3(q+vec3(44.4,7.0,17.9))));
+        vec2 sn2=abs(vec2(snoise3(q*2.6+vec3(9.0,1.0,5.0)),snoise3(q*2.6+vec3(27.0,13.0,2.0))));
+        vec2 tw=mix(vec2(0.45),vec2(1.0),tp);
+        vec2 swd=(0.06+0.2*m2)*tw, swd2=(0.03+0.07*m2)*tw*smoothstep(0.05,0.3,m2);
+        vec2 sa=fwidth(sn)+1e-4, sa2=fwidth(sn2)+1e-4;
+        vec2 strand=max(vec2(1.0)-smoothstep(swd-sa,swd+sa,sn),(vec2(1.0)-smoothstep(swd2-sa2,swd2+sa2,sn2))*0.85);
+        vec2 prof=max(vec2(0.0),vec2(1.0)-sn/max(swd,vec2(1e-3))); prof*=prof;
+        vec2 film=smoothstep(0.4,0.75,m2*tp+vec2(nz.r,1.0-nz.r)*0.3-0.15);
+#if KIND == 2
+        film=max(film,smoothstep(0.15,0.55,eg+(vec2(nz.r,1.0-nz.r)-0.5)*0.3)); // a crumbling stone is wrapped in a film
+#endif
+        vec2 op=cov*max(strand*0.95,film*(0.4+0.35*m2));
+        vec2 hs=cov*(prof*0.0022+film*0.0008);
+        vec3 NP=bump(Ng,vW,hb*0.3+hs.x), NE=bump(Ng,vW,hb*0.3+hs.y);
+        vec3 bP=tone(uPCol), bE=tone(uECol);
+        vec3 moldP=mix(bP*(0.86+0.18*m2.x)*(0.92+0.16*nz.r),pow(bP,vec3(1.25))*0.92,prof.x*strand.x*(0.25+0.5*m2.x));
+        vec3 moldE=mix(bE*(0.86+0.18*m2.y)*(0.92+0.16*nz.r),pow(bE,vec3(1.25))*0.92,prof.y*strand.y*(0.25+0.5*m2.y));
+        float sao=mix(1.0,ao,0.5);
+        vec3 litP=shade(moldP,NP,V,40.0,0.35)*sao+pow(1.0-max(dot(NP,V),0.0),3.0)*bP*0.3;
+        vec3 litE=shade(moldE,NE,V,40.0,0.35)*sao+pow(1.0-max(dot(NE,V),0.0),3.0)*bE*0.3;
+        // where both are on it the stronger lies on top, as on the agar
+        float top=smoothstep(-0.2,0.2,f.x-f.y);
+        col=mix(mix(mix(col,litP,op.x),litE,op.y),mix(mix(col,litE,op.y),litP,op.x),top);
+        alpha=max(alpha,max(op.x,op.y));
+      }
+#endif
+      gl_FragColor=vec4(col,alpha);
+    }`;
+const PROP_KIND = { oat: [1, 1.0], rock: [2, 0.6], bark: [3, 1.0], oil: [4, 1.0], glass: [5, 0.3], disc: [6, 0] }; // shader kind, how far the strains climb it
+const PMAT = {};
+for (const k in PROP_KIND) {
+  const [kind, climb] = PROP_KIND[k], clear = k === 'oil' || k === 'glass';
+  PMAT[k] = new THREE.ShaderMaterial({
+    uniforms: surfUniforms, defines: { KIND: kind, SLIME: climb > 0 ? 1 : 0, CLIMB: climb.toFixed(2) },
+    extensions: { derivatives: true }, vertexShader: PROP_VS, fragmentShader: PROP_FS,
+    transparent: clear, depthWrite: !clear, side: k === 'oat' || k === 'bark' ? THREE.DoubleSide : THREE.FrontSide,
+  });
+}
+// how dark a prop's contact shade and shadow are on the agar
+const PROP_SHADE = { oat: 0.55, rock: 0.9, bark: 0.7, oil: 0.35, glass: 0.4, disc: 0.35 };
+let world = null; // { dish, groups:[{kind, mesh, cells, base[], last, aMat}] }
 const dummy = new THREE.Object3D();
 function cellXZ(i) { const x = i % N, y = Math.floor(i / N); return [((x + 0.5) / N) * SIZE - SIZE / 2, SIZE / 2 - ((y + 0.5) / N) * SIZE]; }
 
@@ -2370,65 +2706,81 @@ const beamMat = new THREE.ShaderMaterial({
 });
 
 function buildWorld(dish) {
-  while (dishProps.children.length) { const c = dishProps.children.pop(); if (c.isInstancedMesh) c.dispose(); else if (c.geometry) c.geometry.dispose(); }
+  while (dishProps.children.length) { const c = dishProps.children.pop(); if (c.isInstancedMesh) c.dispose(); if (c.geometry) c.geometry.dispose(); }
   const r = rng(dish.level * 97 + 5);
   const w = { dish, groups: [] };
-  // terrain textures: R salt, G light, B rock, A unused; and R chilled agar, G antibiotic halo (stronger near the disc)
+  // terrain textures: R salt, G light, B granite, A bacterial lawn; and R chilled agar, G antibiotic halo (stronger
+  // near the disc), B the contact shade of food and granite props, A that of beads and discs (both splatted below)
   const td = texTerr.image.data, t2 = texTerr2.image.data;
   for (let i = 0; i < NN; i++) {
     const t = dish.terrain[i];
-    td[i * 4] = t === T_SALT ? 255 : 0; td[i * 4 + 1] = t === T_LIGHT ? 255 : 0; td[i * 4 + 2] = t === T_ROCK ? 255 : 0; td[i * 4 + 3] = 255;
+    td[i * 4] = t === T_SALT ? 255 : 0; td[i * 4 + 1] = t === T_LIGHT ? 255 : 0; td[i * 4 + 2] = t === T_ROCK ? 255 : 0;
+    td[i * 4 + 3] = dish.foodType[i] === F_PROT && dish.food0[i] > 0 ? 255 : 0;
     let h = 0;
     if (t === T_HALO || t === T_DISC) { const x = i % N, y = (i - x) / N; let dm = 9; for (const D of dish.discs) dm = Math.min(dm, Math.hypot(x - D.x, y - D.y)); h = Math.round(255 * clamp(1.15 - dm / 4.6, 0.25, 1)); }
-    t2[i * 4] = t === T_COLD ? 255 : 0; t2[i * 4 + 1] = h; t2[i * 4 + 2] = 0; t2[i * 4 + 3] = 255;
+    t2[i * 4] = t === T_COLD ? 255 : 0; t2[i * 4 + 1] = h; t2[i * 4 + 2] = 0; t2[i * 4 + 3] = 0;
   }
-  texTerr.needsUpdate = true; texTerr2.needsUpdate = true;
-  function group(kind, cells, colorFn, place) {
-    if (!cells.length) return;
-    const mesh = new THREE.InstancedMesh(GEO[kind], MAT[kind], cells.length);
-    const base = [];
-    cells.forEach((c, k) => {
-      const [x, z] = cellXZ(c);
-      const b = place(x, z);
-      base.push(b);
-      mesh.setColorAt(k, colorFn());
-    });
-    mesh.instanceColor.needsUpdate = true;
-    dishProps.add(mesh);
-    const g = { kind, mesh, cells, base, last: new Float32Array(cells.length).fill(-1) };
-    if (kind === 'glass') { // beads never change: placed once, not by the matter channel
-      cells.forEach((c, k) => { const b = base[k]; dummy.position.set(b.x, b.y, b.z); dummy.rotation.set(0, b.ry, 0); dummy.scale.set(b.s, b.s * b.sy, b.s); dummy.updateMatrix(); mesh.setMatrixAt(k, dummy.matrix); });
-      mesh.instanceMatrix.needsUpdate = true; return g;
+  const shadeF = new Float32Array(NN), shadeS = new Float32Array(NN);
+  function splat(out, x, z, rad, k) { // a soft blot of strength k and radius rad (world units) round (x, z)
+    const gx = (x + SIZE / 2) / CELL - 0.5, gy = (SIZE / 2 - z) / CELL - 0.5, sg = rad / CELL * 0.5 + 0.25;
+    for (let y = Math.floor(gy - 3); y <= gy + 3; y++) for (let xx = Math.floor(gx - 3); xx <= gx + 3; xx++) {
+      if (xx < 0 || y < 0 || xx >= N || y >= N) continue;
+      const d2 = (xx - gx) ** 2 + (y - gy) ** 2, v = k * Math.exp(-d2 / (2 * sg * sg)), i = y * N + xx;
+      out[i] = Math.max(out[i], v);
     }
-    w.groups.push(g); return g;
   }
-  // mycelial mat is drawn on the surface from the frame layer, since it spreads; the rest are props
-  const rocks = [], oats = [], prots = [], barks = [], glass = [], oils = [];
+  // items: [cell, x, z]; dynamic props are scaled by what is left of them each frame (applyMatter), static ones (beads,
+  // discs) are placed once
+  function group(kind, items, colorFn, place) {
+    if (!items.length) return;
+    const geos = GEO[kind], byV = geos.map(() => []), dyn = kind !== 'glass' && kind !== 'disc';
+    for (const it of items) byV[Math.floor(r() * geos.length)].push(it);
+    byV.forEach((list, v) => {
+      if (!list.length) return;
+      const n = list.length, geo = geos[v].clone();
+      const aMat = new THREE.InstancedBufferAttribute(new Float32Array(n).fill(1), 1), aSeed = new THREE.InstancedBufferAttribute(new Float32Array(n), 1);
+      geo.setAttribute('aMat', aMat); geo.setAttribute('aSeed', aSeed);
+      const mesh = new THREE.InstancedMesh(geo, PMAT[kind], n);
+      mesh.frustumCulled = false; // the instances spread over the dish, far past the shared geometry's bounds
+      const base = [];
+      list.forEach(([, x, z], k) => {
+        const b = place(x, z); base.push(b);
+        aSeed.array[k] = r() * 60;
+        mesh.setColorAt(k, colorFn());
+        splat(dyn ? shadeF : shadeS, b.x, b.z, b.s * 0.55, PROP_SHADE[kind]);
+        if (!dyn) { dummy.position.set(b.x, b.y, b.z); dummy.rotation.set(b.rx, b.ry, b.rz); dummy.scale.set(b.s, b.s * b.sy, b.s); dummy.updateMatrix(); mesh.setMatrixAt(k, dummy.matrix); }
+      });
+      mesh.instanceColor.needsUpdate = true; mesh.instanceMatrix.needsUpdate = true;
+      dishProps.add(mesh);
+      if (dyn) w.groups.push({ kind, mesh, cells: list.map(it => it[0]), base, last: new Float32Array(n).fill(-1), aMat });
+    });
+  }
+  // mycelial mat and the bacterial lawn are drawn on the surface, from the frame layer and the matter channel; the
+  // rest are props
+  const rocks = [], oats = [], barks = [], glass = [], oils = [];
   for (let i = 0; i < NN; i++) {
     const t = dish.terrain[i];
     if (t === T_ROCK) rocks.push(i);
     else if (t === T_GLASS) glass.push(i);
-    else if (dish.food0[i] > 0) { const L = [null, oats, prots, barks, null, oils][dish.foodType[i]]; if (L) L.push(i); }
+    else if (dish.food0[i] > 0) { const L = [null, oats, null, barks, null, oils][dish.foodType[i]]; if (L) L.push(i); }
   }
-  const c3 = (hx) => new THREE.Color(hx);
-  group('rock', rocks, () => { const v = r(); return v < 0.33 ? c3(0x8c8580) : v < 0.66 ? c3(0x4d4848) : c3(0xa08c84); },
-    (x, z) => ({ x: x + (r() - 0.5) * CELL * 0.3, y: 0.05, z: z + (r() - 0.5) * CELL * 0.3, s: CELL * (1.05 + r() * 0.35), sy: 0.6 + r() * 0.5, rx: r() * 6, ry: r() * 6, rz: r() * 6 }));
-  group('oat', oats, () => c3(0xd8c08a).offsetHSL((r() - 0.5) * 0.03, 0, (r() - 0.5) * 0.12),
-    (x, z) => ({ x: x + (r() - 0.5) * CELL * 0.4, y: 0.07, z: z + (r() - 0.5) * CELL * 0.4, s: CELL * (1.1 + r() * 0.35), sy: 1, rx: (r() - 0.5) * 0.5, ry: r() * 6, rz: (r() - 0.5) * 0.5 }));
-  group('prot', prots, () => c3(0xf3dccb).offsetHSL((r() - 0.5) * 0.04, 0, (r() - 0.5) * 0.08),
-    (x, z) => ({ x: x + (r() - 0.5) * CELL * 0.4, y: 0.01, z: z + (r() - 0.5) * CELL * 0.4, s: CELL * (0.75 + r() * 0.45), sy: 0.55 + r() * 0.3, rx: 0, ry: r() * 6, rz: 0 }));
-  group('bark', barks, () => c3(0x6b4527).offsetHSL(0, 0, (r() - 0.5) * 0.12),
-    (x, z) => ({ x: x + (r() - 0.5) * CELL * 0.4, y: 0.07, z: z + (r() - 0.5) * CELL * 0.4, s: CELL * (1.0 + r() * 0.5), sy: 1, rx: (r() - 0.5) * 0.4, ry: r() * 6, rz: (r() - 0.5) * 0.4 }));
-  group('glass', glass, () => c3(0xbfe3ea).offsetHSL((r() - 0.5) * 0.04, 0, (r() - 0.5) * 0.1),
-    (x, z) => ({ x: x + (r() - 0.5) * CELL * 0.25, y: 0.04, z: z + (r() - 0.5) * CELL * 0.25, s: CELL * (0.95 + r() * 0.3), sy: 0.9, rx: 0, ry: r() * 6, rz: 0 }));
-  group('oil', oils, () => c3(0xe0a93a).offsetHSL((r() - 0.5) * 0.03, 0, (r() - 0.5) * 0.08),
-    (x, z) => ({ x: x + (r() - 0.5) * CELL * 0.2, y: 0.01, z: z + (r() - 0.5) * CELL * 0.2, s: CELL * (1.05 + r() * 0.25), sy: 0.45, rx: 0, ry: r() * 6, rz: 0 }));
-  // antibiotic discs: paper discs lying on the agar
-  for (const D of dish.discs) {
-    const disc = new THREE.Mesh(new THREE.CylinderGeometry(CELL * 1.5, CELL * 1.5, 0.025, 36), MAT.disc);
-    const [x, z] = cellXZ(Math.round(D.y) * N + Math.round(D.x));
-    disc.position.set(x, 0.03, z); dishProps.add(disc);
-  }
+  const at = cells => cells.map(c => [c, ...cellXZ(c)]);
+  const c3 = (hx) => new THREE.Color(hx), J = k => (r() - 0.5) * CELL * k;
+  group('rock', at(rocks), () => { const v = r(); return v < 0.4 ? c3(0xf2e4dc) : v < 0.75 ? c3(0xdcdad6) : c3(0xc9bdb4); },
+    (x, z) => ({ x: x + J(0.3), y: -0.008, z: z + J(0.3), s: CELL * (1.1 + r() * 0.4), sy: 0.75 + r() * 0.45, rx: (r() - 0.5) * 0.3, ry: r() * 6.283, rz: (r() - 0.5) * 0.3 }));
+  group('oat', at(oats), () => c3(0xd8c08a).offsetHSL((r() - 0.5) * 0.03, 0, (r() - 0.5) * 0.1),
+    (x, z) => { const s = CELL * (1.15 + r() * 0.35), rx = (r() - 0.5) * 0.35, rz = (r() - 0.5) * 0.35; return { x: x + J(0.4), y: r() * 0.012 + s * 0.4 * Math.max(Math.abs(rx), Math.abs(rz)), z: z + J(0.4), s, sy: 1, rx, ry: r() * 6.283, rz }; });
+  group('bark', at(barks), () => c3(0x7a4f2e).offsetHSL((r() - 0.5) * 0.02, 0, (r() - 0.5) * 0.12),
+    (x, z) => { const s = CELL * (1.1 + r() * 0.5), rx = (r() - 0.5) * 0.25, rz = (r() - 0.5) * 0.25; return { x: x + J(0.4), y: r() * 0.01 + s * 0.2 * Math.max(Math.abs(rx), Math.abs(rz)), z: z + J(0.4), s, sy: 1, rx, ry: r() * 6.283, rz }; });
+  group('glass', at(glass), () => c3(0xbfe3ea).offsetHSL((r() - 0.5) * 0.04, 0, (r() - 0.5) * 0.1),
+    (x, z) => ({ x: x + J(0.25), y: -0.006, z: z + J(0.25), s: CELL * (0.95 + r() * 0.25), sy: 1, rx: 0, ry: r() * 6.283, rz: 0 }));
+  group('oil', at(oils), () => c3(0xe0a93a).offsetHSL((r() - 0.5) * 0.03, 0, (r() - 0.5) * 0.08),
+    (x, z) => ({ x: x + J(0.2), y: -0.002, z: z + J(0.2), s: CELL * (1.0 + r() * 0.3), sy: 0.38 + r() * 0.1, rx: 0, ry: r() * 6.283, rz: 0 }));
+  // antibiotic discs: paper discs three cells across, lying on the agar
+  group('disc', dish.discs.map(D => [-1, ...cellXZ(Math.round(D.y) * N + Math.round(D.x))]), () => c3(0xf1ede2),
+    (x, z) => ({ x, y: 0, z, s: CELL * 3, sy: 0.72, rx: 0, ry: r() * 6.283, rz: 0 }));
+  for (let i = 0; i < NN; i++) { t2[i * 4 + 2] = Math.round(Math.min(1, shadeF[i]) * 255); t2[i * 4 + 3] = Math.round(Math.min(1, shadeS[i]) * 255); }
+  texTerr.needsUpdate = true; texTerr2.needsUpdate = true;
   // light beams
   for (const L of dish.lights) {
     const rad = (L.r + 0.6) * CELL;
@@ -2440,22 +2792,30 @@ function buildWorld(dish) {
 }
 
 // Food and granite remaining, blended between the two shown ticks like the surface textures, so a pile shrinks
-// continuously at slow playback rather than stepping once a minute.
+// continuously at slow playback rather than stepping once a minute. Flakes and chips are also nibbled away from the
+// rim in the shader (aMat); granite shrinks and settles into the agar as it dissolves, and is gone when it is.
 function applyMatter(mA, mB, mix) {
   if (!world) return;
   for (const g of world.groups) {
     let dirty = false;
     for (let k = 0; k < g.cells.length; k++) {
       const c = g.cells[k], a = mA[c], m = (a + (mB[c] - a) * mix) / 255;
-      if (Math.abs(m - g.last[k]) < 0.004) continue;
+      if (Math.abs(m - g.last[k]) < 0.002) continue;
       g.last[k] = m; dirty = true;
       const b = g.base[k];
-      const f = m <= 0 ? 0.0001 : (g.kind === 'rock' ? 0.35 + 0.65 * m : 0.3 + 0.7 * Math.sqrt(m));
-      dummy.position.set(b.x, b.y * f, b.z); dummy.rotation.set(b.rx, b.ry, b.rz);
+      let f = 0, y = b.y;
+      if (m > 0) {
+        if (g.kind === 'rock') { const q = Math.min(1, m / 0.1); f = (0.45 + 0.55 * m) * Math.sqrt(q * q * (3 - 2 * q)); y -= (1 - m) * b.s * b.sy * 0.15; }
+        else if (g.kind === 'oil') f = 0.25 + 0.75 * Math.sqrt(m);
+        else f = 0.75 + 0.25 * Math.sqrt(m);
+      }
+      f = Math.max(f, 0.0001);
+      g.aMat.array[k] = m;
+      dummy.position.set(b.x, y, b.z); dummy.rotation.set(b.rx, b.ry, b.rz);
       dummy.scale.set(b.s * f, b.s * f * b.sy, b.s * f); dummy.updateMatrix();
       g.mesh.setMatrixAt(k, dummy.matrix);
     }
-    if (dirty) g.mesh.instanceMatrix.needsUpdate = true;
+    if (dirty) { g.mesh.instanceMatrix.needsUpdate = true; g.aMat.needsUpdate = true; }
   }
 }
 function resetMatter() { if (world) for (const g of world.groups) g.last.fill(-1); } // a new round on the same dish: every pile is full again
@@ -2468,8 +2828,10 @@ let shown = { battle: null, t: -1, t2: -1 };
 function putStatus(d, F) { // R sclerotia crust; B attack source ×28 (the damage itself is the dens alpha)
   for (let i = 0; i < NN; i++) { const f = F.flags[i]; d[i * 4] = (f & 4) ? 255 : 0; d[i * 4 + 2] = (f >> 4) * 28; }
 }
-function putLayer(d, Lr) { // the layer of mat, detritus and laid brine (one byte a cell: kind in the top two bits, amount in the low six)
-  for (let i = 0; i < NN; i++) { const v = Lr ? Lr[i] : 0, k = v >> 6, a = Math.round((v & 63) / 63 * 255); d[i * 4] = k === 1 ? a : 0; d[i * 4 + 1] = k === 2 ? a : 0; d[i * 4 + 2] = k === 3 ? 255 : 0; d[i * 4 + 3] = 255; }
+// the layer of mat, detritus and laid brine (one byte a cell: kind in the top two bits, amount in the low six), and in
+// A the matter left (food or granite), which the surface draws the bacterial lawn and the props' shade from
+function putLayer(d, Lr, M) {
+  for (let i = 0; i < NN; i++) { const v = Lr ? Lr[i] : 0, k = v >> 6, a = Math.round((v & 63) / 63 * 255); d[i * 4] = k === 1 ? a : 0; d[i * 4 + 1] = k === 2 ? a : 0; d[i * 4 + 2] = k === 3 ? 255 : 0; d[i * 4 + 3] = M[i]; }
 }
 function showFrame(b, t, frac) {
   const last = b.frames.length - 1;
@@ -2486,8 +2848,8 @@ function showFrame(b, t, frac) {
     texRouteA.needsUpdate = true; texRouteB.needsUpdate = true;
     putStatus(texStatA.image.data, F); texStatA.needsUpdate = true;
     putStatus(texStatB.image.data, F2); texStatB.needsUpdate = true;
-    putLayer(texLayA.image.data, F.layer); texLayA.needsUpdate = true;
-    putLayer(texLayB.image.data, F2.layer); texLayB.needsUpdate = true;
+    putLayer(texLayA.image.data, F.layer, F.matter); texLayA.needsUpdate = true;
+    putLayer(texLayB.image.data, F2.layer, F2.matter); texLayB.needsUpdate = true;
     shown = { battle: b, t, t2 };
   }
   const mix = t2 > t ? clamp(frac, 0, 1) : 0;
@@ -2631,7 +2993,7 @@ stage.addEventListener('wheel', e => {
 $('bView').addEventListener('click', resetView);
 
 function onTap(cx, cy) {
-  if (S.mode !== 'battle' || !S.battle) return;
+  if (S.mode !== 'battle' || !S.battle || S.showcase) return;
   if (!groundHit(cx, cy)) return;
   const u = (hit.x + SIZE / 2) / SIZE, v = (SIZE / 2 - hit.z) / SIZE;
   const x = Math.floor(u * N), y = Math.floor(v * N);
@@ -2642,6 +3004,7 @@ function onTap(cx, cy) {
 // ===================== UI: Rack =====================
 const app = $('app');
 function setMode(m) {
+  if (S.showcase) toggleShowcase();
   S.mode = m;
   app.className = 'mode-' + m;
   $('rack').hidden = m !== 'rack'; $('lab').hidden = m !== 'lab';
@@ -2715,6 +3078,7 @@ function renderRack() {
 function previewLevel(i) {
   if (!renderer) return;
   const b = new Battle(i, S.genome, LEVELS[i].rival);
+  if (S.showcase) { S.preview = b; if (!showDish || showDish.level !== i) showDish = b.dish; return; }
   if (!world || world.dish.level !== i) { buildWorld(b.dish); }
   S.preview = b; shown.battle = null; setGenes(b);
   showFrame(b, 0, 0);
@@ -3641,7 +4005,7 @@ $('bResults').addEventListener('click', openSummary);
 $('bPrevR').addEventListener('click', () => gotoRound(-1));
 $('bNextR').addEventListener('click', () => gotoRound(1));
 document.addEventListener('keydown', e => {
-  if (S.mode !== 'battle' || e.target.tagName === 'INPUT') return;
+  if (S.mode !== 'battle' || S.showcase || e.target.tagName === 'INPUT') return;
   if (e.key === ' ') { e.preventDefault(); togglePlay(); }
   else if (e.key === 'ArrowLeft') { e.preventDefault(); stepBy(e.shiftKey ? -10 : -1); }
   else if (e.key === 'ArrowRight') { e.preventDefault(); stepBy(e.shiftKey ? 10 : 1); }
@@ -3803,13 +4167,117 @@ function showSummary() {
   if ($('rNext')) $('rNext').addEventListener('click', () => openLab(M.level + 1));
 }
 
+// ===================== Debug: prop showcase =====================
+// P swaps the dish for a showcase plate: every kind of prop in a row of its own and, across each row, the stages of a
+// strain encroaching on it, so the props and the slime over them can be judged side by side without waiting for a battle
+// to bring them about. The plate is laid out here and its one frame written by hand (the layout record() writes). A
+// battle on show pauses underneath, and the dish it was on comes back when the showcase closes.
+const SHOW_ROWS = [ // top of the screen to bottom: label, how it is laid, terrain or food type
+  ['Oat flakes', 'food', F_SUGAR], ['Granite', 'wall', T_ROCK], ['Bark chips', 'food', F_LIGN], ['Bacterial lawn', 'food', F_PROT],
+  ['Oil droplets', 'food', F_OIL], ['Mycelial mat', 'food', F_MAT], ['Glass beads', 'wall', T_GLASS], ['Antibiotic disc', 'wall', T_DISC],
+];
+const SHOW_COLS = ['Bare', 'Reaching', 'Half over', 'Engulfed', 'Half digested', 'Contested']; // half digested: the food half eaten, the granite half dissolved
+const SHOW_FOOD = [1, 1, 1, 0.85, 0.4, 0.8], SHOW_ROCK = [1, 1, 0.8, 0.55, 0.25, 0.6]; // what is left, by column
+S.showcase = false;
+let showcase = null, showEl = null, showDish = null, showCam = null;
+const showV = new THREE.Vector3();
+function makeShowcase() {
+  const terrain = new Uint8Array(NN), foodType = new Uint8Array(NN), food0 = new Float32Array(NN), discs = [], labels = [];
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { const dx = x - CXf, dy = y - CXf; terrain[y * N + x] = dx * dx + dy * dy <= DISH_R * DISH_R ? T_AGAR : T_VOID; }
+  const F = { dens: new Uint8Array(NN * 4), aux: new Uint8Array(NN * 4), route: new Uint8Array(NN).fill(4), flags: new Uint8Array(NN), matter: new Uint8Array(NN), layer: new Uint8Array(NN), frag: new Uint8Array(NN), frags: [null, [], []] };
+  for (let i = 0; i < NN; i++) F.aux[i * 4 + 2] = 4;
+  const nr = SHOW_ROWS.length, nc = SHOW_COLS.length, pitchX = 6, pitchY = 4.2; // a cell or more between the specimens' tissue
+  const colX = k => Math.round(CXf + (k - (nc - 1) / 2) * pitchX), rowY = r => Math.round(CXf + ((nr - 1) / 2 - r) * pitchY);
+  SHOW_ROWS.forEach(([name, kind, t], r) => {
+    const cy = rowY(r);
+    labels.push({ text: name, x: colX(0) - 3.1, y: cy, row: true });
+    for (let k = 0; k < nc; k++) {
+      const cx = colX(k);
+      if (!r) labels.push({ text: SHOW_COLS[k], x: cx, y: cy + 2.4 });
+      // the specimen
+      const disc = kind === 'wall' && t === T_DISC, rad = disc ? 1.2 : kind === 'wall' && t === T_GLASS ? 1.0 : 1.3; // (food and terrain codes overlap)
+      for (let y = cy - 2; y <= cy + 2; y++) for (let x = cx - 2; x <= cx + 2; x++) {
+        const i = y * N + x;
+        if (Math.hypot(x - cx, y - cy) > rad) continue;
+        if (kind === 'wall') { terrain[i] = t; if (t === T_ROCK) F.matter[i] = Math.max(1, Math.round(SHOW_ROCK[k] * 255)); }
+        else { foodType[i] = t; food0[i] = 100; F.matter[i] = Math.round(SHOW_FOOD[k] * 255); if (t === F_MAT) F.layer[i] = 64 | Math.round(63 * 0.4 * SHOW_FOOD[k]); }
+      }
+      if (disc) discs.push({ x: cx, y: cy });
+      // the strain on a rounded patch round it: none; a thin tendril reaching in from the left; the left half; all of it,
+      // mature (twice: as it arrives, and with the food half eaten or the granite half dissolved); gold from the left
+      // and pink from the right, meeting on it. Its veins run in to the middle, as to a feeding hub there.
+      for (let y = cy - 1; y <= cy + 1; y++) for (let x = cx - 2; x <= cx + 2; x++) {
+        const i = y * N + x, dx = x - cx, dy = y - cy;
+        if (BLOCKS(terrain[i]) || Math.hypot(dx, dy) > 2.05) continue;
+        let s = 0, m = 0.9;
+        if (k === 1) { if (dx <= -2 || (dx < 0 && !dy)) { s = 1; m = 0.15; } }
+        else if (k === 2) { if (dx <= 0) { s = 1; m = 0.4; } }
+        else if (k === 3 || k === 4) s = 1;
+        else if (k === 5) { s = dx < 0 ? 1 : dx > 0 ? 2 : 1 + (dy & 1); m = 0.75; }
+        if (!s) continue;
+        const d = Math.hypot(dx, dy);
+        F.dens[i * 4 + s - 1] = 230; F.dens[i * 4 + 2] = Math.min(255, Math.round(d * 20)); F.flags[i] = s;
+        F.aux[i * 4] = Math.round(m * 255);
+        F.aux[i * 4 + 1] = Math.round(255 * m * 0.6 * Math.max(0, 1 - d / 4) * (dy ? 0.5 : 1));
+        F.aux[i * 4 + 2] = d > 0 ? (Math.sign(-dx) + 1) + 3 * (Math.sign(-dy) + 1) : 4;
+      }
+    }
+  });
+  return { dish: { terrain, foodType, food0, discs, lights: [], level: -1 }, frames: [F], lampAt: () => true, sides: [null, {}, {}], labels };
+}
+function showLabels() {
+  if (!showEl) {
+    showEl = el('div', 'showcase'); stage.appendChild(showEl);
+    showEl.appendChild(el('div', 'cap', 'Prop showcase · P to close'));
+    for (const L of showcase.labels) { L.el = el('div', 'lbl' + (L.row ? ' row' : ''), esc(L.text)); showEl.appendChild(L.el); }
+  }
+  showEl.hidden = !S.showcase;
+}
+function placeShowLabels() { // pinned to the plate, wherever the camera is
+  const w = stage.clientWidth, h = stage.clientHeight;
+  for (const L of showcase.labels) {
+    showV.set(((L.x + 0.5) / N) * SIZE - SIZE / 2, 0.03, SIZE / 2 - ((L.y + 0.5) / N) * SIZE).project(camera);
+    L.el.style.transform = `translate(${(showV.x * 0.5 + 0.5) * w}px,${(-showV.y * 0.5 + 0.5) * h}px) translate(${L.row ? '-100%' : '-50%'},-50%)`;
+    L.el.style.visibility = Math.abs(showV.z) < 1 ? '' : 'hidden';
+  }
+}
+function toggleShowcase() {
+  if (!renderer) return;
+  if (!S.showcase) {
+    if (!showcase) showcase = makeShowcase();
+    showDish = world && world.dish;
+    showCam = { theta: cam.theta, phi: cam.phi, zoom: cam.zoom, target: cam.target.clone(), auto: cam.auto, playing: S.playing };
+    if (S.playing) { S.playing = false; setPlayIcon(); }
+    S.showcase = true; buildWorld(showcase.dish); setGenes(showcase); shown.battle = null;
+    cam.auto = false; cam.theta = 0; cam.phi = 0.62; cam.zoom = 0.85; cam.target.set(0, 0, 0.1); updateCamera();
+    hideHint();
+  } else {
+    S.showcase = false;
+    // put back the dish that was on show, unless something has already replaced the showcase's (a match starting)
+    if (world && world.dish === showcase.dish && showDish) buildWorld(showDish);
+    const b = S.mode === 'battle' && S.battle ? S.battle : S.preview;
+    if (b) setGenes(b);
+    shown.battle = null; resetMatter();
+    Object.assign(cam, { theta: showCam.theta, phi: showCam.phi, zoom: showCam.zoom, auto: showCam.auto }); cam.target.copy(showCam.target); updateCamera();
+    if (showCam.playing && S.mode === 'battle') { S.playing = true; setPlayIcon(); }
+  }
+  showLabels();
+}
+document.addEventListener('keydown', e => {
+  if (e.key !== 'p' && e.key !== 'P') return;
+  if (e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable) return;
+  e.preventDefault(); toggleShowcase();
+});
+
 // ===================== Loop =====================
 let lastT = performance.now(), uiState = { keys: null, view: null };
 function frame(now) {
   const dt = Math.min(0.1, (now - lastT) / 1000); lastT = now;
   const time = now / 1000;
   surfUniforms.uTime.value = time; beamMat.uniforms.uTime.value = time;
-  if (S.mode === 'battle' && S.match && S.battle) {
+  if (S.showcase) {
+    showFrame(showcase, 0, 0); placeShowLabels();
+  } else if (S.mode === 'battle' && S.match && S.battle) {
     const M = S.match, b = S.battle;
     stepMatch(M.summaryPending ? 40 : b.frames.length - S.playhead < 60 ? 14 : 6);
     if (M.decided && M.pvp && !M.pvp.settled) pvpSettle(M);
