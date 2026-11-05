@@ -2067,11 +2067,13 @@ const surfMat = new THREE.ShaderMaterial({
       float b=max(0.0,1.0-d*d/(r*r)); return vec2(cov,r*b*b*smoothstep(2.0,5.0,r/px));
     }
     // a thread of half-width w (in the units of the field n, which is 0 along the thread's spine): x coverage,
-    // antialiased the same way; y its bell profile, 1 on the spine. The profile only shows on a thread a few pixels
-    // wide: bump-mapping a thinner one turns its normals to per-pixel noise. A mesh whose pockets are only a few pixels
-    // across (lod near 0) shimmers, so it gives way to its average coverage, avg.
-    vec2 thread(float n, float w, float lod, float avg){
-      float aa=fwidth(n)*0.7+1e-5; float hw=max(w,aa);
+    // antialiased over aa (n's change across a pixel; passed in rather than taken from fwidth so a strain absent from
+    // the pixel can skip its mesh), and a thread thinner than a pixel fades by its width; y its bell profile, 1 on the
+    // spine. The profile only shows on a thread a few pixels wide: bump-mapping a thinner one turns its normals to
+    // per-pixel noise. A mesh whose pockets are only a few pixels across (lod near 0) shimmers, so it gives way to its
+    // average coverage, avg.
+    vec2 thread(float n, float w, float aa, float lod, float avg){
+      aa=max(aa,1e-5); float hw=max(w,aa);
       float cov=(1.0-smoothstep(hw-aa,hw+aa,n))*min(1.0,w/aa);
       float q=w>0.0?n/w:1.0; float b=max(0.0,1.0-q*q); return vec2(mix(avg,cov,lod),b*b*smoothstep(1.5,4.0,w/aa)*lod);
     }
@@ -2079,6 +2081,55 @@ const surfMat = new THREE.ShaderMaterial({
     // (a crease turns the screen-space bump normals to speckle)
     float smax(float a, float b, float k){ float h=clamp(0.5+0.5*(a-b)/k,0.0,1.0); return mix(b,a,h)+k*h*(1.0-h); }
     float veinR(float v){ return 0.035+0.30*pow(v,1.6); }
+    // adds a tube segment t (coverage, height) of vein strength v to the accumulators of strain side (1 player,
+    // 2 rival): x/y coverage, smoothly merged height, and the share of vein colour it brings
+    void addTube(inout vec2 cov, inout vec2 h, inout vec2 vm, vec2 t, float v, float side){
+      float m=t.x*(0.55+0.45*v);
+      if(side<1.5){ cov.x=max(cov.x,t.x); h.x=smax(h.x,t.y,0.04); vm.x=max(vm.x,m); }
+      else { cov.y=max(cov.y,t.x); h.y=smax(h.y,t.y,0.04); vm.y=max(vm.y,m); }
+    }
+    // one strain's tissue at this pixel, from its smoothed mass m, taper tp and vein tubes (tc: coverage of the routing
+    // tube and of the second-hub tube, th: their heights in cells, vm: the routing tubes' share of vein colour).
+    // Between its veins a plasmodium is a mesh of strands around pockets of bare agar: thin tissue shows a few coarse
+    // strands, maturing tissue a tightening honeycomb, and a fine web of filaments (seen up close) runs through both.
+    // Each strain weaves from its own offset o in the noise, so two strains sharing ground interlace two meshes.
+    // x: coverage, y: relief in world units, z: how much of the colour is vein.
+    // pa: the pixel's footprint along its longer axis, in cells (the antialiasing width; at a grazing view a pixel
+    // spans far more of the dish up the screen than across it)
+    vec3 tissue(vec2 gw, vec2 o, float m, float tp, vec2 tc, vec2 th, float vm, float px, float pa, float cw){
+      vec2 p=gw+o;
+      vec2 q=p+0.12*vec2(snoise(p*0.9+11.0),snoise(p*0.9+23.0));
+      vec3 wy=worley(q*2.4), wf=worley(q*6.0+17.0);
+      float w1=(0.025+0.20*m)*tp, w2=(0.02+0.20*m*m)*tp*smoothstep(0.1,0.45,m);
+      float w3=(0.03+0.36*m)*tp*smoothstep(0.12,0.45,m), w4=(0.05+0.07*m)*tp*smoothstep(0.0,0.25,m);
+      // pocket spacing in pixels: about 2, 0.8, 0.4 and 0.17 cells
+      float ppx=1.0/px;
+      vec2 L1=thread(abs(snoise(p*0.5+3.1)),w1,pa*0.9,smoothstep(5.0,12.0,ppx*2.0),w1*1.2);
+      vec2 L2=thread(abs(snoise(q*1.3+7.7)),w2,pa*2.3,smoothstep(5.0,12.0,ppx*0.8),w2*1.2);
+      vec2 L3=thread(wy.y-wy.x,w3,pa*3.6,smoothstep(5.0,12.0,ppx*0.4),min(1.0,w3*1.8));
+      vec2 L4=thread(wf.y-wf.x,w4,pa*9.0,smoothstep(6.0,14.0,ppx*0.17),w4*1.8);
+      float cov=max(max(max(L1.x,L2.x),max(L3.x,L4.x)),max(tc.x,tc.y));
+      // relief: tubes are round, threads are rounded ridges
+      float hL=smax(smax(L1.y*0.012,L2.y*0.010,0.004),smax(L3.y*0.007,L4.y*0.003,0.003),0.004);
+      float h=smax(smax(th.x,th.y*0.85,0.04)*cw*1.1,hL,0.008);
+      return vec3(cov,h,clamp(tc.y*0.5+vm,0.0,1.0));
+    }
+    // each strain's presence on a cell, contest included: a rival pushing into a cell (contest c, the share of it the
+    // rival has won) is present there with weight c while the occupant's hold weakens to 1-0.6c, so contested ground
+    // carries both strains in proportion and a capture finds the winner already in place (after it, the loser's
+    // residual push fades the same way). Crossfaded like presAt.
+    vec2 sideAt(vec2 uv){
+      vec2 pA=step(0.002,texture2D(uDensA,uv).rg), pB=step(0.002,texture2D(uDensB,uv).rg);
+      float cA=texture2D(uAuxA,uv).a, cB=texture2D(uAuxB,uv).a;
+      return mix(pA*(1.0-0.6*cA)+pA.yx*cA,pB*(1.0-0.6*cB)+pB.yx*cB,uMix);
+    }
+    // the strains' colours, toned down from the HUD's
+    vec3 tone(vec3 c){ float l=dot(c,vec3(0.299,0.587,0.114)); return mix(vec3(l),c,0.72)*0.97; }
+    // lays one strain over what lies under it: its wet, translucent film over the pockets, then its strands
+    vec3 lay(vec3 under, vec3 base, float film, float cov, vec3 lit, float diff, float spec){
+      vec3 fl=mix(under,base*0.8*(0.55+0.5*diff),0.55)+spec*0.35;
+      return mix(mix(under,fl,film*(1.0-cov)),lit,cov*0.97);
+    }
     vec3 bump(vec3 n, vec3 pos, float h){
       vec3 sx=dFdx(pos), sy=dFdy(pos); vec3 r1=cross(sy,n), r2=cross(n,sx); float det=dot(sx,r1);
       vec3 grad=sign(det)*(dFdx(h)*r1+dFdy(h)*r2); return normalize(abs(det)*n-grad);
@@ -2089,52 +2140,65 @@ const surfMat = new THREE.ShaderMaterial({
       vec4 nz=texture2D(uNoise,uv); vec4 tr=texture2D(uTerr,uv);
       float tx=1.0/uGridN, cw=uSize/uGridN;
       vec2 g=uv*uGridN; vec2 warp=warpAt(uv,nz); vec2 gw=g+warp;
-      float px=(fwidth(gw.x)+fwidth(gw.y))*0.5+1e-5;
-      // soft occupancy: every occupied cell is a round bump 1.5 cells across (warped, so borders wobble). The pixel
-      // belongs to the side with the stronger field and takes its per-cell attributes from that side's nearest cell.
-      // A cell's bump swells in and shrinks out across the tick crossfade.
+      float px=(fwidth(gw.x)+fwidth(gw.y))*0.5+1e-5, pa=max(length(dFdx(gw)),length(dFdy(gw)))+1e-5;
+      // soft occupancy, one field per strain: each cell is a round bump 1.5 cells across (warped, so borders wobble)
+      // in every strain present on it, weighted by that presence. A cell's bump swells in and shrinks out across the
+      // tick crossfade, and grows or wanes in a contested cell as the contest swings.
       vec2 c0=floor(gw);
-      float fP=0.0, fE=0.0, bP=0.0, bE=0.0; vec2 cP=c0, cE=c0;
+      vec2 f=vec2(0.0); float bP=0.0, bE=0.0; vec2 cP=c0, cE=c0;
       for(int dy=-1;dy<=1;dy++) for(int dx=-1;dx<=1;dx++){
-        vec2 cc=c0+vec2(float(dx),float(dy)); vec2 pr=presAt((cc+0.5)*tx);
+        vec2 cc=c0+vec2(float(dx),float(dy)); vec2 sw=sideAt((cc+0.5)*tx);
         vec2 rel=gw-(cc+0.5); float kk=max(0.0,1.0-dot(rel,rel)/2.25); kk*=kk;
-        float wp=kk*pr.x, we=kk*pr.y;
-        fP+=wp; fE+=we;
-        if(wp>bP){ bP=wp; cP=cc; } if(we>bE){ bE=we; cE=cc; }
+        vec2 wv=kk*sw; f+=wv;
+        if(wv.x>bP){ bP=wv.x; cP=cc; } if(wv.y>bE){ bE=wv.y; cE=cc; }
       }
-      float fT=fP+fE;
-      float o0=fT>0.0?(fP>=fE?1.0:2.0):0.0;
-      vec2 cA=fP>=fE?cP:cE; vec2 c0uv=(cA+0.5)*tx;
-      // taper: 1 through the body, falling to 0 about a cell beyond its outermost cells. Every thread, tube and film
-      // takes its width from it, so the tissue thins out into ever finer strands that end in points rather than being
-      // cut off (or merely faded) at a cell boundary.
-      // Where two strains meet, each narrows toward the other, so the contact line is a seam of fine threads.
-      float fo=max(fP,fE)-min(fP,fE);
-      float tp=smoothstep(0.08,1.15,fo+(nz.b-0.5)*0.45*min(1.0,fo*4.0)); // no tissue, no taper noise: bare agar stays bare
-      // neighbourhood pass: smoothed mass, vein tubes along the routing tree, direction of the nearest rival
-      float massS=0.0, wS=0.0, tube=0.0, tubeH=0.0, tubeV=0.0, tube2=0.0, tube2H=0.0, rival=0.0; vec2 atk=vec2(0.0);
-      float tw=mix(0.25,1.0,tp);
+      float fP=f.x, fE=f.y;
+      float o0=fP>=fE?1.0:2.0; vec2 c0uv=((fP>=fE?cP:cE)+0.5)*tx;
+      // where both strains are present the stronger lies on top; the order turns over smoothly as the balance shifts
+      float top=smoothstep(-0.2,0.2,fP-fE);
+      // taper, per strain and from its own field alone: 1 through its body, falling to 0 about a cell beyond its
+      // outermost cells. Every thread, tube and film takes its width from it, so tissue thins out into ever finer
+      // strands that end in points, and where two strains meet each reaches on into the other's ground.
+      // (No tissue, no taper noise: bare agar stays bare.)
+      float tpP=smoothstep(0.08,1.15,fP+(nz.b-0.5)*0.45*min(1.0,fP*4.0));
+      float tpE=smoothstep(0.08,1.15,fE+(0.5-nz.b)*0.45*min(1.0,fE*4.0));
+      vec2 tw=mix(vec2(0.25),vec2(1.0),vec2(tpP,tpE));
+      // neighbourhood pass, per strain (x player, y rival): smoothed mass and vein tubes along each occupant's
+      // routing tree; and the direction of the nearest rival. Each tick's cells are read on their own and the two
+      // ticks blended linearly, so nothing steps partway through a tick: a cell that changes hands (a capture) passes
+      // from loser to winner across the whole tick, and a tube that appears, dies, re-roots or is captured shrinks
+      // away while its successor grows, rather than either one fading or jumping.
+      vec2 massS=vec2(0.0), wS=vec2(0.0), tube=vec2(0.0), tubeH=vec2(0.0), tubeM=vec2(0.0), tube2=vec2(0.0), tube2H=vec2(0.0), tube2M=vec2(0.0);
+      float rival=0.0; vec2 atk=vec2(0.0);
+      float kA=1.0-uMix, kB=uMix;
       for(int dy=-1;dy<=1;dy++) for(int dx=-1;dx<=1;dx++){
         vec2 off=vec2(float(dx),float(dy)); vec2 cc=c0+off; vec2 cuv=(cc+0.5)*tx;
-        vec2 pr=presAt(cuv); float own=pr.x>0.004?1.0:(pr.y>0.004?2.0:0.0);
-        if(own<0.5) continue;
-        vec4 a=auxAt(cuv); float codeA=floor(texture2D(uAuxA,cuv).b*255.0+0.5), codeB=floor(texture2D(uAuxB,cuv).b*255.0+0.5);
-        vec2 rel=gw-(cc+0.5); float dr=length(rel);
-        float same=abs(own-o0)<0.5?1.0:0.0;
+        vec4 dA=texture2D(uDensA,cuv), dB=texture2D(uDensB,cuv);
+        float oA=dA.r>0.002?1.0:(dA.g>0.002?2.0:0.0), oB=dB.r>0.002?1.0:(dB.g>0.002?2.0:0.0);
+        if(oA+oB<0.5) continue;
+        vec4 xA=texture2D(uAuxA,cuv), xB=texture2D(uAuxB,cuv);
+        float dr=length(gw-(cc+0.5));
         float w=max(0.0,1.0-dr*0.7); w*=w;
-        float pw=own<1.5?pr.x:pr.y; // a cell joins (or leaves) the smoothed mass as it fades in (or out)
-        massS+=a.r*w*same*pw; wS+=w*same*pw;
-        if(same<0.5 && tp>0.5){ atk+=off; rival+=1.0; }
-        if(same<0.5) continue;
-        // the tube towards the routing parent, swelling in as the cell appears; when a cell re-roots between the two
-        // ticks the old tube fades into the new
-        float k=tw*sqrt(pw);
-        float pdA=mod(codeA,16.0), pdB=mod(codeB,16.0);
-        float rC=veinR(a.g)*k;
-        vec2 sA=tubeSeg(gw,cc,pdA,rC,veinR(auxAt((cc+pdir(pdA)+0.5)*tx).g)*k,px);
-        vec2 sB=tubeSeg(gw,cc,pdB,rC,veinR(auxAt((cc+pdir(pdB)+0.5)*tx).g)*k,px);
-        vec2 t=mix(sA,sB,uMix);
-        if(t.x>tube){ tube=t.x; tubeV=a.g; } tubeH=smax(tubeH,t.y,0.04);
+        // mass: the occupant at its hold (which a contest weakens), and a rival pushing in as infiltrating tendrils
+        // that thicken as it wins ground
+        float hA=1.0-0.6*xA.a, hB=1.0-0.6*xB.a;
+        if(oA>0.5){ vec2 s=oA<1.5?vec2(1.0,0.0):vec2(0.0,1.0);
+          massS+=kA*w*(s*hA*xA.r+s.yx*xA.a*(0.25+0.35*xA.a)); wS+=kA*w*(s*hA+s.yx*xA.a); }
+        if(oB>0.5){ vec2 s=oB<1.5?vec2(1.0,0.0):vec2(0.0,1.0);
+          massS+=kB*w*(s*hB*xB.r+s.yx*xB.a*(0.25+0.35*xB.a)); wS+=kB*w*(s*hB+s.yx*xB.a); }
+        float oN=kB>0.5&&oB>0.5?oB:(oA>0.5?oA:oB);
+        if(abs(oN-o0)>0.5){ atk+=off; rival+=1.0; }
+        // the tube towards the routing parent
+        float pdA=mod(floor(xA.b*255.0+0.5),16.0), pdB=mod(floor(xB.b*255.0+0.5),16.0);
+        float twA=oA<1.5?tw.x:tw.y, twB=oB<1.5?tw.x:tw.y;
+        float vpA=texture2D(uAuxA,(cc+pdir(pdA)+0.5)*tx).g, vpB=texture2D(uAuxB,(cc+pdir(pdB)+0.5)*tx).g;
+        if(oA>0.5 && oA==oB && pdA==pdB){ // the same tube in both ticks: its radius follows the vein
+          vec2 t=tubeSeg(gw,cc,pdA,mix(veinR(xA.g)*hA,veinR(xB.g)*hB,kB)*twA,mix(veinR(vpA),veinR(vpB),kB)*twA,px);
+          addTube(tube,tubeH,tubeM,t,mix(xA.g,xB.g,kB),oA);
+        } else {
+          if(oA>0.5) addTube(tube,tubeH,tubeM,tubeSeg(gw,cc,pdA,veinR(xA.g)*hA*twA*kA,veinR(vpA)*twA*kA,px),xA.g,oA);
+          if(oB>0.5) addTube(tube,tubeH,tubeM,tubeSeg(gw,cc,pdB,veinR(xB.g)*hB*twB*kB,veinR(vpB)*twB*kB,px),xB.g,oB);
+        }
         // and the tube towards the second-nearest hub, where the cell sits in the overlap band between two hubs'
         // networks (route byte: direction in the low nibble, depth into the band in the high one; 15 marks a hub cell).
         // It narrows, rather than fades, toward the band's edge.
@@ -2142,58 +2206,48 @@ const surfMat = new THREE.ShaderMaterial({
         float c2A=mod(rA,16.0), c2B=mod(rB,16.0);
         float bA=c2A>14.5?0.0:floor(rA/16.0)/15.0, bB=c2B>14.5?0.0:floor(rB/16.0)/15.0;
         if(bA+bB>0.0){
-          float r2=veinR(a.g)*0.8*k;
-          vec2 s2=mix(tubeSeg(gw,cc,c2A,r2*sqrt(bA),r2*sqrt(bA),px),tubeSeg(gw,cc,c2B,r2*sqrt(bB),r2*sqrt(bB),px),uMix);
-          tube2=max(tube2,s2.x); tube2H=smax(tube2H,s2.y,0.04);
+          float r2A=veinR(xA.g)*0.8*hA*twA*sqrt(bA), r2B=veinR(xB.g)*0.8*hB*twB*sqrt(bB);
+          if(oA>0.5 && oA==oB && c2A==c2B){ float r2=mix(r2A,r2B,kB); addTube(tube2,tube2H,tube2M,tubeSeg(gw,cc,c2A,r2,r2,px),0.0,oA); }
+          else {
+            if(oA>0.5) addTube(tube2,tube2H,tube2M,tubeSeg(gw,cc,c2A,r2A*kA,r2A*kA,px),0.0,oA);
+            if(oB>0.5) addTube(tube2,tube2H,tube2M,tubeSeg(gw,cc,c2B,r2B*kB,r2B*kB,px),0.0,oB);
+          }
         }
       }
-      float m2=wS>0.0?massS/wS:0.0;
-      // reticulum: between its veins a plasmodium is a mesh of strands around pockets of bare agar. Thin tissue
-      // shows a few coarse strands, maturing tissue a tightening honeycomb, and a fine web of filaments (seen up
-      // close) runs through both.
-      vec2 q=gw+0.12*vec2(snoise(gw*0.9+11.0),snoise(gw*0.9+23.0));
-      vec3 wy=worley(q*2.4); float e=wy.y-wy.x;
-      vec3 wf=worley(q*6.0+17.0); float ef=wf.y-wf.x;
-      float w1=(0.025+0.20*m2)*tp, w2=(0.02+0.20*m2*m2)*tp*smoothstep(0.1,0.45,m2);
-      float w3=(0.03+0.36*m2)*tp*smoothstep(0.12,0.45,m2), w4=(0.05+0.07*m2)*tp*smoothstep(0.0,0.25,m2);
-      // pocket spacing in pixels: about 2, 0.8, 0.4 and 0.17 cells
-      float ppx=1.0/px;
-      vec2 L1=thread(abs(snoise(gw*0.5+3.1)),w1,smoothstep(5.0,12.0,ppx*2.0),w1*1.2);
-      vec2 L2=thread(abs(snoise(q*1.3+7.7)),w2,smoothstep(5.0,12.0,ppx*0.8),w2*1.2);
-      vec2 L3=thread(e,w3,smoothstep(5.0,12.0,ppx*0.4),min(1.0,w3*1.8));
-      vec2 L4=thread(ef,w4,smoothstep(6.0,14.0,ppx*0.17),w4*1.8);
-      float tubeAny=max(tube,tube2);
-      float cov=max(max(max(L1.x,L2.x),max(L3.x,L4.x)),tubeAny);
+      vec2 m2=vec2(wS.x>0.0?massS.x/wS.x:0.0,wS.y>0.0?massS.y/wS.y:0.0);
+      vec3 TP=vec3(0.0), TE=vec3(0.0);
+      if(tpP>0.0||tube.x>0.0) TP=tissue(gw,vec2(0.0),m2.x,tpP,vec2(tube.x,tube2.x),vec2(tubeH.x,tube2H.x),tubeM.x,px,pa,cw);
+      if(tpE>0.0||tube.y>0.0) TE=tissue(gw,vec2(41.3,17.9),m2.y,tpE,vec2(tube.y,tube2.y),vec2(tubeH.y,tube2H.y),tubeM.y,px,pa,cw);
       // ectoplasm: a translucent film over the pockets of mature tissue, a patch that shrinks (not fades) as the
-      // tissue thins toward its edge
-      float fl=m2*tp+(nz.r-0.5)*0.3; float fla=fwidth(fl)+1e-3;
-      float film=smoothstep(0.45-fla,0.45+fla,fl);
-      // relief, in world units: tubes are round, threads are rounded ridges, the film is a thin skin
-      float hL=smax(smax(L1.y*0.012,L2.y*0.010,0.004),smax(L3.y*0.007,L4.y*0.003,0.003),0.004);
-      float hF=smax(smax(tubeH,tube2H*0.85,0.04)*cw*1.1,hL,0.008)+film*0.002;
+      // tissue thins toward its edge, and draws back where the other strain shares the ground so both meshes show.
+      // Its threshold is spread widely across the dish, so the filmed share of an area tracks the mass: patches
+      // nucleate and grow as tissue matures. A narrow threshold over evenly matured tissue flipped whole patches on or
+      // off at once when the mass crept past it.
+      float fth=mix(0.2,0.75,smoothstep(0.35,0.65,nz.r));
+      vec2 fl=m2*vec2(tpP,tpE)-0.6*vec2(tpE,tpP)-fth; vec2 fla=fwidth(fl)+1e-3;
+      vec2 film=smoothstep(-fla,fla,fl);
+      float hF=smax(TP.y,TE.y,0.006)+max(film.x,film.y)*0.002;
       vec3 N=bump(normalize(vN),vPos,hF);
       vec3 L=normalize(vec3(-0.45,1.0,0.55)); vec3 V=normalize(cameraPosition-vPos); vec3 H=normalize(L+V);
       // where the normal swings within a pixel (the rim of a thin strand, a ridge seen edge-on) a sharp highlight
       // lands on scattered pixels, so it widens and dims there
       float nv=clamp(length(fwidth(N))*4.0,0.0,1.0);
       float diff=max(dot(N,L),0.0); float spec=pow(max(dot(N,H),0.0),mix(40.0,10.0,nv))*(1.0-0.8*nv); float fres=pow(1.0-max(dot(N,V),0.0),3.0)*(1.0-nv);
-      // colours: lemon strands, veins a deeper and more saturated shade of the strain's colour
-      vec3 own=o0<1.5?uPCol:uECol; vec3 riv=o0<1.5?uECol:uPCol;
-      vec3 base=own;
-      vec3 mold=base*(0.86+0.18*m2)*(0.92+0.16*nz.r);
-      vec3 veinCol=pow(base,vec3(1.4))*0.95;
-      mold=mix(mold,veinCol*0.95,tube2*0.5);
-      mold=mix(mold,veinCol,tube*(0.55+0.45*tubeV));
-      float alpha=cov*0.97;
+      // colours: the strain's colour in its strands, veins a deeper shade of it
+      vec3 baseP=tone(uPCol), baseE=tone(uECol);
+      vec3 veinP=pow(baseP,vec3(1.25))*0.92, veinE=pow(baseE,vec3(1.25))*0.92;
+      vec3 moldP=mix(baseP*(0.86+0.18*m2.x)*(0.92+0.16*nz.r),veinP,TP.z);
+      vec3 moldE=mix(baseE*(0.86+0.18*m2.y)*(0.92+0.16*nz.r),veinE,TE.z);
 #if CELL_FX
-      // contest, attacks, sclerotia, defences and healing, drawn over the tissue (off while the look is reworked)
-      vec4 a0=auxAt(c0uv); vec4 stA=texture2D(uStatusA,c0uv), stB=texture2D(uStatusB,c0uv);
+      // attacks, sclerotia, defences and healing on the occupant of the nearest cell, drawn over its tissue (off
+      // while the look is reworked)
+      bool fxP=o0<1.5;
+      vec3 base=fxP?baseP:baseE, riv=fxP?baseE:baseP, mold=fxP?moldP:moldE;
+      float alpha=fxP?TP.x:TE.x, mo=fxP?m2.x:m2.y, tpo=fxP?tpP:tpE, fo=fxP?film.x:film.y;
+      vec4 stA=texture2D(uStatusA,c0uv), stB=texture2D(uStatusB,c0uv);
       float crustK=mix(stA.r,stB.r,uMix);
       float code0A=floor(texture2D(uAuxA,c0uv).b*255.0+0.5), code0B=floor(texture2D(uAuxB,c0uv).b*255.0+0.5);
       float heal=mix(mod(floor(code0A/16.0),2.0),mod(floor(code0B/16.0),2.0),uMix);
-      float ct=a0.a;
-      float im=step(1.0-ct,fract(wy.z+0.04*sin(uTime*2.0+wy.z*30.0)))*step(0.01,ct);
-      mold=mix(mold,riv*(0.86+0.18*m2),im);
       float srcA=floor(stA.b*255.0/28.0+0.5), srcB=floor(stB.b*255.0/28.0+0.5);
       float dmA=texture2D(uDensA,c0uv).a*(1.0-uMix), dmB=texture2D(uDensB,c0uv).a*uMix;
       float hE=hurt(srcA,srcB,dmA,dmB,1.0), hA=hurt(srcA,srcB,dmA,dmB,2.0), hT=hurt(srcA,srcB,dmA,dmB,3.0), hS=hurt(srcA,srcB,dmA,dmB,4.0), hU=hurt(srcA,srcB,dmA,dmB,5.0), hSt=hurt(srcA,srcB,dmA,dmB,6.0), hSv=hurt(srcA,srcB,dmA,dmB,7.0);
@@ -2209,15 +2263,17 @@ const surfMat = new THREE.ShaderMaterial({
       mold=mix(mold,vec3(0.45,0.42,0.35),hSt*0.7);
       mold=mix(mold,vec3(0.4,0.47,0.55),hSv*0.7);
       vec3 crust=vec3(0.36,0.24,0.12)+base*0.12;
-      mold=mix(mold,crust*(0.8+0.4*nz.b),crustK*0.8); alpha=max(alpha,crustK*tp*0.95);
-      float chi=o0<1.5?uGenes.x:uGenes.z; float muc=o0<1.5?uGenes.y:uGenes.w;
-      float rim=smoothstep(0.0,0.3,cov)*(1.0-smoothstep(0.3,0.7,cov));
-      mold=mix(mold,vec3(0.3,0.19,0.08),chi*rim*0.7*smoothstep(0.3,0.6,m2));
+      mold=mix(mold,crust*(0.8+0.4*nz.b),crustK*0.8); alpha=max(alpha,crustK*tpo*0.95);
+      float chi=fxP?uGenes.x:uGenes.z; float muc=fxP?uGenes.y:uGenes.w;
+      float rim=smoothstep(0.0,0.3,alpha)*(1.0-smoothstep(0.3,0.7,alpha));
+      mold=mix(mold,vec3(0.3,0.19,0.08),chi*rim*0.7*smoothstep(0.3,0.6,mo));
       mold*=1.0-0.12*chi;
       mold=mix(mold,mold*0.7+vec3(0.14,0.30,0.17),heal*0.45);
-      film=max(film,muc*smoothstep(0.15,0.5,m2)*tp);
+      fo=max(fo,muc*smoothstep(0.15,0.5,mo)*tpo);
+      if(fxP){ moldP=mold; TP.x=alpha; film.x=fo; } else { moldE=mold; TE.x=alpha; film.y=fo; }
 #endif
-      vec3 moldLit=mold*(0.42+0.68*diff)+spec*(0.25+0.45*tubeAny)+fres*base*0.3+veinCol*0.08*tube;
+      vec3 litP=moldP*(0.42+0.68*diff)+spec*(0.25+0.45*TP.z)+fres*baseP*0.3;
+      vec3 litE=moldE*(0.42+0.68*diff)+spec*(0.25+0.45*TE.z)+fres*baseE*0.3;
       // agar
       vec3 agar=uAgar*(0.9+0.16*nz.r)+vec3(0.1,0.12,0.1)*nz.a*0.35;
       // terrain 2: R chilled agar (frosted blue), G antibiotic halo (a violet stain, darkest by the disc)
@@ -2235,10 +2291,8 @@ const surfMat = new THREE.ShaderMaterial({
       float rim2=smoothstep(uDishR-0.035,uDishR,rr);
       agar=mix(agar,agar*1.35+0.05,rim2);
       vec3 agarLit=agar*(0.7+0.35*diff)+spec*0.08;
-      // the film is wet and translucent: the agar shows through, tinted, with a sheen
-      vec3 filmLit=mix(agarLit,base*0.8*(0.55+0.5*diff),0.55)+spec*0.35;
-      vec3 col=mix(agarLit,filmLit,film*(1.0-cov));
-      col=mix(col,moldLit,alpha);
+      vec3 col=mix(lay(lay(agarLit,baseP,film.x,TP.x,litP,diff,spec),baseE,film.y,TE.x,litE,diff,spec),
+                   lay(lay(agarLit,baseE,film.y,TE.x,litE,diff,spec),baseP,film.x,TP.x,litP,diff,spec),top);
 #if CELL_FX
       // antibiotic haze drifts above the surface
       float hz=0.5+0.5*snoise(gw*0.7+vec2(uTime*0.3,-uTime*0.2));
