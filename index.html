@@ -2136,6 +2136,10 @@ const surfMat = new THREE.ShaderMaterial({
       // relief: tubes are round, threads are rounded ridges
       float hL=smax(smax(L1.y*0.012,L2.y*0.010,0.004),smax(L3.y*0.007,L4.y*0.003,0.003),0.004);
       float h=smax(smax(th.x,th.y*0.85,0.04)*cw*1.1,hL,0.008);
+      // a smooth maximum of nothing is not nothing (smax(0,0,k) is k/4), so the relief has a floor wherever the tissue is
+      // drawn; it is eased to zero as the tissue gives out, or its edge, where the strain stops being drawn, steps up in
+      // a single pixel and the bump normals mark it with a dotted line on the agar
+      h*=smoothstep(0.0,0.25,tp+tc.x+tc.y);
       return vec3(cov,h,clamp(tc.y*0.5+vm,0.0,1.0));
     }
     // the strains' colours, toned down from the HUD's
