@@ -87,6 +87,13 @@ previous and next round outside them, a speed slider from real time to 10000×, 
 to go back to the lab, and Match results to open the summary. The timeline only reveals
 as far as you have watched, so a first viewing never gives away the ending.
 
+For debugging, S opens the simulation state: the moment on show as a text blob holding the
+plate, both genomes, every round's seed, the round and minute, the selected cell and the
+camera. Copy it to hand that moment to whoever is debugging it, or paste a blob in and load
+it to replay the match to that minute, paused (a match loaded this way never clears a plate).
+`node tools/balance/repro.js <file>` rebuilds the same round headless and checks it against
+the frame the browser recorded. P and F open the props and cell-effect showcases.
+
 ## Playing a friend
 
 The rack has a *Play a friend* card. It shows a connection code and a place to enter

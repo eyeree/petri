@@ -275,6 +275,11 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 
 /* Match: the countdown card before a round, the round rows and the picked round's detail on the summary, the new-gene reward, the rounds picker */
 .card .eyebrow { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .card .x { width: 32px; height: 32px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised); color: var(--ink); cursor: pointer; flex: none; }
+.state-card { width: min(600px, 100%); }
+.state-card textarea { width: 100%; box-sizing: border-box; min-height: 200px; resize: vertical; padding: 10px 12px; border-radius: var(--r-sm); border: 1px solid var(--line); background: var(--bench-2); color: var(--ink); font: 11.5px/1.5 var(--f-mono); word-break: break-all; }
+.state-card textarea:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.state-card .msg { font-size: 13px; color: var(--dim); min-height: 1.45em; }
+.state-card .msg.bad { color: var(--bad); } .state-card .msg.ok { color: var(--ok); }
 .countdown { text-align: center; cursor: pointer; overflow: hidden; } /* the digit's pop would otherwise scroll the card */
 .countdown .eyebrow { justify-content: center; }
 .countdown .mtitle { margin-top: 2px; }
@@ -1810,6 +1815,7 @@ if (typeof module !== 'undefined') module.exports = { Battle, LEVELS, GENES, GEN
 // ===================== MYXO APP =====================
 (function () {
 'use strict';
+const SCRIPT_SRC = (document.currentScript && document.currentScript.textContent) || ''; // read while the script runs, for the state blobs' fingerprint of the simulation
 const $ = id => document.getElementById(id);
 const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -4064,7 +4070,7 @@ $('bResults').addEventListener('click', openSummary);
 $('bPrevR').addEventListener('click', () => gotoRound(-1));
 $('bNextR').addEventListener('click', () => gotoRound(1));
 document.addEventListener('keydown', e => {
-  if (S.mode !== 'battle' || S.showcase || e.target.tagName === 'INPUT') return;
+  if (S.mode !== 'battle' || S.showcase || stateOpen() || /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
   if (e.key === ' ') { e.preventDefault(); togglePlay(); }
   else if (e.key === 'ArrowLeft') { e.preventDefault(); stepBy(e.shiftKey ? -10 : -1); }
   else if (e.key === 'ArrowRight') { e.preventDefault(); stepBy(e.shiftKey ? 10 : 1); }
@@ -4190,7 +4196,7 @@ function showSummary() {
   const me = M.me, rs = M.rounds.slice(0, M.played), win = M.winner === me, vs = M.pvp, rv = M.names[3 - me], w = M.wins[me], l = M.wins[3 - me];
   if (!M.newGenes) { // settled once: the summary is shown again after every rewatch
     M.newGenes = [];
-    if (win && !vs) {
+    if (win && !vs && !M.debug) { // a match loaded from a state blob is a replay for debugging, and never clears a plate
       if (!prog.cleared[M.level]) { prog.cleared[M.level] = true; M.newGenes = GENES.filter(G => G.unlock === M.level + 2); }
       save(); renderProgress();
     }
@@ -4398,12 +4404,129 @@ function toggleShowcase(kind) {
 document.addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable) return;
   const k = e.key.toLowerCase();
-  if (k === 'p') toggleShowcase('props');
+  if (k === 's') toggleState();
+  else if (stateOpen()) return;
+  else if (k === 'p') toggleShowcase('props');
   else if (k === 'f') toggleShowcase('fx');
   else if (k === 'd' && S.showcase === 'fx') setFxDamage(showcase, (showcase.dmg + 1) % FX_DAMAGE.length);
   else return;
   e.preventDefault();
 });
+
+// ===================== Debug: state blobs =====================
+// S opens a dialog holding the moment on show as a text blob, and loads one pasted back in. A round is a pure function of
+// its inputs (plate, both genomes, its seed), so the blob is those inputs for the whole match (every round's seed) plus
+// where the viewer is in it: the round, the minute, the selected cell and the camera. Loading one replays the match to
+// that minute, paused; a match loaded this way never counts toward the rack. The blob is for handing a moment to whoever
+// is debugging it: tools/balance/repro.js rebuilds the same Battle headless, stepped to the same minute. It also carries
+// a fingerprint of the simulation code (the block Node loads, without the opponents' genome lines, which the blob holds
+// anyway) and a check on the frame on show, so a blob replayed on changed rules says so instead of quietly differing.
+const STATE_TAG = 'MYXO-STATE', STATE_V = 1;
+const fnvBytes = (h, a) => { for (let i = 0; i < a.length; i++) { h ^= a[i]; h = Math.imul(h, 16777619); } return h >>> 0; };
+const hex8 = h => (h >>> 0).toString(16).padStart(8, '0');
+const SIM_FP = (() => {
+  const src = SCRIPT_SRC.replace(/\r\n?/g, '\n'), a = src.indexOf('// ===================== MYXO SIMULATION'), x = src.indexOf("if (typeof module !== 'undefined') module.exports", a);
+  return a < 0 || x < 0 ? '' : hex8(hashSeed(src.slice(a, src.indexOf('\n', x)).replace(/^\s*rival: .*$/gm, '')));
+})();
+// The frame's digest: its density, flags and food layers, the same bytes repro.js hashes.
+const frameDigest = f => hex8(fnvBytes(fnvBytes(fnvBytes(2166136261, f.dens), f.flags), f.matter));
+const frameCheck = (b, t) => ({ cells: [b.stats.cells[1][t], b.stats.cells[2][t]], energy: [+b.stats.energy[1][t].toFixed(2), +b.stats.energy[2][t].toFixed(2)], frame: frameDigest(b.frames[t]) });
+function stateBlob() {
+  const M = S.match, b = S.battle; if (!M || !b || S.mode !== 'battle') return '';
+  const t = Math.floor(S.playhead), L = LEVELS[M.level], r3 = v => +v.toFixed(3);
+  const o = {
+    v: STATE_V, sim: SIM_FP, level: M.level, plate: L.code, names: [M.names[1], M.names[2]], me: M.me, versus: !!M.pvp,
+    gold: normGenome(M.gold), pink: normGenome(M.pink), seeds: M.seeds, round: b.round, tick: t, sel: S.sel,
+    cam: { theta: r3(cam.theta), phi: r3(cam.phi), zoom: r3(cam.zoom), target: [r3(cam.target.x), r3(cam.target.y), r3(cam.target.z)] },
+    check: frameCheck(b, t), result: b.done ? b.result : null,
+  };
+  return `${STATE_TAG} v${STATE_V} · ${L.code} ${L.name} · round ${b.round + 1} of ${M.n} at ${fmt(t)} (tick ${t}). ` +
+    `Rebuild headless: save this text to a file and run node tools/balance/repro.js <file>.\n` + JSON.stringify(o);
+}
+// The JSON after the header line, checked for everything a replay needs. Throws with a message for the dialog.
+function parseState(text) {
+  const s = String(text || ''), a = s.indexOf('{'), z = s.lastIndexOf('}');
+  if (a < 0 || z < a) throw new Error('No state found in that text.');
+  let o; try { o = JSON.parse(s.slice(a, z + 1)); } catch (e) { throw new Error('The state is not valid JSON: ' + e.message); }
+  const int = v => Number.isInteger(v);
+  if (o.v !== STATE_V) throw new Error(`This is a v${o.v} state; this page reads v${STATE_V}.`);
+  if (!int(o.level) || o.level < 0 || o.level >= LEVELS.length) throw new Error('The state names a plate this page does not have.');
+  if (!Array.isArray(o.seeds) || !o.seeds.length || o.seeds.length > 7 || !o.seeds.every(int)) throw new Error('The state has no usable seeds.');
+  if (!int(o.round) || o.round < 0 || o.round >= o.seeds.length) throw new Error('The state names a round outside its match.');
+  if (!int(o.tick) || o.tick < 0 || o.tick > MAXT) throw new Error('The state names a minute outside the incubation.');
+  for (const k of ['gold', 'pink']) if (!o[k] || typeof o[k] !== 'object' || !Array.isArray(o[k].genes)) throw new Error(`The state's ${k} genome is missing.`);
+  const unknown = [...o.gold.genes, ...o.pink.genes].filter(id => !GENE_BY_ID[id]);
+  if (unknown.length) throw new Error(`The state uses genes this page does not have: ${[...new Set(unknown)].join(', ')}.`);
+  return o;
+}
+// Replay the state's match to its round and minute, paused. Returns the ways the replay differs from the blob's record.
+function loadState(o) {
+  if (S.pvp) throw new Error('Leave the versus lobby before loading a state.');
+  if (S.showcase) toggleShowcase();
+  const names = Array.isArray(o.names) ? o.names.map(netName) : ['Gold strain', 'Pink strain'];
+  startMatch({ level: o.level, gold: normGenome(o.gold), pink: normGenome(o.pink), names: [null, names[0], names[1]], me: o.me === 2 ? 2 : 1, match: null, seeds: o.seeds.map(v => v >>> 0) });
+  const M = S.match; M.debug = true; M.reviewed = true; // a replay throughout: nothing fogged, no round advances by itself
+  viewRound(o.round, true);
+  S.playing = false; setPlayIcon(); seek(o.tick);
+  const c = o.cam;
+  if (c && [c.theta, c.phi, c.zoom].every(Number.isFinite) && Array.isArray(c.target)) {
+    cam.auto = false; cam.theta = c.theta; cam.phi = c.phi; cam.zoom = clamp(c.zoom, ZMIN, ZMAX); cam.target.set(+c.target[0] || 0, +c.target[1] || 0, +c.target[2] || 0); clampTarget(); updateCamera();
+  }
+  selectCell(Number.isInteger(o.sel) && o.sel >= 0 && o.sel < NN ? o.sel : -1);
+  const b = S.battle, t = Math.floor(S.playhead), diffs = [];
+  if (o.sim && SIM_FP && o.sim !== SIM_FP) diffs.push(`the simulation code has changed since it was saved (${o.sim} then, ${SIM_FP} now)`);
+  if (t !== o.tick) diffs.push(`the round now ends at tick ${t}, before the saved tick ${o.tick}`);
+  else if (o.check) {
+    const now = frameCheck(b, t), ck = o.check;
+    if (String(ck.cells) !== String(now.cells)) diffs.push(`cells ${now.cells.join('/')} where the state recorded ${ck.cells.join('/')}`);
+    else if (String(ck.energy) !== String(now.energy)) diffs.push(`energy ${now.energy.join('/')} where the state recorded ${ck.energy.join('/')}`);
+    else if (ck.frame !== now.frame) diffs.push(`the frame differs (digest ${now.frame}, recorded ${ck.frame})`);
+  }
+  return diffs;
+}
+let stateWas = null; // whether the round was playing when the dialog opened
+function openState() {
+  const R = $('modal'), blob = stateBlob(), b = S.battle;
+  stateWas = S.playing; if (S.playing) { S.playing = false; setPlayIcon(); }
+  const where = blob ? `${LEVELS[S.match.level].code}, round ${b.round + 1} of ${S.match.n} at ${fmt(Math.floor(S.playhead))}` : '';
+  R.innerHTML = `<div class="card state-card" role="dialog" aria-modal="true" aria-labelledby="stTitle">
+    <div><div class="eyebrow"><span>Debug · S</span><button class="x" id="stClose" aria-label="Close" title="Close (Esc)">✕</button></div>
+    <div class="mtitle" id="stTitle">Simulation state</div>
+    <div class="why">${blob ? `The moment on show (${esc(where)}): plate, genomes, every round's seed, the minute, the selected cell and the camera. Copy it to hand to whoever is debugging it, or paste another state over it and load that.` : 'No match is on show, so there is no state to copy. Paste a state here and load it.'}</div></div>
+    <textarea id="stText" spellcheck="false" autocomplete="off" aria-label="State blob" placeholder="Paste a ${STATE_TAG} state here">${esc(blob)}</textarea>
+    <div class="msg" id="stMsg" role="status"></div>
+    <div class="acts"><button class="btn" id="stCopy"${blob ? '' : ' disabled'}>Copy</button><button class="btn primary" id="stLoad">Load state</button></div></div>`;
+  R.hidden = false;
+  const ta = $('stText'), msg = (text, kind) => { const m = $('stMsg'); m.textContent = text; m.className = 'msg' + (kind ? ' ' + kind : ''); };
+  ta.focus(); ta.select(); ta.scrollTop = 0;
+  ta.addEventListener('input', () => msg(''));
+  $('stClose').addEventListener('click', () => closeState());
+  R.onclick = e => { if (e.target === R) closeState(); };
+  R.onkeydown = e => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeState(); } };
+  $('stCopy').addEventListener('click', () => {
+    const done = () => msg('Copied.', 'ok');
+    ta.value = blob; ta.select();
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(blob).then(done, () => { try { document.execCommand('copy'); done(); } catch (e) { msg('Copy failed; select the text and copy it.', 'bad'); } });
+    else { try { document.execCommand('copy'); done(); } catch (e) { msg('Copy failed; select the text and copy it.', 'bad'); } }
+  });
+  $('stLoad').addEventListener('click', () => {
+    let diffs;
+    try { const o = parseState(ta.value); diffs = loadState(o); }
+    catch (e) { msg(e.message, 'bad'); return; }
+    stateWas = false;
+    if (!diffs.length) { closeState(); return; }
+    console.warn(`[${STATE_TAG}] replay differs: ${diffs.join('; ')}`);
+    msg(`Loaded, but ${diffs.join('; ')}.`, 'bad');
+  });
+}
+function closeState() {
+  const R = $('modal'); if (R.hidden) return;
+  R.hidden = true; R.innerHTML = ''; R.onclick = R.onkeydown = null;
+  if (stateWas && S.mode === 'battle' && S.battle && S.playhead < lastTick()) { S.playing = true; setPlayIcon(); }
+  stateWas = null;
+}
+const stateOpen = () => !$('modal').hidden;
+function toggleState() { if (stateOpen()) closeState(); else openState(); }
 
 // ===================== Loop =====================
 let lastT = performance.now(), uiState = { keys: null, view: null };
