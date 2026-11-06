@@ -42,6 +42,8 @@ button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px 
 .logo { font-family: var(--f-display); font-weight: 800; font-size: 26px; letter-spacing: -0.03em; color: var(--gold); line-height: 1; }
 .logo span { color: var(--rival); }
 .tagline { font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); }
+.version { font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.06em; color: var(--faint); opacity: .7; white-space: nowrap; }
+@media (max-width: 480px) { .brand { display: grid; grid-template-columns: auto auto; column-gap: 10px; align-items: center; justify-items: start; } .logo { grid-row: span 2; } .tagline, .version { line-height: 1.15; } }
 .progress { font-family: var(--f-mono); font-size: 12px; color: var(--dim); display: flex; align-items: center; gap: 8px; }
 .progress .dots { display: flex; gap: 4px; }
 .progress .dots i { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--line); }
@@ -404,7 +406,7 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 
 
 <div id="app" class="mode-rack">
   <header class="bar">
-    <div class="brand"><div class="logo">MYX<span>O</span></div><div class="tagline">petri wars</div></div>
+    <div class="brand"><div class="logo">MYX<span>O</span></div><div class="tagline">petri wars</div><div class="version" id="appVersion">v 0.0.1</div></div>
     <div class="progress" id="progress"></div>
   </header>
   <main class="main">
