@@ -1,0 +1,336 @@
+{
+ "dashboard": {
+  "name": "Myxo Petri Wars play",
+  "description": "Solo play telemetry from Myxo Petri Wars (events with game = myxo-petri-wars): genome edits between matches, and matches needed to clear each plate. Defaults to production and the last 90 days; date and event-property dashboard filters apply to every tile. Player IDs are anonymous per browser.",
+  "pinned": true,
+  "tags": [
+   "myxo-petri-play-v1"
+  ]
+ },
+ "insights": [
+  {
+   "name": "Daily players, sessions and matches",
+   "description": "Distinct anonymous players and page-load sessions with any play event, and solo matches started, per day.",
+   "query": {
+    "kind": "DataVisualizationNode",
+    "source": {
+     "kind": "HogQLQuery",
+     "query": "SELECT toDate(timestamp) AS day,\n count(DISTINCT distinct_id) AS players,\n count(DISTINCT properties.$session_id) AS sessions,\n countIf(event = 'match_started') AS matches\nFROM events\nWHERE properties.game = 'myxo-petri-wars' AND {filters}\nGROUP BY day ORDER BY day",
+     "filters": {
+      "dateRange": {
+       "date_from": "-90d",
+       "date_to": null
+      },
+      "properties": [
+       {
+        "key": "environment",
+        "value": [
+         "production"
+        ],
+        "operator": "exact",
+        "type": "event"
+       }
+      ]
+     }
+    },
+    "display": "ActionsLineGraph",
+    "chartSettings": {
+     "xAxis": {
+      "column": "day"
+     },
+     "yAxis": [
+      {
+       "column": "players"
+      },
+      {
+       "column": "sessions"
+      },
+      {
+       "column": "matches"
+      }
+     ],
+     "showLegend": true
+    }
+   },
+   "tags": [
+    "myxo-petri-play-v1"
+   ]
+  },
+  {
+   "name": "Matches to clear each plate",
+   "description": "Median and 75th-percentile matches a player started on a plate up to and including the first win there. Runs whose telemetry began mid-game (run_partial) are left out, as their counts started late.",
+   "query": {
+    "kind": "DataVisualizationNode",
+    "source": {
+     "kind": "HogQLQuery",
+     "query": "SELECT properties.plate_code AS plate,\n count() AS players_cleared,\n median(toFloat(properties.matches_to_clear)) AS median_matches,\n quantile(0.75)(toFloat(properties.matches_to_clear)) AS p75_matches\nFROM events\nWHERE event = 'plate_cleared' AND properties.game = 'myxo-petri-wars' AND toString(properties.run_partial) NOT IN ('true', '1') AND {filters}\nGROUP BY plate ORDER BY plate",
+     "filters": {
+      "dateRange": {
+       "date_from": "-90d",
+       "date_to": null
+      },
+      "properties": [
+       {
+        "key": "environment",
+        "value": [
+         "production"
+        ],
+        "operator": "exact",
+        "type": "event"
+       }
+      ]
+     }
+    },
+    "display": "ActionsBar",
+    "chartSettings": {
+     "xAxis": {
+      "column": "plate"
+     },
+     "yAxis": [
+      {
+       "column": "median_matches"
+      },
+      {
+       "column": "p75_matches"
+      }
+     ],
+     "showLegend": true
+    }
+   },
+   "tags": [
+    "myxo-petri-play-v1"
+   ]
+  },
+  {
+   "name": "Plate clearing detail",
+   "description": "Per plate, for first clears in complete runs: matches started (mean, median, max), matches walked out of, genome edits and strain loads on the plate before the win.",
+   "query": {
+    "kind": "DataTableNode",
+    "source": {
+     "kind": "HogQLQuery",
+     "query": "SELECT properties.plate_code AS plate,\n count() AS players_cleared,\n round(avg(toFloat(properties.matches_to_clear)), 2) AS avg_matches,\n median(toFloat(properties.matches_to_clear)) AS median_matches,\n max(toFloat(properties.matches_to_clear)) AS max_matches,\n round(avg(toFloat(properties.matches_abandoned)), 2) AS avg_abandoned,\n round(avg(toFloat(properties.edits_on_plate)), 1) AS avg_edits,\n median(toFloat(properties.edits_on_plate)) AS median_edits,\n round(avg(toFloat(properties.strain_loads_on_plate)), 2) AS avg_strain_loads\nFROM events\nWHERE event = 'plate_cleared' AND properties.game = 'myxo-petri-wars' AND toString(properties.run_partial) NOT IN ('true', '1') AND {filters}\nGROUP BY plate ORDER BY plate",
+     "filters": {
+      "dateRange": {
+       "date_from": "-90d",
+       "date_to": null
+      },
+      "properties": [
+       {
+        "key": "environment",
+        "value": [
+         "production"
+        ],
+        "operator": "exact",
+        "type": "event"
+       }
+      ]
+     }
+    },
+    "showExport": true
+   },
+   "tags": [
+    "myxo-petri-play-v1"
+   ]
+  },
+  {
+   "name": "Edits between matches",
+   "description": "Mean genome edits (clicks) made before each match, and the mean net change from the previous match's genome (levels changed plus genes added or removed). The first match a player ever plays has no previous genome and is left out of the net change.",
+   "query": {
+    "kind": "DataVisualizationNode",
+    "source": {
+     "kind": "HogQLQuery",
+     "query": "SELECT properties.plate_code AS plate,\n count() AS matches,\n round(avg(toFloat(properties.edits_since_last_match)), 2) AS avg_edits,\n round(avg(toFloat(properties.genome_changes_since_last_match)), 2) AS avg_net_changes,\n round(countIf(toFloat(properties.genome_changes_since_last_match) = 0) / count(), 3) AS share_unchanged\nFROM events\nWHERE event = 'match_started' AND properties.game = 'myxo-petri-wars' AND {filters}\nGROUP BY plate ORDER BY plate",
+     "filters": {
+      "dateRange": {
+       "date_from": "-90d",
+       "date_to": null
+      },
+      "properties": [
+       {
+        "key": "environment",
+        "value": [
+         "production"
+        ],
+        "operator": "exact",
+        "type": "event"
+       }
+      ]
+     }
+    },
+    "display": "ActionsBar",
+    "chartSettings": {
+     "xAxis": {
+      "column": "plate"
+     },
+     "yAxis": [
+      {
+       "column": "avg_edits"
+      },
+      {
+       "column": "avg_net_changes"
+      }
+     ],
+     "showLegend": true
+    }
+   },
+   "tags": [
+    "myxo-petri-play-v1"
+   ]
+  },
+  {
+   "name": "Edits and wins by attempt",
+   "description": "For each plate and attempt number (the nth match a player started there): how many such matches began, the edits before them, the net genome change, and how many of those that reached a summary were won.",
+   "query": {
+    "kind": "DataTableNode",
+    "source": {
+     "kind": "HogQLQuery",
+     "query": "SELECT properties.plate_code AS plate,\n toInt(properties.plate_match_number) AS attempt,\n countIf(event = 'match_started') AS started,\n round(avgIf(toFloat(properties.edits_since_last_match), event = 'match_started'), 2) AS avg_edits,\n round(avgIf(toFloat(properties.genome_changes_since_last_match), event = 'match_started'), 2) AS avg_net_changes,\n countIf(event = 'match_finished') AS finished,\n countIf(event = 'match_finished' AND properties.outcome = 'win') AS won\nFROM events\nWHERE event IN ('match_started', 'match_finished') AND properties.game = 'myxo-petri-wars' AND {filters}\nGROUP BY plate, attempt ORDER BY plate, attempt LIMIT 300",
+     "filters": {
+      "dateRange": {
+       "date_from": "-90d",
+       "date_to": null
+      },
+      "properties": [
+       {
+        "key": "environment",
+        "value": [
+         "production"
+        ],
+        "operator": "exact",
+        "type": "event"
+       }
+      ]
+     }
+    },
+    "showExport": true
+   },
+   "tags": [
+    "myxo-petri-play-v1"
+   ]
+  },
+  {
+   "name": "Plate progression",
+   "description": "Players who started a match on each plate, how many of them cleared it, and how matches there ended: summary reached, won, or walked out of.",
+   "query": {
+    "kind": "DataTableNode",
+    "source": {
+     "kind": "HogQLQuery",
+     "query": "SELECT properties.plate_code AS plate,\n uniqIf(distinct_id, event = 'match_started') AS players_tried,\n uniqIf(distinct_id, event = 'plate_cleared') AS players_cleared,\n round(uniqIf(distinct_id, event = 'plate_cleared') / greatest(uniqIf(distinct_id, event = 'match_started'), 1), 3) AS clear_rate,\n countIf(event = 'match_started') AS matches,\n countIf(event = 'match_finished' AND properties.outcome = 'win') AS wins,\n countIf(event = 'match_finished' AND properties.outcome = 'loss') AS losses,\n countIf(event = 'match_abandoned') AS abandoned,\n round(avgIf(toFloat(properties.seconds), event = 'match_finished')) AS avg_seconds_to_summary\nFROM events\nWHERE event IN ('match_started', 'match_finished', 'match_abandoned', 'plate_cleared') AND properties.game = 'myxo-petri-wars' AND {filters}\nGROUP BY plate ORDER BY plate",
+     "filters": {
+      "dateRange": {
+       "date_from": "-90d",
+       "date_to": null
+      },
+      "properties": [
+       {
+        "key": "environment",
+        "value": [
+         "production"
+        ],
+        "operator": "exact",
+        "type": "event"
+       }
+      ]
+     }
+    },
+    "showExport": true
+   },
+   "tags": [
+    "myxo-petri-play-v1"
+   ]
+  },
+  {
+   "name": "Most edited traits and genes",
+   "description": "What players change in the lab on each plate: traits and drives by name, genes as gene:<id>. Players counts each player once per change.",
+   "query": {
+    "kind": "DataTableNode",
+    "source": {
+     "kind": "HogQLQuery",
+     "query": "SELECT properties.plate_code AS plate,\n if(properties.field = 'gene', concat('gene:', properties.gene), properties.field) AS changed,\n count(DISTINCT distinct_id) AS players,\n count() AS edits,\n countIf(properties.gene_change = 'added') AS gene_added,\n countIf(properties.gene_change = 'removed') AS gene_removed\nFROM events\nWHERE event = 'genome_edited' AND properties.game = 'myxo-petri-wars' AND {filters}\nGROUP BY plate, changed ORDER BY plate, players DESC, edits DESC LIMIT 300",
+     "filters": {
+      "dateRange": {
+       "date_from": "-90d",
+       "date_to": null
+      },
+      "properties": [
+       {
+        "key": "environment",
+        "value": [
+         "production"
+        ],
+        "operator": "exact",
+        "type": "event"
+       }
+      ]
+     }
+    },
+    "showExport": true
+   },
+   "tags": [
+    "myxo-petri-play-v1"
+   ]
+  },
+  {
+   "name": "Genomes that cleared each plate",
+   "description": "The strains that first beat each plate, grouped by identical genome: levels, sorted gene ids and cost against the plate's budget.",
+   "query": {
+    "kind": "DataTableNode",
+    "source": {
+     "kind": "HogQLQuery",
+     "query": "SELECT properties.plate_code AS plate,\n properties.genome AS genome,\n any(properties.cost_kb) AS cost_kb,\n any(properties.budget_kb) AS budget_kb,\n count() AS players\nFROM events\nWHERE event = 'plate_cleared' AND properties.game = 'myxo-petri-wars' AND {filters}\nGROUP BY plate, genome ORDER BY plate, players DESC LIMIT 200",
+     "filters": {
+      "dateRange": {
+       "date_from": "-90d",
+       "date_to": null
+      },
+      "properties": [
+       {
+        "key": "environment",
+        "value": [
+         "production"
+        ],
+        "operator": "exact",
+        "type": "event"
+       }
+      ]
+     }
+    },
+    "showExport": true
+   },
+   "tags": [
+    "myxo-petri-play-v1"
+   ]
+  },
+  {
+   "name": "Recent play",
+   "description": "The latest play events, newest first, for following individual players. Player IDs are anonymous per browser.",
+   "query": {
+    "kind": "DataTableNode",
+    "source": {
+     "kind": "HogQLQuery",
+     "query": "SELECT timestamp, distinct_id AS player, event,\n properties.plate_code AS plate,\n properties.plate_match_number AS attempt,\n properties.field AS field, properties.from AS from_level, properties.to AS to_level,\n properties.gene AS gene, properties.gene_change AS gene_change,\n properties.edits_since_last_match AS edits_since_match,\n properties.outcome AS outcome, properties.why AS why,\n properties.matches_to_clear AS matches_to_clear\nFROM events\nWHERE properties.game = 'myxo-petri-wars' AND {filters}\nORDER BY timestamp DESC LIMIT 200",
+     "filters": {
+      "dateRange": {
+       "date_from": "-90d",
+       "date_to": null
+      },
+      "properties": [
+       {
+        "key": "environment",
+        "value": [
+         "production"
+        ],
+        "operator": "exact",
+        "type": "event"
+       }
+      ]
+     }
+    },
+    "showExport": true
+   },
+   "tags": [
+    "myxo-petri-play-v1"
+   ]
+  }
+ ]
+}

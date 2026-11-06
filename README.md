@@ -147,6 +147,71 @@ inputs are the plate, the cap, the number of rounds, which player takes the gold
 the two genomes and the seeds; after the match each side sends a digest of its outcome
 and the summary notes if the two browsers disagreed.
 
+## Telemetry
+
+Solo play sends anonymous events to [PostHog](https://posthog.com) Cloud (US), in the
+same project as FlyFly; every event carries `game = 'myxo-petri-wars'`. The player is a
+random UUID kept in `localStorage` (`myxo.petri.telemetry`), and each page load is a new
+session. No account, strain name, IP address (geoip is off, `$ip` is blanked) or
+fingerprint is sent, and versus matches are never recorded.
+
+Collection runs only on eyeree.art (`environment = production`). Anywhere else, add
+`?telemetry=on` to send `development` events. `?telemetry=off` opts a browser out for
+good and drops its unsent queue, and `?telemetry=on` opts it back in.
+
+| Event | When | Key properties |
+| --- | --- | --- |
+| `session_started` | page load | `plates_cleared`, `saved_strains` |
+| `genome_edited` | a trait, drive or gene changed in the lab | `plate`, `field`; `from`/`to` levels for a trait or drive, `gene`/`gene_change` (`added`, `removed`) for a gene; `cost_kb`, `over_budget`, `edits_since_last_match` |
+| `strain_loaded` | another saved strain put in the lab | `plate`, `how`, `strain_loads_since_last_match` |
+| `match_started` | Inoculate | `match_id`, `plate`, `plate_match_number`, `edits_since_last_match`, `strain_loads_since_last_match`, `genome_changes_since_last_match`, `genome`, `cost_kb`, `budget_kb`, `best_of` |
+| `match_finished` | the match summary opens | `match_id`, `outcome`, `rounds_won`/`lost`/`played`, `plate_cleared`, `plate_match_number`, `seconds` |
+| `match_abandoned` | a match left before its summary | `match_id`, `why` (`left`, `page_closed`, `replaced`), `round_on_show`, `minute_on_show` |
+| `plate_cleared` | the first win on a plate | `matches_to_clear`, `matches_abandoned`, `edits_on_plate`, `strain_loads_on_plate`, `genome` |
+| `progress_reset` | Reset all progress | `plates_cleared_before` |
+
+The client keeps its own counters, so a dropped event never skews them: per plate (in
+this run) matches, edits, strain loads and abandoned matches, and since the last match
+the edits and strain loads. `edits_since_last_match` counts clicks.
+`genome_changes_since_last_match` is the net difference from the last match's genome:
+every changed trait or drive level plus every gene added or removed. A progress reset
+starts a new `run_id`. A run first seen with progress already made is marked
+`run_partial`, because its counts started late. `sim_version` is the simulation
+fingerprint that state blobs carry, so results can be split by rules version.
+
+The [Myxo Petri Wars play](https://us.posthog.com/project/661616/dashboard/2315503) dashboard in PostHog has nine insights. They cover daily
+players and matches, matches needed to clear each plate, clearing detail, edits between
+matches, edits and wins by attempt number, plate progression, the most edited traits
+and genes, the genomes that cleared each plate, and recent play. Its definition lives
+in `tools/posthog/play-dashboard.json`. Run `./tools/setup-posthog-dashboard` to check
+every query against the project, or add `--apply` to create or update the dashboard.
+The script only touches objects tagged `myxo-petri-play-v1`. It needs a
+`POSTHOG_PERSONAL_API_KEY` with `dashboard:read`, `dashboard:write`, `insight:read` and
+`insight:write`, in a repository `.env` (git-ignored) or the environment. The project
+and region default to the ones `index.html` sends to; set `POSTHOG_PROJECT_ID` and
+`POSTHOG_PROJECT_REGION` to override them. Every tile defaults to production and the
+last 90 days, and leaves out events from other games in the project.
+
+The two headline questions, as plain HogQL:
+
+```sql
+SELECT properties.plate_code AS plate, count() AS players,
+  median(toFloat(properties.matches_to_clear)) AS median_matches,
+  median(toFloat(properties.edits_on_plate)) AS median_edits
+FROM events
+WHERE event = 'plate_cleared' AND properties.game = 'myxo-petri-wars'
+  AND properties.environment = 'production' AND NOT properties.run_partial
+GROUP BY plate ORDER BY plate
+
+SELECT properties.plate_code AS plate, properties.plate_match_number AS nth_match,
+  avg(toFloat(properties.edits_since_last_match)) AS avg_edits,
+  avg(toFloat(properties.genome_changes_since_last_match)) AS avg_net_changes
+FROM events
+WHERE event = 'match_started' AND properties.game = 'myxo-petri-wars'
+  AND properties.environment = 'production'
+GROUP BY plate, nth_match ORDER BY plate, nth_match
+```
+
 ## Reference material
 
 The look of the strains follows photographs of *Physarum polycephalum*: a thick central

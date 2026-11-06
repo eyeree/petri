@@ -1905,6 +1905,146 @@ const playable = i => i === 0 || !!prog.cleared[i - 1];
 const cloneG = g => normGenome(g);
 const strainAt = name => prog.strains.findIndex(s => sameName(s.name, name));
 
+// ===================== Telemetry =====================
+// Anonymous play telemetry sent to PostHog Cloud (US), the service FlyFly uses, in the same project: every event carries
+// game: 'myxo-petri-wars' to tell the two apart. It answers how players get through the rack: how many genome edits they
+// make between matches, and how many matches (and edits) a plate takes before it falls. The player is a random UUID kept in
+// localStorage with the queue of unsent events and a few counters; no account, IP (geoip off, $ip blanked), fingerprint or
+// strain name is sent. A new page load is a new session. Collection runs only on eyeree.art (environment production);
+// elsewhere add ?telemetry=on to send development events. ?telemetry=off opts this browser out for good, dropping its queue;
+// ?telemetry=on opts it back in. Counters (per plate: matches, edits, strain loads, abandoned matches; since the last match:
+// edits and loads) live on the client so a dropped event cannot skew them; a progress reset starts a new run with fresh ones.
+// Only solo play is recorded: the versus lobby promises that nothing about a match is stored beyond the two machines.
+// A run first seen with progress already made (telemetry arriving mid-game) is marked run_partial, as its counts started late.
+const TELE = (() => {
+  const TOKEN = 'phc_t7sqUebrx3mtdJpZz6T4RwgWjfWxjH9KkWPHpiySRq3L', URL_BATCH = 'https://us.i.posthog.com/batch/';
+  const STORE = 'myxo.petri.telemetry', GAME = 'myxo-petri-wars', SCHEMA = 1, MAX_QUEUE = 256, BATCH = 20, FLUSH_MS = 5000;
+  const uuid = () => {
+    if (crypto.randomUUID) return crypto.randomUUID();
+    const b = crypto.getRandomValues(new Uint8Array(16)); b[6] = (b[6] & 15) | 64; b[8] = (b[8] & 63) | 128;
+    const h = [...b].map(x => x.toString(16).padStart(2, '0')).join('');
+    return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+  };
+  const blankPlates = () => LEVELS.map(() => ({ matches: 0, edits: 0, loads: 0, abandoned: 0 }));
+  const newRun = partial => ({ run: uuid(), partial, plates: blankPlates(), since: { edits: 0, loads: 0 }, last: null });
+  let st = null;
+  try { st = JSON.parse(localStorage.getItem(STORE)); } catch (e) { }
+  if (!st || typeof st.id !== 'string' || !st.plates) st = { id: (st && st.id) || uuid(), out: !!(st && st.out), queue: [],
+    ...newRun(prog.cleared.some(Boolean) || prog.strains.length > 1 || genomeKey(prog.genome) !== genomeKey(DEFAULT_GENOME)) };
+  st.queue = Array.isArray(st.queue) ? st.queue.filter(e => e && e.uuid && e.properties && e.properties.distinct_id === st.id) : [];
+  while (st.plates.length < LEVELS.length) st.plates.push(blankPlates()[0]);
+  const param = new URLSearchParams(location.search).get('telemetry');
+  if (param === 'off') { st.out = true; st.queue = []; } else if (param === 'on') st.out = false;
+  const prod = /(^|\.)eyeree\.art$/.test(location.hostname), on = !st.out && (prod || param === 'on');
+  const session = uuid();
+  const persist = () => { try { localStorage.setItem(STORE, JSON.stringify(st)); } catch (e) { } };
+  persist();
+  if (!on) return { on: false, edit() { }, load() { }, start() { }, finish() { }, abandon() { }, reset() { }, session() { } };
+
+  let inFlight = 0, wait = FLUSH_MS, retry = 1000;
+  function record(event, props) {
+    const properties = Object.assign({}, props, {
+      distinct_id: st.id, $session_id: session, $process_person_profile: false, $geoip_disable: true, $ip: '0.0.0.0', $lib: 'myxo-petri-web',
+      game: GAME, schema_version: SCHEMA, sim_version: SIM_FP, environment: prod ? 'production' : 'development',
+      input: COARSE ? 'touch' : 'pointer', run_id: st.run, run_partial: st.partial,
+    });
+    if (st.queue.length >= MAX_QUEUE) st.queue.splice(inFlight, 1); // keep the batch in flight intact
+    st.queue.push({ event, properties, uuid: uuid(), timestamp: new Date().toISOString() });
+    persist();
+  }
+  function flush() {
+    if (inFlight || !st.queue.length) return;
+    inFlight = Math.min(st.queue.length, BATCH);
+    const n = inFlight;
+    fetch(URL_BATCH, { method: 'POST', keepalive: true, headers: { 'Content-Type': 'text/plain' }, body: JSON.stringify({ api_key: TOKEN, batch: st.queue.slice(0, n) }) })
+      .then(r => done(r.ok ? 'ok' : [400, 413, 422].includes(r.status) ? 'drop' : 'retry', n), () => done('retry', n));
+  }
+  function done(how, n) {
+    inFlight = 0;
+    if (how === 'retry') { wait = retry; retry = Math.min(retry * 2, 60000); return; }
+    st.queue.splice(0, n); retry = 1000; wait = st.queue.length ? 0 : FLUSH_MS; persist();
+  }
+  setInterval(() => { wait -= 1000; if (wait <= 0) { wait = FLUSH_MS; flush(); } }, 1000);
+  // Closing or hiding the page hands what is left to the browser to deliver; a batch already in flight finishes on its own (keepalive).
+  function beacon() {
+    if (!navigator.sendBeacon) return;
+    while (st.queue.length > inFlight) {
+      const n = Math.min(st.queue.length - inFlight, BATCH), part = st.queue.slice(inFlight, inFlight + n);
+      if (!navigator.sendBeacon(URL_BATCH, JSON.stringify({ api_key: TOKEN, batch: part }))) break;
+      st.queue.splice(inFlight, n);
+    }
+    persist();
+  }
+
+  // The genome as sent: levels and the sorted gene ids. No strain names leave the browser (they are player-typed text).
+  const gProps = g => { const n = normGenome(g); return { vigor: n.vigor, density: n.density, sense: n.sense, food: n.taxis.food, hunt: n.taxis.hunt, explore: n.taxis.explore, genes: [...n.genes].sort() }; };
+  // Changes between two genomes: every trait or drive whose level differs, plus every gene added or removed.
+  const gDiff = (a, b) => { let d = 0; for (const k of ['vigor', 'density', 'sense', 'food', 'hunt', 'explore']) if (a[k] !== b[k]) d++; const A = new Set(a.genes), B = new Set(b.genes); for (const x of A) if (!B.has(x)) d++; for (const x of B) if (!A.has(x)) d++; return d; };
+  const where = () => ({ plate: S.level + 1, plate_code: LEVELS[S.level].code, budget_kb: LEVELS[S.level].budget });
+  const live = M => M && M.tele && !M.tele.closed;
+  return {
+    on: true,
+    session() { record('session_started', { plates_cleared: prog.cleared.filter(Boolean).length, saved_strains: prog.strains.length }); },
+    // One trait, drive or gene changed in the lab. field: vigor, density, sense or taxis.food/hunt/explore, with the levels in
+    // from and to; or gene, with the gene id and whether it was added or removed. (PostHog types a property by the first value
+    // it sees, so levels and gene ids never share one.)
+    edit(field, from, to) {
+      if (S.pvp) return;
+      const w = where(), c = genomeCost(S.genome);
+      st.since.edits++; st.plates[S.level].edits++;
+      const what = field === 'gene' ? { field, gene: to || from, gene_change: to ? 'added' : 'removed' } : { field, from, to };
+      record('genome_edited', Object.assign(w, what, { cost_kb: c, over_budget: c > w.budget_kb, edits_since_last_match: st.since.edits }));
+    },
+    // Another saved strain put in the lab (picked, copied, or loaded after the lab strain was deleted).
+    load(how) {
+      if (S.pvp) return;
+      const w = where();
+      st.since.loads++; st.plates[S.level].loads++;
+      record('strain_loaded', Object.assign(w, { how, cost_kb: genomeCost(S.genome), strain_loads_since_last_match: st.since.loads }));
+    },
+    start(M) {
+      if (M.pvp) return;
+      const P = st.plates[M.level], mine = gProps(M.gold), last = st.last;
+      P.matches++;
+      M.tele = { id: uuid(), t0: Date.now(), closed: false, n: P.matches };
+      record('match_started', {
+        match_id: M.tele.id, plate: M.level + 1, plate_code: LEVELS[M.level].code, best_of: M.n,
+        budget_kb: LEVELS[M.level].budget, cost_kb: genomeCost(mine), genome: mine, opponent: M.pink.name,
+        plate_already_cleared: !!prog.cleared[M.level], plate_match_number: P.matches, plate_edits: P.edits, plate_strain_loads: P.loads,
+        edits_since_last_match: st.since.edits, strain_loads_since_last_match: st.since.loads,
+        genome_changes_since_last_match: last ? gDiff(last.genome, mine) : null, plate_changed_since_last_match: last ? last.plate !== M.level + 1 : null,
+      });
+      st.since = { edits: 0, loads: 0 }; st.last = { genome: mine, plate: M.level + 1 };
+      persist();
+    },
+    // A match's verdict as the player meets it, when the summary opens. cleared: the first win on the plate.
+    finish(M, cleared) {
+      if (!live(M)) return; M.tele.closed = true;
+      const P = st.plates[M.level], win = M.winner === 1, mine = M.gold;
+      const base = { match_id: M.tele.id, plate: M.level + 1, plate_code: LEVELS[M.level].code };
+      record('match_finished', Object.assign({}, base, { outcome: win ? 'win' : 'loss', best_of: M.n, rounds_played: M.played, rounds_won: M.wins[1], rounds_lost: M.wins[2],
+        seconds: Math.round((Date.now() - M.tele.t0) / 1000), plate_cleared: !!cleared, plate_match_number: M.tele.n }));
+      if (cleared) record('plate_cleared', Object.assign(base, { matches_to_clear: P.matches, matches_abandoned: P.abandoned, edits_on_plate: P.edits, strain_loads_on_plate: P.loads,
+        genome: gProps(mine), cost_kb: genomeCost(mine), budget_kb: LEVELS[M.level].budget }));
+    },
+    // A solo match left before its summary: back to the lab, or the page closed.
+    abandon(M, why) {
+      if (!live(M)) return; M.tele.closed = true;
+      st.plates[M.level].abandoned++;
+      const b = S.battle;
+      record('match_abandoned', { match_id: M.tele.id, plate: M.level + 1, plate_code: LEVELS[M.level].code, why, best_of: M.n,
+        round_on_show: b ? b.round + 1 : null, minute_on_show: b ? Math.floor(S.playhead) : null, seconds: Math.round((Date.now() - M.tele.t0) / 1000) });
+    },
+    reset(clearedBefore) {
+      record('progress_reset', { plates_cleared_before: clearedBefore });
+      Object.assign(st, newRun(false)); persist();
+    },
+    beacon,
+  };
+})();
+addEventListener('pagehide', () => { if (S.mode === 'battle') TELE.abandon(S.match, 'page_closed'); if (TELE.beacon) TELE.beacon(); });
+addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && TELE.beacon) TELE.beacon(); });
+
 // ---------------- App state ----------------
 const S = { mode: 'rack', level: 0, genome: cloneG(prog.genome), match: null, battle: null, libOpen: false, playhead: 0, revealed: 0, playing: false, speed: 1500, sel: -1, resultShown: false, shownEvt: -1, lastFx: 0, logN: 0, pvp: null }; // match: the match being played or reviewed and battle the round of it on show (see Match below); pvp: the versus session (see Versus below), null when playing solo
 // Playback speed is a multiple of real time. A tick is one minute of incubation, so Nx advances N/60 ticks a wall
@@ -3136,7 +3276,7 @@ function renderRack() {
   $('vsOpen').addEventListener('click', openVersus);
   $('resetProg').addEventListener('click', e => {
     const b = e.currentTarget;
-    if (b.dataset.armed) { prog = freshProg(); save(); S.level = 0; S.genome = cloneG(prog.genome); renderProgress(); renderRack(); previewLevel(0); }
+    if (b.dataset.armed) { TELE.reset(prog.cleared.filter(Boolean).length); prog = freshProg(); save(); S.level = 0; S.genome = cloneG(prog.genome); renderProgress(); renderRack(); previewLevel(0); }
     else { b.dataset.armed = '1'; b.textContent = 'Tap again to erase every conquered dish and saved strain'; }
   });
 }
@@ -3165,6 +3305,7 @@ function dishFacts(i) {
   return { foods, rock: terr[T_ROCK], salt: terr[T_SALT], light: terr[T_LIGHT], halo: terr[T_HALO], glass: terr[T_GLASS], cold: terr[T_COLD], cycle: d.cycle };
 }
 function openLab(i) {
+  if (S.mode === 'battle') TELE.abandon(S.match, 'left'); // after the summary the match is already closed, so this only counts walking out
   if (S.pvp) { pvpLeaveBattle(); i = S.pvp.set.level; }
   else if (!playable(i)) return;
   S.level = i;
@@ -3247,11 +3388,12 @@ function renderLab() {
   renderLibrary();
   Lab.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => {
     const [k, d] = b.dataset.step.split(':'), drive = k.startsWith('taxis.'), key = drive ? k.slice(6) : k, obj = drive ? g.taxis : g;
-    const v = clamp(obj[key] + (+d), drive ? 0 : 1, 5); if (v !== obj[key]) { obj[key] = v; refreshLab(); }
+    const v = clamp(obj[key] + (+d), drive ? 0 : 1, 5); if (v !== obj[key]) { const was = obj[key]; obj[key] = v; TELE.edit(k, was, v); refreshLab(); }
   }));
   Lab.querySelectorAll('.gene').forEach(b => b.addEventListener('click', () => {
     const id = b.dataset.id, G = GENE_BY_ID[id]; if (!isolated(G)) return;
     const k = g.genes.indexOf(id); if (k >= 0) g.genes.splice(k, 1); else g.genes.push(id);
+    TELE.edit('gene', k >= 0 ? id : null, k >= 0 ? null : id);
     refreshLab();
   }));
   $('inoc').addEventListener('click', () => S.pvp ? pvpReady() : startMatch());
@@ -3377,14 +3519,15 @@ function copyStrain(i) {
   const src = prog.strains[i]; if (!src) return;
   prog.strains.push({ name: generateStrainName(prog.strains, prog.name), genome: cloneG(src.genome), t: Date.now(), w: 0, l: 0 });
   S.libOpen = true;
-  loadStrain(prog.strains.length - 1);
+  loadStrain(prog.strains.length - 1, 'copied');
 }
-function loadStrain(i) {
+function loadStrain(i, how = 'picked') {
   const s = prog.strains[i]; if (!s || i === curIdx()) return;
   prog.name = s.name;
   S.genome = cloneG(s.genome);
   S.genome.genes = S.genome.genes.filter(id => GENE_BY_ID[id] && isolated(GENE_BY_ID[id]));
   refreshLab(); // persists the genome and stamps it as just used
+  TELE.load(how);
   pvpNamed();
 }
 // Deleting the lab strain loads the most recent of the rest; the last strain cannot be deleted.
@@ -3392,7 +3535,7 @@ function deleteStrain(i) {
   if (prog.strains.length <= 1 || !prog.strains[i]) return;
   const wasCur = i === curIdx();
   prog.strains.splice(i, 1);
-  if (wasCur) { prog.name = ''; loadStrain(byRecent()[0]); return; }
+  if (wasCur) { prog.name = ''; loadStrain(byRecent()[0], 'after_delete'); return; }
   save(); renderLibrary();
 }
 function renameStrain(i, name) {
@@ -3763,6 +3906,8 @@ function startMatch(opts) {
   }
   Object.assign(M, { n: M.seeds.length, need: Math.floor(M.seeds.length / 2) + 1, rounds: [], wins: [0, 0, 0], played: 0, decided: false, winner: 0, reviewed: false, summaryPending: false, newGenes: null });
   cancelCountdown();
+  if (S.mode === 'battle') TELE.abandon(S.match, 'replaced');
+  if (!opts || opts.match) TELE.start(M); // a match loaded from a state blob is a debugging replay, not play
   S.match = M; S.battle = null;
   buildWorld(ensureRound(0).dish);
   setMode('battle');
@@ -4195,11 +4340,12 @@ function showSummary() {
   M.summaryPending = false;
   const me = M.me, rs = M.rounds.slice(0, M.played), win = M.winner === me, vs = M.pvp, rv = M.names[3 - me], w = M.wins[me], l = M.wins[3 - me];
   if (!M.newGenes) { // settled once: the summary is shown again after every rewatch
-    M.newGenes = [];
+    M.newGenes = []; let first = false;
     if (win && !vs && !M.debug) { // a match loaded from a state blob is a replay for debugging, and never clears a plate
-      if (!prog.cleared[M.level]) { prog.cleared[M.level] = true; M.newGenes = GENES.filter(G => G.unlock === M.level + 2); }
+      if (!prog.cleared[M.level]) { first = true; prog.cleared[M.level] = true; M.newGenes = GENES.filter(G => G.unlock === M.level + 2); }
       save(); renderProgress();
     }
+    TELE.finish(M, first); // versus and state-blob matches carry no telemetry, so this is a no-op for them; the last plate isolates no genes, so the first win is flagged here rather than read off newGenes
   }
   const nextL = LEVELS[M.level + 1], newKb = M.newGenes.reduce((a, G) => a + G.cost, 0), rise = nextL ? nextL.budget - LEVELS[M.level].budget : 0;
   let why = (win ? `You took ${w} of ${rs.length} round${rs.length === 1 ? '' : 's'}` : `${rv} took ${l} of ${rs.length} round${rs.length === 1 ? '' : 's'}`) + (rs.length < M.n ? `, settling a best of ${M.n} early.` : '.');
@@ -4573,6 +4719,7 @@ function frame(now) {
 renderProgress();
 S.level = Math.max(0, prog.cleared.findIndex(c => !c)); if (prog.cleared.every(Boolean)) S.level = LEVELS.length - 1;
 setMode('rack'); renderRack(); previewLevel(S.level);
+TELE.session();
 resize();
 requestAnimationFrame(frame);
 })();

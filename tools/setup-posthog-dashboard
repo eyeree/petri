@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+"""Validate or apply the Myxo Petri Wars play dashboard in PostHog (see Telemetry in README.md)."""
+import argparse
+import json
+import os
+from pathlib import Path
+import shlex
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
+
+ROOT = Path(__file__).resolve().parent.parent
+SPEC_PATH = ROOT / "tools/posthog/play-dashboard.json"
+MANAGED_TAG = "myxo-petri-play-v1"
+# The project and region index.html sends to; .env or the environment may override them.
+DEFAULTS = {"POSTHOG_PROJECT_ID": "661616", "POSTHOG_PROJECT_REGION": "us"}
+
+
+def configuration():
+    keys = ("POSTHOG_PERSONAL_API_KEY", "POSTHOG_PROJECT_ID", "POSTHOG_PROJECT_REGION")
+    values = {}
+    if (ROOT / ".env").exists():
+        for line in (ROOT / ".env").read_text().splitlines():
+            line = line.strip().removeprefix("export ")
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            if key.strip() in keys:
+                values[key.strip()] = " ".join(shlex.split(value, comments=True))
+    for key in keys:
+        values[key] = os.environ.get(key, values.get(key, DEFAULTS.get(key, "")))
+    if not values["POSTHOG_PERSONAL_API_KEY"]:
+        raise SystemExit("Set POSTHOG_PERSONAL_API_KEY in .env or the environment")
+    if not values["POSTHOG_PROJECT_ID"].isdecimal():
+        raise SystemExit("POSTHOG_PROJECT_ID must be numeric")
+    region = {"us": "us", "us cloud": "us", "eu": "eu", "eu cloud": "eu"}.get(
+        values["POSTHOG_PROJECT_REGION"].lower())
+    if region is None:
+        raise SystemExit("POSTHOG_PROJECT_REGION must be US Cloud or EU Cloud")
+    return values, f"https://{region}.posthog.com"
+
+
+class Client:
+    def __init__(self, values, host):
+        self.key = values["POSTHOG_PERSONAL_API_KEY"]
+        self.base = f"{host}/api/projects/{values['POSTHOG_PROJECT_ID']}/"
+
+    def request(self, path, method="GET", body=None):
+        request = Request(self.base + path,
+                          data=None if body is None else json.dumps(body).encode(),
+                          headers={"Authorization": "Bearer " + self.key,
+                                   "Content-Type": "application/json"}, method=method)
+        try:
+            with urlopen(request, timeout=60) as response:
+                return json.load(response)
+        except HTTPError as error:
+            detail = error.read().decode().replace(self.key, "<redacted>")[:1500]
+            raise SystemExit(f"PostHog HTTP {error.code}: {detail}") from None
+
+    def list_all(self, path):
+        offset = 0
+        while True:
+            page = self.request(f"{path}?limit=100&offset={offset}")
+            yield from page["results"]
+            if not page.get("next"):
+                break
+            offset += len(page["results"])
+
+
+def validate(client, spec):
+    for insight in spec["insights"]:
+        result = client.request("query/", "POST", {"query": insight["query"]["source"]})
+        if result.get("error") or "results" not in result:
+            raise SystemExit(f"Query did not complete: {insight['name']}")
+        print(f"Validated: {insight['name']} ({len(result['results'])} rows)", flush=True)
+
+
+def apply(client, spec):
+    matches = [d for d in client.list_all("dashboards/")
+               if d["name"] == spec["dashboard"]["name"] and MANAGED_TAG in (d.get("tags") or [])]
+    if len(matches) > 1:
+        raise SystemExit("Multiple managed dashboards found; resolve duplicates before applying")
+    if matches:
+        dashboard = client.request(f"dashboards/{matches[0]['id']}/", "PATCH", spec["dashboard"])
+    else:
+        dashboard = client.request("dashboards/", "POST", spec["dashboard"])
+    dashboard_id = dashboard["id"]
+    existing = [i for i in client.list_all("insights/")
+                if dashboard_id in i.get("dashboards", []) and MANAGED_TAG in (i.get("tags") or [])]
+    for index, definition in enumerate(spec["insights"]):
+        body = dict(definition, dashboards=[dashboard_id], order=index)
+        matches = [i for i in existing if i["name"] == definition["name"]]
+        if len(matches) > 1:
+            raise SystemExit(f"Multiple managed insights found: {definition['name']}")
+        if matches:
+            saved = client.request(f"insights/{matches[0]['id']}/", "PATCH", body)
+        else:
+            saved = client.request("insights/", "POST", body)
+        print(f"Saved: {saved['name']} (insight {saved['id']})", flush=True)
+    saved_dashboard = client.request(f"dashboards/{dashboard_id}/")
+    saved_insights = [tile["insight"] for tile in saved_dashboard.get("tiles", [])
+                      if not tile.get("deleted") and tile.get("insight")]
+    for definition in spec["insights"]:
+        matches = [i for i in saved_insights if i["name"] == definition["name"]
+                   and MANAGED_TAG in (i.get("tags") or [])]
+        if len(matches) != 1 or matches[0]["query"] != definition["query"]:
+            raise SystemExit(f"Saved dashboard verification failed: {definition['name']}")
+    return dashboard_id
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--apply", action="store_true", help="create/update managed dashboard and insights")
+    args = parser.parse_args()
+    values, host = configuration()
+    client = Client(values, host)
+    spec = json.loads(SPEC_PATH.read_text())
+    project = client.request("")
+    print(f"Project: {project['name']} ({project['id']})", flush=True)
+    validate(client, spec)
+    if args.apply:
+        dashboard_id = apply(client, spec)
+        print(f"Verified dashboard: {host}/project/{project['id']}/dashboard/{dashboard_id}")
+
+
+if __name__ == "__main__":
+    main()
