@@ -219,6 +219,7 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 
 .toast .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .showcase { position: absolute; inset: 0; pointer-events: none; }
 .showcase .lbl { position: absolute; left: 0; top: 0; font-family: var(--f-mono); font-size: 11px; color: #e9efe9; text-shadow: 0 1px 3px #000, 0 0 6px #000a; white-space: nowrap; }
+.showcase .lbl.head { font-size: 11.5px; letter-spacing: 0.14em; text-transform: uppercase; color: #f4d77a; }
 .showcase .cap { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); font-family: var(--f-mono); font-size: 11px; color: #e9efe9; background: #0009; padding: 4px 10px; border-radius: 6px; }
 .hint { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); font-family: var(--f-mono); font-size: 11px; color: var(--faint); pointer-events: none; transition: opacity .6s; white-space: nowrap; }
 .corner { position: absolute; right: 12px; bottom: 12px; display: flex; align-items: center; gap: 8px; pointer-events: none; }
@@ -1978,7 +1979,7 @@ const surfUniforms = {
   uTerr2: { value: texTerr2 }, uLayA: { value: texLayA }, uLayB: { value: texLayB }, uLamp: { value: 1 },
   uNoise: { value: noiseRT ? noiseRT.texture : null }, uMix: { value: 0 }, uTime: { value: 0 }, uSize: { value: SIZE }, uDishR: { value: DISH_UV },
   uPCol: { value: new THREE.Color(0xf6c52e) }, uECol: { value: new THREE.Color(0xe0457f) }, uAgar: { value: new THREE.Color(0x6f6650) },
-  uSel: { value: new THREE.Vector3(0, 0, 0) }, uGridN: { value: N }, uGenes: { value: new THREE.Vector4(0, 0, 0, 0) },
+  uSel: { value: new THREE.Vector3(0, 0, 0) }, uGridN: { value: N },
 };
 // Shared sampling. Frame textures: dens (bilinear) carries per-side density, hub distance and damage; aux (nearest)
 // carries mass, vein strength, routing code and contest; route (nearest) carries the direction toward the second-nearest
@@ -2004,9 +2005,9 @@ const SURF_COMMON = `
       float cA=texture2D(uAuxA,uv).a, cB=texture2D(uAuxB,uv).a;
       return mix(pA*(1.0-0.6*cA)+pA.yx*cA,pB*(1.0-0.6*cB)+pB.yx*cB,uMix);
     }`;
-// Cell behaviour effects: contested pockets, attack flashes, sclerotia crust, defence and healing tints, antibiotic haze,
-// the event rings and spore arcs, and the close-up legend for them. Off while the strains' natural look is reworked.
-const CELL_FX = false;
+// Cell behaviour effects: attack flashes, sclerotia crust, defence and healing tints, antibiotic haze, the event rings
+// and spore arcs, and the close-up legend for them. F shows each one by itself on a showcase plate.
+const CELL_FX = true;
 const surfMat = new THREE.ShaderMaterial({
   uniforms: surfUniforms,
   defines: { CELL_FX: CELL_FX ? 1 : 0 },
@@ -2055,12 +2056,19 @@ const surfMat = new THREE.ShaderMaterial({
       gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);
     }`,
   fragmentShader: SURF_COMMON + GLSL_NOISE + `
-    uniform sampler2D uStatusA, uStatusB; uniform float uDishR; uniform vec3 uPCol, uECol, uAgar, uSel; uniform vec4 uGenes;
+    uniform sampler2D uStatusA, uStatusB; uniform float uDishR; uniform vec3 uPCol, uECol, uAgar, uSel;
     varying vec2 vUv; varying vec3 vN; varying vec3 vPos;
     vec2 hash2(vec2 p){ p=vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3))); return fract(sin(p)*43758.5453); }
     float hash1(vec2 p){ return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453); }
-    // damage of kind k on a cell, crossfaded: each tick's damage counts only if that tick's source was k
-    float hurt(float sa, float sb, float da, float db, float k){ return step(abs(sa-k),0.5)*da+step(abs(sb-k),0.5)*db; }
+    // one tick's effects on a cell, weighted by w: h1 the damage it took by kind (engulf, acid, antibiotic, salt), h2
+    // (UV, starvation, severed), s its state (sclerotia crust, healing, chitin, slime). dm: the damage (dens A), st the
+    // status texel, rb the routing byte (aux B, whose bit 4 is healing)
+    void fxCell(float w, float dm, vec4 st, float rb, out vec4 h1, out vec3 h2, out vec4 s){
+      float k=floor(st.b*255.0/28.0+0.5), d=dm*w;
+      h1=d*vec4(step(abs(k-1.0),0.5),step(abs(k-2.0),0.5),step(abs(k-3.0),0.5),step(abs(k-4.0),0.5));
+      h2=d*vec3(step(abs(k-5.0),0.5),step(abs(k-6.0),0.5),step(abs(k-7.0),0.5));
+      s=w*vec4(st.r,mod(floor(floor(rb*255.0+0.5)/16.0),2.0),st.g,st.a);
+    }
     // cellular noise: distance to nearest and second-nearest feature point, plus the nearest point's id
     vec3 worley(vec2 p){
       vec2 ip=floor(p), fp=fract(p); float f1=8.0, f2=8.0, id=0.0;
@@ -2141,6 +2149,65 @@ const surfMat = new THREE.ShaderMaterial({
       vec3 sx=dFdx(pos), sy=dFdy(pos); vec3 r1=cross(sy,n), r2=cross(n,sx); float det=dot(sx,r1);
       vec3 grad=sign(det)*(dFdx(h)*r1+dFdy(h)*r2); return normalize(abs(det)*n-grad);
     }
+#if CELL_FX
+    // the cell effects on one strain's tissue at this pixel, adjusting its colour, strand coverage and film. h1 the
+    // damage it takes by kind (engulf, acid, antibiotic, salt), h2 (UV, starvation, severed), st its state (sclerotia
+    // crust, healing, chitin, slime), all smoothed across cells; fR the rival's presence (rising toward it), m the mass,
+    // tp the taper, vz the vein share of the colour, g the warped grid position, px a pixel's size in cells. Each effect
+    // works through the tissue's own structure (it tints the strands, thins them, beads the veins, thickens the film or
+    // plates it over), so where it gives out it does so along the mesh rather than at a cell's border.
+    void cellFx(inout vec3 mold, inout float cov, inout float film, vec3 base, vec3 riv, vec4 h1, vec3 h2, vec4 st, float fR, float m, float tp, float vz, vec2 g, vec4 nz, float px){
+      // engulfed: pulses of the attacker's colour roll in from the rival's side (and meander, beyond its reach), the
+      // strands thinning as each passes
+      if(h1.x>0.002){
+        float wave=0.5+0.5*sin(fR*9.0+snoise(g*0.8+vec2(0.0,uTime*0.12))*3.0-uTime*5.0); wave*=wave;
+        mold+=riv*h1.x*(0.25+0.9*wave); cov*=1.0-h1.x*0.35*wave;
+      }
+      // acid: the tissue yellows and bubbles fizz up through it here and there, each swelling as a bright-rimmed bead and
+      // popping (from afar, where a bubble would be a pixel or less, a speckle-free glow)
+      if(h1.y>0.002){
+        vec3 b=worley(g*3.5+vec2(13.0,7.0)); float lf=fract(uTime*1.1+b.z*7.0), r=0.05+0.22*lf, aa=px*3.5;
+        float lod=smoothstep(3.0,7.0,1.0/aa), disc=1.0-smoothstep(r-aa,r+aa,b.x);
+        float one=(0.3*disc+0.7*disc*smoothstep(r*0.3,r,b.x))*(1.0-lf)*smoothstep(0.0,0.15,lf)*step(0.45,fract(b.z*13.0));
+        float bub=mix(0.08,one,lod);
+        mold=mix(mold,mold*0.8+vec3(0.22,0.3,0.0),h1.y*0.5);
+        mold+=vec3(0.55,1.0,0.2)*h1.y*(0.2+1.3*bub); cov=max(cov,h1.y*bub*tp*0.9);
+      }
+      // antibiotic: the poisoned tissue dulls toward violet (the haze over it is drawn later)
+      mold=mix(mold,mold*0.75+vec3(0.12,0.08,0.22),h1.z*0.5);
+      // salt: the tissue dries and shrivels, its fine strands paling before its veins, crystals glinting on it
+      if(h1.w>0.002){
+        vec3 c=worley(g*7.0+vec2(3.0,1.0)); float aa=px*7.0;
+        float gl=(1.0-smoothstep(0.1-aa,0.1+aa,c.x))*step(0.6,c.z)*smoothstep(3.0,7.0,1.0/aa);
+        mold=mix(mold,vec3(0.9,0.92,0.95)*(0.7+0.4*nz.b),h1.w*(0.75-0.35*vz)); mold+=vec3(0.8)*gl*h1.w;
+        cov*=1.0-h1.w*0.25*(1.0-vz);
+      }
+      // UV glare: a hot shimmer runs over the tissue
+      if(h2.x>0.002){ float fl=0.5+0.5*sin(uTime*7.0+snoise(g*0.9+vec2(uTime*0.2,0.0))*5.0); mold+=vec3(1.0,0.95,0.7)*h2.x*(0.3+0.6*fl*fl); }
+      // starvation: the tissue greys, and its fine strands draw in toward the veins
+      mold=mix(mold,vec3(0.45,0.42,0.35)*(0.85+0.3*nz.b),h2.y*0.7); cov*=1.0-h2.y*0.35*(1.0-vz);
+      // severed: the veins themselves are digested, going grey-blue and breaking into beads
+      if(h2.z>0.002){
+        float bead=smoothstep(0.45,0.75,0.5+0.5*snoise(g*3.3+vec2(5.0,2.0)));
+        mold=mix(mold,vec3(0.4,0.47,0.55),h2.z*(0.3+0.6*vz)); cov*=1.0-h2.z*0.6*vz*bead;
+      }
+      // sclerotia: the tissue hardens into brown plates, each setting at its own pace and closing over the pockets of
+      // thick tissue (thin tissue only crusts its strands), with dark cracks between them
+      if(st.x>0.002){
+        vec3 pc=worley(g*2.2+vec2(4.0,9.0)); float aa=px*2.2;
+        float k=smoothstep(0.45,0.55,st.x+(pc.z-0.5)*0.6), crack=1.0-smoothstep(0.0,0.05+aa,pc.y-pc.x);
+        vec3 crust=(vec3(0.36,0.24,0.12)+base*0.12)*(0.8+0.4*nz.b)*(1.0-0.45*crack);
+        mold=mix(mold,crust,k*0.85); cov=max(cov,k*0.95*smoothstep(0.45,0.85,tp)*smoothstep(0.15,0.5,m)*(1.0-0.6*crack));
+      }
+      // chitin rind: brown rims along the strands' edges, the whole a little darker
+      float rim=smoothstep(0.0,0.3,cov)*(1.0-smoothstep(0.3,0.7,cov));
+      mold=mix(mold,vec3(0.3,0.19,0.08),st.z*rim*0.7*smoothstep(0.3,0.6,m)); mold*=1.0-0.12*st.z;
+      // healing: a green flush, carried strongest along the veins
+      mold=mix(mold,mold*0.7+vec3(0.14,0.30,0.17),st.y*(0.3+0.4*vz));
+      // alkaline slime: the wet film spreads over the pockets
+      film=max(film,st.w*smoothstep(0.15,0.5,m)*tp);
+    }
+#endif
     void main(){
       vec2 uv=vUv; float rr=length(uv-0.5);
       if(rr>uDishR) discard;
@@ -2152,15 +2219,13 @@ const surfMat = new THREE.ShaderMaterial({
       // in every strain present on it, weighted by that presence. A cell's bump swells in and shrinks out across the
       // tick crossfade, and grows or wanes in a contested cell as the contest swings.
       vec2 c0=floor(gw);
-      vec2 f=vec2(0.0); float bP=0.0, bE=0.0; vec2 cP=c0, cE=c0;
+      vec2 f=vec2(0.0);
       for(int dy=-1;dy<=1;dy++) for(int dx=-1;dx<=1;dx++){
         vec2 cc=c0+vec2(float(dx),float(dy)); vec2 sw=sideAt((cc+0.5)*tx);
         vec2 rel=gw-(cc+0.5); float kk=max(0.0,1.0-dot(rel,rel)/2.25); kk*=kk;
-        vec2 wv=kk*sw; f+=wv;
-        if(wv.x>bP){ bP=wv.x; cP=cc; } if(wv.y>bE){ bE=wv.y; cE=cc; }
+        f+=kk*sw;
       }
       float fP=f.x, fE=f.y;
-      float o0=fP>=fE?1.0:2.0; vec2 c0uv=((fP>=fE?cP:cE)+0.5)*tx;
       // where both strains are present the stronger lies on top; the order turns over smoothly as the balance shifts
       float top=smoothstep(-0.2,0.2,fP-fE);
       // taper, per strain and from its own field alone: 1 through its body, falling to 0 about a cell beyond its
@@ -2176,7 +2241,13 @@ const surfMat = new THREE.ShaderMaterial({
       // from loser to winner across the whole tick, and a tube that appears, dies, re-roots or is captured shrinks
       // away while its successor grows, rather than either one fading or jumping.
       vec2 massS=vec2(0.0), wS=vec2(0.0), tube=vec2(0.0), tubeH=vec2(0.0), tubeM=vec2(0.0), tube2=vec2(0.0), tube2H=vec2(0.0), tube2M=vec2(0.0);
-      float rival=0.0; vec2 atk=vec2(0.0);
+#if CELL_FX
+      // the cell effects, per strain, smoothed across its cells: each occupied cell adds its tick's effects with a
+      // narrow bump round its centre (reaching about a cell), read at a point that wanders a little off the pixel so
+      // the edges between affected and unaffected tissue meander
+      vec2 gE=gw+0.28*vec2(snoise(gw*1.7+vec2(3.7,8.1)),snoise(gw*1.7+vec2(9.2,4.4)));
+      vec4 fxP1=vec4(0.0), fxE1=vec4(0.0), fxPs=vec4(0.0), fxEs=vec4(0.0); vec3 fxP2=vec3(0.0), fxE2=vec3(0.0); float fxPw=0.0, fxEw=0.0;
+#endif
       float kA=1.0-uMix, kB=uMix;
       for(int dy=-1;dy<=1;dy++) for(int dx=-1;dx<=1;dx++){
         vec2 off=vec2(float(dx),float(dy)); vec2 cc=c0+off; vec2 cuv=(cc+0.5)*tx;
@@ -2193,8 +2264,16 @@ const surfMat = new THREE.ShaderMaterial({
           massS+=kA*w*(s*hA*xA.r+s.yx*xA.a*(0.25+0.35*xA.a)); wS+=kA*w*(s*hA+s.yx*xA.a); }
         if(oB>0.5){ vec2 s=oB<1.5?vec2(1.0,0.0):vec2(0.0,1.0);
           massS+=kB*w*(s*hB*xB.r+s.yx*xB.a*(0.25+0.35*xB.a)); wS+=kB*w*(s*hB+s.yx*xB.a); }
-        float oN=kB>0.5&&oB>0.5?oB:(oA>0.5?oA:oB);
-        if(abs(oN-o0)>0.5){ atk+=off; rival+=1.0; }
+#if CELL_FX
+        vec2 de=gE-(cc+0.5); float we=max(0.0,1.0-dot(de,de)/1.21); we*=we;
+        if(we>0.0){
+          vec4 e1, es; vec3 e2;
+          if(oA>0.5){ fxCell(kA*we,dA.a,texture2D(uStatusA,cuv),xA.b,e1,e2,es);
+            if(oA<1.5){ fxP1+=e1; fxP2+=e2; fxPs+=es; fxPw+=kA*we; } else { fxE1+=e1; fxE2+=e2; fxEs+=es; fxEw+=kA*we; } }
+          if(oB>0.5){ fxCell(kB*we,dB.a,texture2D(uStatusB,cuv),xB.b,e1,e2,es);
+            if(oB<1.5){ fxP1+=e1; fxP2+=e2; fxPs+=es; fxPw+=kB*we; } else { fxE1+=e1; fxE2+=e2; fxEs+=es; fxEw+=kB*we; } }
+        }
+#endif
         // the tube towards the routing parent
         float pdA=mod(floor(xA.b*255.0+0.5),16.0), pdB=mod(floor(xB.b*255.0+0.5),16.0);
         float twA=oA<1.5?tw.x:tw.y, twB=oB<1.5?tw.x:tw.y;
@@ -2275,38 +2354,12 @@ const surfMat = new THREE.ShaderMaterial({
       vec3 moldP=mix(baseP*(0.86+0.18*m2.x)*(0.92+0.16*nz.r),veinP,TP.z);
       vec3 moldE=mix(baseE*(0.86+0.18*m2.y)*(0.92+0.16*nz.r),veinE,TE.z);
 #if CELL_FX
-      // attacks, sclerotia, defences and healing on the occupant of the nearest cell, drawn over its tissue (off
-      // while the look is reworked)
-      bool fxP=o0<1.5;
-      vec3 base=fxP?baseP:baseE, riv=fxP?baseE:baseP, mold=fxP?moldP:moldE;
-      float alpha=fxP?TP.x:TE.x, mo=fxP?m2.x:m2.y, tpo=fxP?tpP:tpE, fo=fxP?film.x:film.y;
-      vec4 stA=texture2D(uStatusA,c0uv), stB=texture2D(uStatusB,c0uv);
-      float crustK=mix(stA.r,stB.r,uMix);
-      float code0A=floor(texture2D(uAuxA,c0uv).b*255.0+0.5), code0B=floor(texture2D(uAuxB,c0uv).b*255.0+0.5);
-      float heal=mix(mod(floor(code0A/16.0),2.0),mod(floor(code0B/16.0),2.0),uMix);
-      float srcA=floor(stA.b*255.0/28.0+0.5), srcB=floor(stB.b*255.0/28.0+0.5);
-      float dmA=texture2D(uDensA,c0uv).a*(1.0-uMix), dmB=texture2D(uDensB,c0uv).a*uMix;
-      float hE=hurt(srcA,srcB,dmA,dmB,1.0), hA=hurt(srcA,srcB,dmA,dmB,2.0), hT=hurt(srcA,srcB,dmA,dmB,3.0), hS=hurt(srcA,srcB,dmA,dmB,4.0), hU=hurt(srcA,srcB,dmA,dmB,5.0), hSt=hurt(srcA,srcB,dmA,dmB,6.0), hSv=hurt(srcA,srcB,dmA,dmB,7.0);
-      vec2 ad=rival>0.0?normalize(atk+vec2(1e-4,0.0)):vec2(1.0,0.0);
-      float wave=0.5+0.5*sin(dot(gw-(c0+0.5),ad)*8.0+uTime*7.0); wave*=wave;
-      mold+=riv*hE*(0.25+0.9*wave);
-      alpha*=1.0-hE*0.35*wave;
-      float fz=step(0.9,hash1(floor(gw*8.0)+floor(uTime*9.0)*0.37));
-      mold+=vec3(0.55,1.0,0.2)*hA*(0.3+1.4*fz);
-      alpha*=1.0-hA*0.5*fz;
-      mold=mix(mold,vec3(0.9,0.92,0.95)*(0.7+0.4*nz.b),hS*0.7);
-      mold+=vec3(1.0,0.95,0.7)*hU*(0.3+0.5*step(0.5,fract(uTime*6.0+nz.r*3.0)));
-      mold=mix(mold,vec3(0.45,0.42,0.35),hSt*0.7);
-      mold=mix(mold,vec3(0.4,0.47,0.55),hSv*0.7);
-      vec3 crust=vec3(0.36,0.24,0.12)+base*0.12;
-      mold=mix(mold,crust*(0.8+0.4*nz.b),crustK*0.8); alpha=max(alpha,crustK*tpo*0.95);
-      float chi=fxP?uGenes.x:uGenes.z; float muc=fxP?uGenes.y:uGenes.w;
-      float rim=smoothstep(0.0,0.3,alpha)*(1.0-smoothstep(0.3,0.7,alpha));
-      mold=mix(mold,vec3(0.3,0.19,0.08),chi*rim*0.7*smoothstep(0.3,0.6,mo));
-      mold*=1.0-0.12*chi;
-      mold=mix(mold,mold*0.7+vec3(0.14,0.30,0.17),heal*0.45);
-      fo=max(fo,muc*smoothstep(0.15,0.5,mo)*tpo);
-      if(fxP){ moldP=mold; TP.x=alpha; film.x=fo; } else { moldE=mold; TE.x=alpha; film.y=fo; }
+      // the antibiotic haze from the summed damage, so it thins out round the tissue; everything else from each strain's
+      // average over its own cells, which holds through its body and fades only where its cells give out at a tip
+      float haze=clamp(max(fxP1.z,fxE1.z),0.0,1.0);
+      float nP=1.0/max(fxPw,0.3), nE=1.0/max(fxEw,0.3);
+      cellFx(moldP,TP.x,film.x,baseP,baseE,fxP1*nP,fxP2*nP,fxPs*nP,fE,m2.x,tpP,TP.z,gw,nz,px);
+      cellFx(moldE,TE.x,film.y,baseE,baseP,fxE1*nE,fxE2*nE,fxEs*nE,fP,m2.y,tpE,TE.z,gw+vec2(37.1,11.3),nz,px);
 #endif
       vec3 litP=moldP*(0.42+0.68*diff)+spec*(0.25+0.45*TP.z)+fres*baseP*0.3;
       vec3 litE=moldE*(0.42+0.68*diff)+spec*(0.25+0.45*TE.z)+fres*baseE*0.3;
@@ -2362,7 +2415,7 @@ const surfMat = new THREE.ShaderMaterial({
 #if CELL_FX
       // antibiotic haze drifts above the surface
       float hz=0.5+0.5*snoise(gw*0.7+vec2(uTime*0.3,-uTime*0.2));
-      col=mix(col,vec3(0.62,0.5,1.0),hT*hz*0.75);
+      col=mix(col,vec3(0.62,0.5,1.0),haze*hz*0.75);
 #endif
       if(uSel.z>0.5){
         float ds=length((uv-uSel.xy)*uGridN);
@@ -2825,8 +2878,14 @@ function resetMatter() { if (world) for (const g of world.groups) g.last.fill(-1
 // the dish changes continuously through a tick instead of stepping at its end. Categorical bytes (vein routing codes,
 // the healing bit, the attack source) cannot be interpolated, so the shader fades the effect each one drives instead.
 let shown = { battle: null, t: -1, t2: -1 };
-function putStatus(d, F) { // R sclerotia crust; B attack source ×28 (the damage itself is the dens alpha)
-  for (let i = 0; i < NN; i++) { const f = F.flags[i]; d[i * 4] = (f & 4) ? 255 : 0; d[i * 4 + 2] = (f >> 4) * 28; }
+// R sclerotia crust; G Chitin Rind and A Alkaline Slime on the occupant (its side's genes, or a showcase frame's own
+// per-cell genes byte: 1 chitin, 2 slime); B attack source ×28 (the damage itself is the dens alpha)
+function putStatus(d, F, sides) {
+  const sg = [0, 1, 2].map(o => { const S = sides[o]; return S ? (S.chitin ? 1 : 0) | (S.mucus ? 2 : 0) : 0; });
+  for (let i = 0; i < NN; i++) {
+    const f = F.flags[i], g = F.genes ? F.genes[i] : sg[f & 3];
+    d[i * 4] = (f & 4) ? 255 : 0; d[i * 4 + 1] = g & 1 ? 255 : 0; d[i * 4 + 2] = (f >> 4) * 28; d[i * 4 + 3] = g & 2 ? 255 : 0;
+  }
 }
 // the layer of mat, detritus and laid brine (one byte a cell: kind in the top two bits, amount in the low six), and in
 // A the matter left (food or granite), which the surface draws the bacterial lawn and the props' shade from
@@ -2846,8 +2905,8 @@ function showFrame(b, t, frac) {
     const ra = texRouteA.image.data, rb = texRouteB.image.data;
     for (let i = 0; i < NN; i++) { ra[i * 4] = F.route[i]; rb[i * 4] = F2.route[i]; }
     texRouteA.needsUpdate = true; texRouteB.needsUpdate = true;
-    putStatus(texStatA.image.data, F); texStatA.needsUpdate = true;
-    putStatus(texStatB.image.data, F2); texStatB.needsUpdate = true;
+    putStatus(texStatA.image.data, F, b.sides); texStatA.needsUpdate = true;
+    putStatus(texStatB.image.data, F2, b.sides); texStatB.needsUpdate = true;
     putLayer(texLayA.image.data, F.layer, F.matter); texLayA.needsUpdate = true;
     putLayer(texLayB.image.data, F2.layer, F2.matter); texLayB.needsUpdate = true;
     shown = { battle: b, t, t2 };
@@ -2857,10 +2916,6 @@ function showFrame(b, t, frac) {
   const lamp = (b.lampAt(t) ? 1 : 0) * (1 - mix) + (b.lampAt(t2) ? 1 : 0) * mix;
   surfUniforms.uLamp.value = lamp; beamMat.uniforms.uOn.value = lamp;
   applyMatter(b.frames[t].matter, b.frames[t2].matter, mix);
-}
-function setGenes(b) {
-  const P = b.sides[1], E = b.sides[2];
-  surfUniforms.uGenes.value.set(P.chitin ? 1 : 0, P.mucus ? 1 : 0, E.chitin ? 1 : 0, E.mucus ? 1 : 0);
 }
 
 // --- FX: rings & spores ---
@@ -3080,7 +3135,7 @@ function previewLevel(i) {
   const b = new Battle(i, S.genome, LEVELS[i].rival);
   if (S.showcase) { S.preview = b; if (!showDish || showDish.level !== i) showDish = b.dish; return; }
   if (!world || world.dish.level !== i) { buildWorld(b.dish); }
-  S.preview = b; shown.battle = null; setGenes(b);
+  S.preview = b; shown.battle = null;
   showFrame(b, 0, 0);
 }
 
@@ -3749,7 +3804,7 @@ function showRound(b) {
   if (prev && prev !== b) { prev.playhead = S.playhead; prev.revealed = S.revealed; }
   S.battle = b; S.playhead = b.playhead; S.revealed = b.revealed;
   S.resultShown = false; S.shownEvt = -1; S.logN = -1; S.inspT = -1;
-  clearFx(); shown.battle = null; resetMatter(); setGenes(b); selectCell(-1);
+  clearFx(); shown.battle = null; resetMatter(); selectCell(-1);
   $('hPName').innerHTML = hudName(1); $('hEName').innerHTML = hudName(2);
   renderLog(); updateRoundNav();
 }
@@ -4167,7 +4222,11 @@ function showSummary() {
   if ($('rNext')) $('rNext').addEventListener('click', () => openLab(M.level + 1));
 }
 
-// ===================== Debug: prop showcase =====================
+// ===================== Debug: showcases =====================
+// Two showcase plates stand in for the dish on a key: P the props, F the cell effects. Each is laid out here and its one
+// frame written by hand (the layout record() writes). A battle on show pauses underneath, and the dish it was on comes
+// back when the showcase closes; the other key switches straight from one showcase to the other.
+//
 // P swaps the dish for a showcase plate: every kind of prop in a row of its own and, across each row, the stages of a
 // strain encroaching on it, so the props and the slime over them can be judged side by side without waiting for a battle
 // to bring them about. The plate is laid out here and its one frame written by hand (the layout record() writes). A
@@ -4178,14 +4237,18 @@ const SHOW_ROWS = [ // top of the screen to bottom: label, how it is laid, terra
 ];
 const SHOW_COLS = ['Bare', 'Reaching', 'Half over', 'Engulfed', 'Half digested', 'Contested']; // half digested: the food half eaten, the granite half dissolved
 const SHOW_FOOD = [1, 1, 1, 0.85, 0.4, 0.8], SHOW_ROCK = [1, 1, 0.8, 0.55, 0.25, 0.6]; // what is left, by column
-S.showcase = false;
-let showcase = null, showEl = null, showDish = null, showCam = null;
+S.showcase = false; // the showcase on show: false, 'props' or 'fx'
+let showcase = null, showDish = null, showCam = null;
 const showV = new THREE.Vector3();
-function makeShowcase() {
-  const terrain = new Uint8Array(NN), foodType = new Uint8Array(NN), food0 = new Float32Array(NN), discs = [], labels = [];
+function blankPlate() { // open agar across the dish, and an empty frame over it
+  const terrain = new Uint8Array(NN), foodType = new Uint8Array(NN), food0 = new Float32Array(NN);
   for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) { const dx = x - CXf, dy = y - CXf; terrain[y * N + x] = dx * dx + dy * dy <= DISH_R * DISH_R ? T_AGAR : T_VOID; }
   const F = { dens: new Uint8Array(NN * 4), aux: new Uint8Array(NN * 4), route: new Uint8Array(NN).fill(4), flags: new Uint8Array(NN), matter: new Uint8Array(NN), layer: new Uint8Array(NN), frag: new Uint8Array(NN), frags: [null, [], []] };
   for (let i = 0; i < NN; i++) F.aux[i * 4 + 2] = 4;
+  return { terrain, foodType, food0, F };
+}
+function makeShowcase() {
+  const { terrain, foodType, food0, F } = blankPlate(), discs = [], labels = [];
   const nr = SHOW_ROWS.length, nc = SHOW_COLS.length, pitchX = 6, pitchY = 4.2; // a cell or more between the specimens' tissue
   const colX = k => Math.round(CXf + (k - (nc - 1) / 2) * pitchX), rowY = r => Math.round(CXf + ((nr - 1) / 2 - r) * pitchY);
   SHOW_ROWS.forEach(([name, kind, t], r) => {
@@ -4223,15 +4286,78 @@ function makeShowcase() {
       }
     }
   });
-  return { dish: { terrain, foodType, food0, discs, lights: [], level: -1 }, frames: [F], lampAt: () => true, sides: [null, {}, {}], labels };
+  return { dish: { terrain, foodType, food0, discs, lights: [], level: -1 }, frames: [F], lampAt: () => true, sides: [null, {}, {}], labels, cap: 'Prop showcase · P to close · F cell effects' };
 }
+
+// F lays out the cell effects, each on its own: every kind of attack on the left, as the damage it does in a typical
+// minute of play (D steps it through typical, heavy and light), and the defences and states on the right beside a patch
+// untouched by any. Across each row: a thin tendril of the gold strain; a mature gold patch with the effect on its left
+// part only, so its edge where it gives out within the tissue shows; and a mature patch of the pink strain (whose
+// engulfing pulses run gold, the rival's colour). The specimens stand apart: no two share ground.
+const FX_ATTACKS = [ // top to bottom: label, damage source, HP a cell loses in a typical minute of it (all sources)
+  ['Engulfed', S_ENGULF, 2.0], ['Acid', S_ACID, 2.0], ['Antibiotic', S_TOXIN, 0.9], ['Salt', S_SALT, 1.1],
+  ['UV glare', S_UV, 0.55], ['Starvation', S_STARVE, 0.35], ['Severed', S_SEVER, 3.0],
+];
+const FX_DEFENCES = [['Untouched', ''], ['Sclerotia', 'dorm'], ['Chitin Rind', 'chitin'], ['Alkaline Slime', 'mucus'], ['Healing', 'heal']];
+const FX_COLS = [['Tendril', 0], ['Mature · edge', 6], ['Pink strain', 12]]; // label, cells right of the block's first
+const FX_DAMAGE = [['typical', 1], ['heavy', 0], ['light', 0.4]]; // the scale on each row's damage; 0: the most a frame records
+function makeFxShowcase() {
+  const { terrain, foodType, food0, F } = blankPlate(), labels = [], hits = [];
+  F.genes = new Uint8Array(NN); // per cell, for putStatus: 1 Chitin Rind, 2 Alkaline Slime
+  const pitchY = 4.2;
+  // a block of rows, its first column x0 cells right of the centre; lay(row, cell) adds the row's effect to a cell
+  const block = (title, rows, x0, lay) => {
+    const nr = rows.length, colX = k => Math.round(CXf + x0 + FX_COLS[k][1]), rowY = r => Math.round(CXf + ((nr - 1) / 2 - r) * pitchY);
+    labels.push({ text: title, x: colX(1), y: rowY(0) + 4.4, head: true });
+    rows.forEach((row, r) => {
+      const cy = rowY(r);
+      labels.push({ text: row[0], x: colX(0) - 2.6, y: cy, row: true });
+      FX_COLS.forEach(([name], k) => {
+        if (!r) labels.push({ text: name, x: colX(k), y: cy + 2.4 });
+        // a tendril: a thin line of three cells; a mature patch: three by three, its veins running in to the middle (the
+        // gold one rounded out to five across, the two cells right of the middle column untouched)
+        const cx = colX(k), side = k === 2 ? 2 : 1, thin = !k, m = thin ? 0.15 : 0.9, w = k === 1 ? 2 : 1;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -w; dx <= w; dx++) {
+          if ((thin && dy) || Math.hypot(dx, dy) > 2.05) continue;
+          const i = (cy + dy) * N + cx + dx, d = Math.hypot(dx, dy);
+          F.dens[i * 4 + side - 1] = 230; F.dens[i * 4 + 2] = Math.round(d * 20); F.flags[i] = side;
+          F.aux[i * 4] = Math.round(m * 255);
+          F.aux[i * 4 + 1] = Math.round(255 * m * 0.6 * Math.max(0, 1 - d / 4) * (dy ? 0.5 : 1));
+          F.aux[i * 4 + 2] = d > 0 ? (Math.sign(-dx) + 1) + 3 * (Math.sign(-dy) + 1) : 4;
+          if (k !== 1 || dx <= 0) lay(row, i);
+        }
+      });
+    });
+  };
+  block('Attacks', FX_ATTACKS, -17, ([, src, hp], i) => { F.flags[i] |= src << 4; hits.push([i, hp]); });
+  block('Defences', FX_DEFENCES, 7, ([, what], i) => {
+    if (what === 'dorm') F.flags[i] |= 4;
+    else if (what === 'chitin') F.genes[i] = 1;
+    else if (what === 'mucus') F.genes[i] = 2;
+    else if (what === 'heal') F.aux[i * 4 + 2] |= 16;
+  });
+  const sc = { dish: { terrain, foodType, food0, discs: [], lights: [], level: -1 }, frames: [F], lampAt: () => true, sides: [null, {}, {}], labels, hits, dmg: 0 };
+  setFxDamage(sc, 0);
+  return sc;
+}
+function setFxDamage(sc, k) {
+  const f = FX_DAMAGE[k][1], dens = sc.frames[0].dens;
+  for (const [i, hp] of sc.hits) dens[i * 4 + 3] = f ? Math.min(255, Math.round(hp * f * 70)) : 255;
+  sc.dmg = k; sc.cap = `Cell effects · ${FX_DAMAGE[k][0]} damage (D to change) · F to close · P props`;
+  if (sc.capEl) sc.capEl.textContent = sc.cap;
+  shown.battle = null; // upload the frame again
+}
+const SHOWCASES = { props: makeShowcase, fx: makeFxShowcase }, builtShow = {};
 function showLabels() {
-  if (!showEl) {
-    showEl = el('div', 'showcase'); stage.appendChild(showEl);
-    showEl.appendChild(el('div', 'cap', 'Prop showcase · P to close'));
-    for (const L of showcase.labels) { L.el = el('div', 'lbl' + (L.row ? ' row' : ''), esc(L.text)); showEl.appendChild(L.el); }
+  for (const k in builtShow) {
+    const sc = builtShow[k];
+    if (!sc.el && S.showcase === k) {
+      sc.el = el('div', 'showcase'); stage.appendChild(sc.el);
+      sc.capEl = el('div', 'cap', esc(sc.cap)); sc.el.appendChild(sc.capEl);
+      for (const L of sc.labels) { L.el = el('div', 'lbl' + (L.row ? ' row' : '') + (L.head ? ' head' : ''), esc(L.text)); sc.el.appendChild(L.el); }
+    }
+    if (sc.el) sc.el.hidden = S.showcase !== k;
   }
-  showEl.hidden = !S.showcase;
 }
 function placeShowLabels() { // pinned to the plate, wherever the camera is
   const w = stage.clientWidth, h = stage.clientHeight;
@@ -4241,32 +4367,38 @@ function placeShowLabels() { // pinned to the plate, wherever the camera is
     L.el.style.visibility = Math.abs(showV.z) < 1 ? '' : 'hidden';
   }
 }
-function toggleShowcase() {
+// opens showcase kind, switches to it from the other, or closes it when it is on show; no kind closes whichever is
+function toggleShowcase(kind) {
   if (!renderer) return;
-  if (!S.showcase) {
-    if (!showcase) showcase = makeShowcase();
-    showDish = world && world.dish;
-    showCam = { theta: cam.theta, phi: cam.phi, zoom: cam.zoom, target: cam.target.clone(), auto: cam.auto, playing: S.playing };
-    if (S.playing) { S.playing = false; setPlayIcon(); }
-    S.showcase = true; buildWorld(showcase.dish); setGenes(showcase); shown.battle = null;
-    cam.auto = false; cam.theta = 0; cam.phi = 0.62; cam.zoom = 0.85; cam.target.set(0, 0, 0.1); updateCamera();
-    hideHint();
-  } else {
+  const next = kind && kind !== S.showcase ? kind : false;
+  if (next) {
+    if (!S.showcase) {
+      showDish = world && world.dish;
+      showCam = { theta: cam.theta, phi: cam.phi, zoom: cam.zoom, target: cam.target.clone(), auto: cam.auto, playing: S.playing };
+      if (S.playing) { S.playing = false; setPlayIcon(); }
+      cam.auto = false; cam.theta = 0; cam.phi = 0.62; cam.zoom = 0.85; cam.target.set(0, 0, 0.1); updateCamera();
+      hideHint();
+    }
+    showcase = builtShow[next] || (builtShow[next] = SHOWCASES[next]());
+    S.showcase = next; buildWorld(showcase.dish); shown.battle = null;
+  } else if (S.showcase) {
     S.showcase = false;
     // put back the dish that was on show, unless something has already replaced the showcase's (a match starting)
     if (world && world.dish === showcase.dish && showDish) buildWorld(showDish);
-    const b = S.mode === 'battle' && S.battle ? S.battle : S.preview;
-    if (b) setGenes(b);
-    shown.battle = null; resetMatter();
+    shown.battle = null; resetMatter(); showcase = null;
     Object.assign(cam, { theta: showCam.theta, phi: showCam.phi, zoom: showCam.zoom, auto: showCam.auto }); cam.target.copy(showCam.target); updateCamera();
     if (showCam.playing && S.mode === 'battle') { S.playing = true; setPlayIcon(); }
   }
   showLabels();
 }
 document.addEventListener('keydown', e => {
-  if (e.key !== 'p' && e.key !== 'P') return;
   if (e.ctrlKey || e.metaKey || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable) return;
-  e.preventDefault(); toggleShowcase();
+  const k = e.key.toLowerCase();
+  if (k === 'p') toggleShowcase('props');
+  else if (k === 'f') toggleShowcase('fx');
+  else if (k === 'd' && S.showcase === 'fx') setFxDamage(showcase, (showcase.dmg + 1) % FX_DAMAGE.length);
+  else return;
+  e.preventDefault();
 });
 
 // ===================== Loop =====================
