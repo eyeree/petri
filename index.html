@@ -406,7 +406,7 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 
 
 <div id="app" class="mode-rack">
   <header class="bar">
-    <div class="brand"><div class="logo">MYX<span>O</span></div><div class="tagline">petri wars</div><div class="version" id="appVersion">v 0.0.1</div></div>
+    <div class="brand"><div class="logo">MYX<span>O</span></div><div class="tagline">petri wars</div><div class="version" id="appVersion">v 0.0.2</div></div>
     <div class="progress" id="progress"></div>
   </header>
   <main class="main">
@@ -2121,9 +2121,10 @@ const texAuxA = dataTex(THREE.NearestFilter), texAuxB = dataTex(THREE.NearestFil
 const texStatA = dataTex(THREE.NearestFilter), texStatB = dataTex(THREE.NearestFilter), texTerr = dataTex(THREE.LinearFilter);
 const texRouteA = dataTex(THREE.NearestFilter), texRouteB = dataTex(THREE.NearestFilter);
 const texTerr2 = dataTex(THREE.LinearFilter), texLayA = dataTex(THREE.LinearFilter), texLayB = dataTex(THREE.LinearFilter);
+const texFxS = dataTex(THREE.NearestFilter); // the defence states eased over time, see smoothStatus
 
 const surfUniforms = {
-  uDensA: { value: texA }, uDensB: { value: texB }, uAuxA: { value: texAuxA }, uAuxB: { value: texAuxB }, uStatusA: { value: texStatA }, uStatusB: { value: texStatB }, uTerr: { value: texTerr }, uRouteA: { value: texRouteA }, uRouteB: { value: texRouteB },
+  uDensA: { value: texA }, uDensB: { value: texB }, uAuxA: { value: texAuxA }, uAuxB: { value: texAuxB }, uStatusA: { value: texStatA }, uStatusB: { value: texStatB }, uFxS: { value: texFxS }, uTerr: { value: texTerr }, uRouteA: { value: texRouteA }, uRouteB: { value: texRouteB },
   uTerr2: { value: texTerr2 }, uLayA: { value: texLayA }, uLayB: { value: texLayB }, uLamp: { value: 1 },
   uNoise: { value: noiseRT ? noiseRT.texture : null }, uMix: { value: 0 }, uTime: { value: 0 }, uSize: { value: SIZE }, uDishR: { value: DISH_UV },
   uPCol: { value: new THREE.Color(0xf6c52e) }, uECol: { value: new THREE.Color(0xe0457f) }, uAgar: { value: new THREE.Color(0x6f6650) },
@@ -2204,18 +2205,18 @@ const surfMat = new THREE.ShaderMaterial({
       gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);
     }`,
   fragmentShader: SURF_COMMON + GLSL_NOISE + `
-    uniform sampler2D uStatusA, uStatusB; uniform float uDishR; uniform vec3 uPCol, uECol, uAgar, uSel;
+    uniform sampler2D uStatusA, uStatusB, uFxS; uniform float uDishR; uniform vec3 uPCol, uECol, uAgar, uSel;
     varying vec2 vUv; varying vec3 vN; varying vec3 vPos;
     vec2 hash2(vec2 p){ p=vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3))); return fract(sin(p)*43758.5453); }
     float hash1(vec2 p){ return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453); }
     // one tick's effects on a cell, weighted by w: h1 the damage it took by kind (engulf, acid, antibiotic, salt), h2
     // (UV, starvation, severed), s its state (sclerotia crust, healing, chitin, slime). dm: the damage (dens A), st the
-    // status texel, rb the routing byte (aux B, whose bit 4 is healing)
-    void fxCell(float w, float dm, vec4 st, float rb, out vec4 h1, out vec3 h2, out vec4 s){
+    // status texel, ds the occupant's sclerotia and healing as eased over time (uFxS)
+    void fxCell(float w, float dm, vec4 st, vec2 ds, out vec4 h1, out vec3 h2, out vec4 s){
       float k=floor(st.b*255.0/28.0+0.5), d=dm*w;
       h1=d*vec4(step(abs(k-1.0),0.5),step(abs(k-2.0),0.5),step(abs(k-3.0),0.5),step(abs(k-4.0),0.5));
       h2=d*vec3(step(abs(k-5.0),0.5),step(abs(k-6.0),0.5),step(abs(k-7.0),0.5));
-      s=w*vec4(st.r,mod(floor(floor(rb*255.0+0.5)/16.0),2.0),st.g,st.a);
+      s=w*vec4(ds.x,ds.y,st.g,st.a);
     }
     // cellular noise: distance to nearest and second-nearest feature point, plus the nearest point's id
     vec3 worley(vec2 p){
@@ -2419,10 +2420,10 @@ const surfMat = new THREE.ShaderMaterial({
 #if CELL_FX
         vec2 de=gE-(cc+0.5); float we=max(0.0,1.0-dot(de,de)/1.21); we*=we;
         if(we>0.0){
-          vec4 e1, es; vec3 e2;
-          if(oA>0.5){ fxCell(kA*we,dA.a,texture2D(uStatusA,cuv),xA.b,e1,e2,es);
+          vec4 e1, es; vec3 e2; vec4 ds=texture2D(uFxS,cuv);
+          if(oA>0.5){ fxCell(kA*we,dA.a,texture2D(uStatusA,cuv),oA<1.5?ds.rg:ds.ba,e1,e2,es);
             if(oA<1.5){ fxP1+=e1; fxP2+=e2; fxPs+=es; fxPw+=kA*we; } else { fxE1+=e1; fxE2+=e2; fxEs+=es; fxEw+=kA*we; } }
-          if(oB>0.5){ fxCell(kB*we,dB.a,texture2D(uStatusB,cuv),xB.b,e1,e2,es);
+          if(oB>0.5){ fxCell(kB*we,dB.a,texture2D(uStatusB,cuv),oB<1.5?ds.rg:ds.ba,e1,e2,es);
             if(oB<1.5){ fxP1+=e1; fxP2+=e2; fxPs+=es; fxPw+=kB*we; } else { fxE1+=e1; fxE2+=e2; fxEs+=es; fxEw+=kB*we; } }
         }
 #endif
@@ -3065,9 +3066,46 @@ function showFrame(b, t, frac) {
   }
   const mix = t2 > t ? clamp(frac, 0, 1) : 0;
   surfUniforms.uMix.value = mix;
+  smoothStatus(b, t, t2, mix);
   const lamp = (b.lampAt(t) ? 1 : 0) * (1 - mix) + (b.lampAt(t2) ? 1 : 0) * mix;
   surfUniforms.uLamp.value = lamp; beamMat.uniforms.uOn.value = lamp;
   applyMatter(b.frames[t].matter, b.frames[t2].matter, mix);
+}
+
+// The defence states, sclerotia and healing, come and go from one tick to the next (a cell heals one minute and is
+// hit the next), and drawn as they stand they flash, the harder the faster the playback. So the surface draws them
+// from a running average, per cell and side, that eases toward the states on show over about four ticks of playback,
+// held between 0.8 and 2 seconds of real time (half a second while paused, for steps and scrubbing): at speed the
+// flicker settles into a steady tint, and at slow speeds, where a tick's own crossfade is already long, a change still
+// shows promptly. It rises twice as fast as it falls, so a state shows soon after it sets in and lingers as it lapses.
+// A new battle or a long jump snaps it.
+// Texel: R/G sclerotia/healing on the player's cells, B/A on the rival's.
+const fxSm = new Float32Array(NN * 4);
+let fxSmAt = { battle: null, ph: 0, time: 0 };
+function smoothStatus(b, t, t2, mix) {
+  const now = performance.now() / 1000, ph = t + mix, F = b.frames[t], F2 = b.frames[t2];
+  const snap = fxSmAt.battle !== b || Math.abs(ph - fxSmAt.ph) > 20;
+  const dt = Math.min(0.1, Math.max(0, now - fxSmAt.time));
+  fxSmAt = { battle: b, ph, time: now };
+  const tau = S.playing ? clamp(4 * TICK_SEC / S.speed, 0.8, 2) : 0.5;
+  const up = snap ? 1 : 1 - Math.exp(-2 * dt / tau), down = snap ? 1 : 1 - Math.exp(-dt / tau);
+  const d = texFxS.image.data;
+  let moved = snap;
+  for (let i = 0; i < NN; i++) {
+    const fa = F.flags[i], fb = F2.flags[i], oa = fa & 3, ob = fb & 3;
+    const ha = F.aux[i * 4 + 2] & 16 ? 1 - mix : 0, hb = F2.aux[i * 4 + 2] & 16 ? mix : 0;
+    const da = fa & 4 ? 1 - mix : 0, db = fb & 4 ? mix : 0;
+    for (let s = 1; s <= 2; s++) {
+      const j = i * 4 + (s - 1) * 2;
+      const tg0 = (oa === s ? da : 0) + (ob === s ? db : 0), tg1 = (oa === s ? ha : 0) + (ob === s ? hb : 0);
+      const v0 = fxSm[j], v1 = fxSm[j + 1];
+      const n0 = v0 + (tg0 - v0) * (tg0 > v0 ? up : down), n1 = v1 + (tg1 - v1) * (tg1 > v1 ? up : down);
+      fxSm[j] = n0; fxSm[j + 1] = n1;
+      const b0 = Math.round(n0 * 255), b1 = Math.round(n1 * 255);
+      if (b0 !== d[j] || b1 !== d[j + 1]) { d[j] = b0; d[j + 1] = b1; moved = true; }
+    }
+  }
+  if (moved) texFxS.needsUpdate = true;
 }
 
 // --- FX: rings & spores ---
