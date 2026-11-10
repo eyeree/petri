@@ -2118,13 +2118,15 @@ function dataTex(filter) {
 }
 const texA = dataTex(THREE.LinearFilter), texB = dataTex(THREE.LinearFilter);
 const texAuxA = dataTex(THREE.NearestFilter), texAuxB = dataTex(THREE.NearestFilter);
-const texStatA = dataTex(THREE.NearestFilter), texStatB = dataTex(THREE.NearestFilter), texTerr = dataTex(THREE.LinearFilter);
+const texTerr = dataTex(THREE.LinearFilter);
 const texRouteA = dataTex(THREE.NearestFilter), texRouteB = dataTex(THREE.NearestFilter);
 const texTerr2 = dataTex(THREE.LinearFilter), texLayA = dataTex(THREE.LinearFilter), texLayB = dataTex(THREE.LinearFilter);
-const texFxS = dataTex(THREE.NearestFilter); // the defence states eased over time, see smoothStatus
+// the cell effects, blended and eased over time (see easeCellFx): six grid-sized blocks stacked, three for each side
+const texFxS = new THREE.DataTexture(new Uint8Array(NN * 4 * 6), N, N * 6, THREE.RGBAFormat, THREE.UnsignedByteType);
+texFxS.magFilter = texFxS.minFilter = THREE.NearestFilter; texFxS.wrapS = texFxS.wrapT = THREE.ClampToEdgeWrapping; texFxS.needsUpdate = true;
 
 const surfUniforms = {
-  uDensA: { value: texA }, uDensB: { value: texB }, uAuxA: { value: texAuxA }, uAuxB: { value: texAuxB }, uStatusA: { value: texStatA }, uStatusB: { value: texStatB }, uFxS: { value: texFxS }, uTerr: { value: texTerr }, uRouteA: { value: texRouteA }, uRouteB: { value: texRouteB },
+  uDensA: { value: texA }, uDensB: { value: texB }, uAuxA: { value: texAuxA }, uAuxB: { value: texAuxB }, uFxS: { value: texFxS }, uTerr: { value: texTerr }, uRouteA: { value: texRouteA }, uRouteB: { value: texRouteB },
   uTerr2: { value: texTerr2 }, uLayA: { value: texLayA }, uLayB: { value: texLayB }, uLamp: { value: 1 },
   uNoise: { value: noiseRT ? noiseRT.texture : null }, uMix: { value: 0 }, uTime: { value: 0 }, uSize: { value: SIZE }, uDishR: { value: DISH_UV },
   uPCol: { value: new THREE.Color(0xf6c52e) }, uECol: { value: new THREE.Color(0xe0457f) }, uAgar: { value: new THREE.Color(0x6f6650) },
@@ -2205,18 +2207,17 @@ const surfMat = new THREE.ShaderMaterial({
       gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);
     }`,
   fragmentShader: SURF_COMMON + GLSL_NOISE + `
-    uniform sampler2D uStatusA, uStatusB, uFxS; uniform float uDishR; uniform vec3 uPCol, uECol, uAgar, uSel;
+    uniform sampler2D uFxS; uniform float uDishR; uniform vec3 uPCol, uECol, uAgar, uSel;
     varying vec2 vUv; varying vec3 vN; varying vec3 vPos;
     vec2 hash2(vec2 p){ p=vec2(dot(p,vec2(127.1,311.7)),dot(p,vec2(269.5,183.3))); return fract(sin(p)*43758.5453); }
     float hash1(vec2 p){ return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453); }
-    // one tick's effects on a cell, weighted by w: h1 the damage it took by kind (engulf, acid, antibiotic, salt), h2
-    // (UV, starvation, severed), s its state (sclerotia crust, healing, chitin, slime). dm: the damage (dens A), st the
-    // status texel, ds the occupant's sclerotia and healing as eased over time (uFxS)
-    void fxCell(float w, float dm, vec4 st, vec2 ds, out vec4 h1, out vec3 h2, out vec4 s){
-      float k=floor(st.b*255.0/28.0+0.5), d=dm*w;
-      h1=d*vec4(step(abs(k-1.0),0.5),step(abs(k-2.0),0.5),step(abs(k-3.0),0.5),step(abs(k-4.0),0.5));
-      h2=d*vec3(step(abs(k-5.0),0.5),step(abs(k-6.0),0.5),step(abs(k-7.0),0.5));
-      s=w*vec4(ds.x,ds.y,st.g,st.a);
+    // the effects on side sd's tissue (0 player, 1 rival) in the cell at cuv, as blended across the ticks and eased over
+    // time (see easeCellFx), weighted by w: h1 the damage it takes by kind (engulf, acid, antibiotic, salt), h2 (UV,
+    // starvation, severed), s its state (sclerotia crust, healing, chitin, slime). uFxS stacks six grid-sized blocks of
+    // texels, three a side, in that order.
+    void fxCell(float w, vec2 cuv, float sd, out vec4 h1, out vec3 h2, out vec4 s){
+      float v=cuv.y/6.0+sd*0.5;
+      h1=w*texture2D(uFxS,vec2(cuv.x,v)); h2=w*texture2D(uFxS,vec2(cuv.x,v+1.0/6.0)).rgb; s=w*texture2D(uFxS,vec2(cuv.x,v+2.0/6.0));
     }
     // cellular noise: distance to nearest and second-nearest feature point, plus the nearest point's id
     vec3 worley(vec2 p){
@@ -2420,11 +2421,11 @@ const surfMat = new THREE.ShaderMaterial({
 #if CELL_FX
         vec2 de=gE-(cc+0.5); float we=max(0.0,1.0-dot(de,de)/1.21); we*=we;
         if(we>0.0){
-          vec4 e1, es; vec3 e2; vec4 ds=texture2D(uFxS,cuv);
-          if(oA>0.5){ fxCell(kA*we,dA.a,texture2D(uStatusA,cuv),oA<1.5?ds.rg:ds.ba,e1,e2,es);
-            if(oA<1.5){ fxP1+=e1; fxP2+=e2; fxPs+=es; fxPw+=kA*we; } else { fxE1+=e1; fxE2+=e2; fxEs+=es; fxEw+=kA*we; } }
-          if(oB>0.5){ fxCell(kB*we,dB.a,texture2D(uStatusB,cuv),oB<1.5?ds.rg:ds.ba,e1,e2,es);
-            if(oB<1.5){ fxP1+=e1; fxP2+=e2; fxPs+=es; fxPw+=kB*we; } else { fxE1+=e1; fxE2+=e2; fxEs+=es; fxEw+=kB*we; } }
+          // each strain's share of the cell across the two ticks
+          float pw=we*((abs(oA-1.0)<0.5?kA:0.0)+(abs(oB-1.0)<0.5?kB:0.0)), ew=we*((abs(oA-2.0)<0.5?kA:0.0)+(abs(oB-2.0)<0.5?kB:0.0));
+          vec4 e1, es; vec3 e2;
+          if(pw>0.0){ fxCell(pw,cuv,0.0,e1,e2,es); fxP1+=e1; fxP2+=e2; fxPs+=es; fxPw+=pw; }
+          if(ew>0.0){ fxCell(ew,cuv,1.0,e1,e2,es); fxE1+=e1; fxE2+=e2; fxEs+=es; fxEw+=ew; }
         }
 #endif
         // the tube towards the routing parent
@@ -3028,18 +3029,10 @@ function resetMatter() { if (world) for (const g of world.groups) g.last.fill(-1
 
 // --- frame upload ---
 // Every channel the shader reads comes as an A/B pair, frames t and t+1, crossfaded by the fractional playhead, so
-// the dish changes continuously through a tick instead of stepping at its end. Categorical bytes (vein routing codes,
-// the healing bit, the attack source) cannot be interpolated, so the shader fades the effect each one drives instead.
+// the dish changes continuously through a tick instead of stepping at its end. Categorical bytes (vein routing codes)
+// cannot be interpolated, so the shader fades the effect each one drives instead. The cell effects, which hang on the
+// attack source, the healing bit and the sclerotia flag, are blended and eased here instead (easeCellFx).
 let shown = { battle: null, t: -1, t2: -1 };
-// R sclerotia crust; G Chitin Rind and A Alkaline Slime on the occupant (its side's genes, or a showcase frame's own
-// per-cell genes byte: 1 chitin, 2 slime); B attack source ×28 (the damage itself is the dens alpha)
-function putStatus(d, F, sides) {
-  const sg = [0, 1, 2].map(o => { const S = sides[o]; return S ? (S.chitin ? 1 : 0) | (S.mucus ? 2 : 0) : 0; });
-  for (let i = 0; i < NN; i++) {
-    const f = F.flags[i], g = F.genes ? F.genes[i] : sg[f & 3];
-    d[i * 4] = (f & 4) ? 255 : 0; d[i * 4 + 1] = g & 1 ? 255 : 0; d[i * 4 + 2] = (f >> 4) * 28; d[i * 4 + 3] = g & 2 ? 255 : 0;
-  }
-}
 // the layer of mat, detritus and laid brine (one byte a cell: kind in the top two bits, amount in the low six), and in
 // A the matter left (food or granite), which the surface draws the bacterial lawn and the props' shade from
 function putLayer(d, Lr, M) {
@@ -3058,51 +3051,68 @@ function showFrame(b, t, frac) {
     const ra = texRouteA.image.data, rb = texRouteB.image.data;
     for (let i = 0; i < NN; i++) { ra[i * 4] = F.route[i]; rb[i * 4] = F2.route[i]; }
     texRouteA.needsUpdate = true; texRouteB.needsUpdate = true;
-    putStatus(texStatA.image.data, F, b.sides); texStatA.needsUpdate = true;
-    putStatus(texStatB.image.data, F2, b.sides); texStatB.needsUpdate = true;
     putLayer(texLayA.image.data, F.layer, F.matter); texLayA.needsUpdate = true;
     putLayer(texLayB.image.data, F2.layer, F2.matter); texLayB.needsUpdate = true;
     shown = { battle: b, t, t2 };
   }
   const mix = t2 > t ? clamp(frac, 0, 1) : 0;
   surfUniforms.uMix.value = mix;
-  smoothStatus(b, t, t2, mix);
+  easeCellFx(b, t, t2, mix);
   const lamp = (b.lampAt(t) ? 1 : 0) * (1 - mix) + (b.lampAt(t2) ? 1 : 0) * mix;
   surfUniforms.uLamp.value = lamp; beamMat.uniforms.uOn.value = lamp;
   applyMatter(b.frames[t].matter, b.frames[t2].matter, mix);
 }
 
-// The defence states, sclerotia and healing, come and go from one tick to the next (a cell heals one minute and is
-// hit the next), and drawn as they stand they flash, the harder the faster the playback. So the surface draws them
-// from a running average, per cell and side, that eases toward the states on show over about four ticks of playback,
-// held between 0.8 and 2 seconds of real time (half a second while paused, for steps and scrubbing): at speed the
-// flicker settles into a steady tint, and at slow speeds, where a tick's own crossfade is already long, a change still
-// shows promptly. It rises twice as fast as it falls, so a state shows soon after it sets in and lingers as it lapses.
-// A new battle or a long jump snaps it.
-// Texel: R/G sclerotia/healing on the player's cells, B/A on the rival's.
-const fxSm = new Float32Array(NN * 4);
+// The cell effects come and go from one tick to the next: a cell is hit one minute and not the next, by acid and then
+// by an engulfing front, heals between blows, hardens and wakes. Drawn as they stand they flash, the harder the faster
+// the playback. So the surface draws them from a running average, per cell and side, that eases toward the effects on
+// show over about four ticks of playback, held between 0.8 and 2 seconds of real time (half a second while paused, for
+// steps and scrubbing): at speed the flicker settles into a steady tint, and at slow speeds, where a tick's own
+// crossfade is already long, a change still shows promptly. It rises twice as fast as it falls, so an effect shows soon
+// after it sets in and lingers as it lapses. A new battle or a long jump snaps it. Chitin Rind and Alkaline Slime are
+// genes, not events, so they are only blended across the tick.
+// Each side's effects on a cell are its occupant's in the two ticks, weighted by its share of the cell (the shader
+// weights them the same way), in three blocks of texels: (engulf, acid, antibiotic, salt) damage; (UV, starvation,
+// severed) damage; (sclerotia, healing, Chitin Rind, Alkaline Slime). The damage is the dens alpha, by its source.
+const fxSm = new Float32Array(NN * 4 * 6), fxTg = new Float32Array(12);
 let fxSmAt = { battle: null, ph: 0, time: 0 };
-function smoothStatus(b, t, t2, mix) {
+// adds frame F's effects on cell i (flags f) with weight k to fxTg; g the occupant's genes (1 chitin, 2 slime)
+function fxTarget(F, i, f, k, g) {
+  if (!k) return;
+  const src = f >> 4; if (src) fxTg[src - 1] += k * F.dens[i * 4 + 3] / 255;
+  if (f & 4) fxTg[8] += k;
+  if (F.aux[i * 4 + 2] & 16) fxTg[9] += k;
+  if (g & 1) fxTg[10] += k;
+  if (g & 2) fxTg[11] += k;
+}
+function easeCellFx(b, t, t2, mix) {
   const now = performance.now() / 1000, ph = t + mix, F = b.frames[t], F2 = b.frames[t2];
   const snap = fxSmAt.battle !== b || Math.abs(ph - fxSmAt.ph) > 20;
   const dt = Math.min(0.1, Math.max(0, now - fxSmAt.time));
   fxSmAt = { battle: b, ph, time: now };
   const tau = S.playing ? clamp(4 * TICK_SEC / S.speed, 0.8, 2) : 0.5;
   const up = snap ? 1 : 1 - Math.exp(-2 * dt / tau), down = snap ? 1 : 1 - Math.exp(-dt / tau);
+  const sg = [0, 1, 2].map(o => { const Sd = b.sides[o]; return Sd ? (Sd.chitin ? 1 : 0) | (Sd.mucus ? 2 : 0) : 0; });
   const d = texFxS.image.data;
   let moved = snap;
   for (let i = 0; i < NN; i++) {
     const fa = F.flags[i], fb = F2.flags[i], oa = fa & 3, ob = fb & 3;
-    const ha = F.aux[i * 4 + 2] & 16 ? 1 - mix : 0, hb = F2.aux[i * 4 + 2] & 16 ? mix : 0;
-    const da = fa & 4 ? 1 - mix : 0, db = fb & 4 ? mix : 0;
     for (let s = 1; s <= 2; s++) {
-      const j = i * 4 + (s - 1) * 2;
-      const tg0 = (oa === s ? da : 0) + (ob === s ? db : 0), tg1 = (oa === s ? ha : 0) + (ob === s ? hb : 0);
-      const v0 = fxSm[j], v1 = fxSm[j + 1];
-      const n0 = v0 + (tg0 - v0) * (tg0 > v0 ? up : down), n1 = v1 + (tg1 - v1) * (tg1 > v1 ? up : down);
-      fxSm[j] = n0; fxSm[j + 1] = n1;
-      const b0 = Math.round(n0 * 255), b1 = Math.round(n1 * 255);
-      if (b0 !== d[j] || b1 !== d[j + 1]) { d[j] = b0; d[j + 1] = b1; moved = true; }
+      fxTg.fill(0);
+      let ka = oa === s ? 1 - mix : 0, kb = ob === s ? mix : 0;
+      const tot = ka + kb;
+      if (tot > 0) {
+        ka /= tot; kb /= tot;
+        fxTarget(F, i, fa, ka, F.genes ? F.genes[i] : sg[s]);
+        fxTarget(F2, i, fb, kb, F2.genes ? F2.genes[i] : sg[s]);
+      }
+      for (let c = 0; c < 12; c++) {
+        const j = (((s - 1) * 3 + (c >> 2)) * NN + i) * 4 + (c & 3), v = fxSm[j], tg = fxTg[c];
+        const n = c >= 10 ? tg : v + (tg - v) * (tg > v ? up : down);
+        fxSm[j] = n;
+        const by = Math.round(n * 255);
+        if (by !== d[j]) { d[j] = by; moved = true; }
+      }
     }
   }
   if (moved) texFxS.needsUpdate = true;
@@ -4499,7 +4509,7 @@ const FX_COLS = [['Tendril', 0], ['Mature · edge', 6], ['Pink strain', 12]]; //
 const FX_DAMAGE = [['typical', 1], ['heavy', 0], ['light', 0.4]]; // the scale on each row's damage; 0: the most a frame records
 function makeFxShowcase() {
   const { terrain, foodType, food0, F } = blankPlate(), labels = [], hits = [];
-  F.genes = new Uint8Array(NN); // per cell, for putStatus: 1 Chitin Rind, 2 Alkaline Slime
+  F.genes = new Uint8Array(NN); // per cell, for easeCellFx: 1 Chitin Rind, 2 Alkaline Slime
   const pitchY = 4.2;
   // a block of rows, its first column x0 cells right of the centre; lay(row, cell) adds the row's effect to a cell
   const block = (title, rows, x0, lay) => {
