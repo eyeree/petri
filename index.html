@@ -44,10 +44,15 @@ button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px 
 .tagline { font-family: var(--f-mono); font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--faint); }
 .version { font-family: var(--f-mono); font-size: 10px; letter-spacing: 0.06em; color: var(--faint); opacity: .7; white-space: nowrap; }
 @media (max-width: 480px) { .brand { display: grid; grid-template-columns: auto auto; column-gap: 10px; align-items: center; justify-items: start; } .logo { grid-row: span 2; } .tagline, .version { line-height: 1.15; } }
-.progress { font-family: var(--f-mono); font-size: 12px; color: var(--dim); display: flex; align-items: center; gap: 8px; }
+.progress { margin-left: auto; font-family: var(--f-mono); font-size: 12px; color: var(--dim); display: flex; align-items: center; gap: 8px; }
+.bar .snd { flex: none; width: 36px; height: 36px; border-radius: 10px; color: var(--dim); }
+.bar .snd svg { width: 18px; height: 18px; }
+.bar .snd[aria-pressed="true"] .x, .bar .snd[aria-pressed="false"] .w { display: none; }
+.bar .snd[aria-pressed="false"] { color: var(--faint); }
 .progress .dots { display: flex; gap: 4px; }
 .progress .dots i { width: 9px; height: 9px; border-radius: 50%; border: 1.5px solid var(--line); }
 .progress .dots i.on { background: var(--gold); border-color: var(--gold); }
+@media (max-width: 480px) { .bar { gap: 8px; } .progress .dots { gap: 2px; } .progress .dots i { width: 6px; height: 6px; } } /* room for the sound button beside ten dots on a phone */
 
 .main { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 10px; }
 .stage { position: relative; flex: none; height: 40%; min-height: 220px; border-radius: var(--r-lg); overflow: hidden; background: radial-gradient(120% 90% at 50% 38%, #24302f 0%, #141c1e 48%, #0b1012 100%); box-shadow: inset 0 0 0 1px var(--line); touch-action: none; }
@@ -406,8 +411,9 @@ input[type=range]::-moz-range-thumb { width: 18px; height: 18px; border-radius: 
 
 <div id="app" class="mode-rack">
   <header class="bar">
-    <div class="brand"><div class="logo">MYX<span>O</span></div><div class="tagline">petri wars</div><div class="version" id="appVersion">v 0.0.2</div></div>
+    <div class="brand"><div class="logo">MYX<span>O</span></div><div class="tagline">petri wars</div><div class="version" id="appVersion">v 0.1.0</div></div>
     <div class="progress" id="progress"></div>
+    <button class="ib snd" id="bSound" aria-label="Sound" aria-pressed="true" title="Sound on (M)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5v5h3.5l4.5 4v-13l-4.5 4z" fill="currentColor"/><path class="w" d="M15.5 9a4.2 4.2 0 0 1 0 6M18.2 6.5a7.8 7.8 0 0 1 0 11"/><path class="x" d="M16 9.5l5 5M21 9.5l-5 5"/></svg></button>
   </header>
   <main class="main">
     <section class="stage" id="stage" aria-label="Petri dish view">
@@ -2047,6 +2053,265 @@ const TELE = (() => {
 addEventListener('pagehide', () => { if (S.mode === 'battle') TELE.abandon(S.match, 'page_closed'); if (TELE.beacon) TELE.beacon(); });
 addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && TELE.beacon) TELE.beacon(); });
 
+// ===================== Audio =====================
+// Every sound is synthesized with Web Audio at the moment it is needed: there are no sample files, so the game stays one
+// file. Audio only listens. It is handed the events the playhead crosses (fireEvents), a reading of the plate each frame
+// (bedState) and a few interface moments, and nothing here feeds back into the simulation or the match: a muted game and
+// a sounding one play the same. Browsers let a page make sound only after a user gesture, so the context is made on the
+// first tap or key (wake) and is suspended while the tab is hidden or the sound is switched off.
+//
+// The palette is a wet bench, not an instrument: nothing is tuned and nothing repeats exactly. Life is bubbles (a pocket
+// of gas in liquid rings as a short sine that climbs as it dies, which is what `bubble` is), squelches (bands of noise
+// wandering through resonances) and dry crackle; the lab is glass (inharmonic partials struck together), plastic clicks,
+// dull knocks and the incubator's hum. The two strains differ in body, as they do in colour: gold is the thinner and
+// quicker fluid, pink the thicker and slower one (BODY), so the same event sounds higher and tighter from gold.
+// There are two layers. Events and the interface are one-shots, thinned by importance when they crowd (EV_RANK). The bed
+// is a standing mix under a match that follows the plate minute by minute (bed).
+const SND = (() => {
+  const AC = window.AudioContext || window.webkitAudioContext, PREF = 'myxo.petri.sound', LEVEL = 0.7;
+  let on = true; try { on = localStorage.getItem(PREF) !== 'off'; } catch (e) { }
+  let ctx = null, bus = null, grain = null, BED = null, lag = 0; // lag: seconds added to every voice of the sound being built, to stagger a batch
+  const quiet = p => { if (p && p.catch) p.catch(() => { }); };
+  const rnd = (a, b) => a + Math.random() * (b - a), rlog = (a, b) => a * Math.pow(b / a, Math.random()); // evenly, and evenly by ratio
+  function wake() { // only ever called from inside a user gesture
+    if (!on || !AC) return;
+    if (!ctx) {
+      ctx = new AC();
+      const comp = ctx.createDynamicsCompressor(); // a limiter of sorts: a pile of voices is squeezed instead of clipping
+      comp.threshold.value = -14; comp.knee.value = 10; comp.ratio.value = 8; comp.attack.value = 0.003; comp.release.value = 0.2;
+      bus = ctx.createGain(); bus.gain.value = LEVEL; bus.connect(comp); comp.connect(ctx.destination);
+      grain = ctx.createBuffer(1, ctx.sampleRate * 3, ctx.sampleRate); // three seconds of white noise, the stuff of every squelch, puff and crackle
+      const d = grain.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    if (ctx.state !== 'running' && document.visibilityState !== 'hidden') quiet(ctx.resume());
+  }
+  for (const t of ['pointerup', 'touchend', 'click', 'keydown']) document.addEventListener(t, wake, true);
+  document.addEventListener('visibilitychange', () => { if (!ctx) return; if (document.visibilityState === 'hidden') quiet(ctx.suspend()); else if (on) quiet(ctx.resume()); });
+  const live = () => on && ctx && document.visibilityState !== 'hidden';
+  function set(v) {
+    on = !!v; try { localStorage.setItem(PREF, on ? 'on' : 'off'); } catch (e) { }
+    if (on) { wake(); if (ctx) bus.gain.setTargetAtTime(LEVEL, ctx.currentTime, 0.02); }
+    else if (ctx) { bus.gain.setTargetAtTime(0, ctx.currentTime, 0.03); setTimeout(() => { if (!on) quiet(ctx.suspend()); }, 250); } // fade, then let the audio device go
+  }
+
+  // --- voices. Each takes one object: g peak gain, d decay in seconds, a attack, at a delay, pan, and `to`, a node to
+  // play into in place of the main bus (the bed's own filters and panners) ---
+  function out(node, o) {
+    if (o.to) node.connect(o.to);
+    else if (o.pan && ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = clamp(o.pan, -1, 1); node.connect(p); p.connect(bus); }
+    else node.connect(bus);
+  }
+  function shape(env, t, a, d, g) { env.gain.setValueAtTime(0.0001, t); env.gain.exponentialRampToValueAtTime(g, t + a); env.gain.exponentialRampToValueAtTime(0.0001, t + a + d); }
+  // a plain partial at f Hz, sliding to `to` Hz if given: the raw material of glass and of thuds, never heard as a note
+  function tone(o) {
+    const t = ctx.currentTime + lag + (o.at || 0), a = o.a || 0.006, osc = ctx.createOscillator(), env = ctx.createGain();
+    osc.type = o.type || 'sine'; osc.frequency.setValueAtTime(o.f, t);
+    if (o.slide) osc.frequency.exponentialRampToValueAtTime(o.slide, t + a + o.d);
+    shape(env, t, a, o.d, o.g); osc.connect(env); out(env, o); osc.start(t); osc.stop(t + a + o.d + 0.02);
+  }
+  // noise through a resonant filter (band-pass unless `type` says otherwise). f is its frequency, or a list of
+  // frequencies it wanders through over the sound
+  function hiss(o) {
+    const t = ctx.currentTime + lag + (o.at || 0), a = o.a || 0.004, src = ctx.createBufferSource(), flt = ctx.createBiquadFilter(), env = ctx.createGain();
+    src.buffer = grain; src.loop = true; flt.type = o.type || 'bandpass'; flt.Q.value = o.q || 1;
+    if (Array.isArray(o.f)) flt.frequency.setValueCurveAtTime(Float32Array.from(o.f), t, a + o.d); else flt.frequency.setValueAtTime(o.f, t);
+    shape(env, t, a, o.d, o.g); src.connect(flt); flt.connect(env); out(env, o); src.start(t, Math.random() * 2.5); src.stop(t + a + o.d + 0.02);
+  }
+  // a few milliseconds of raw noise with no attack at all: one speck of a crackle. It needs a filter to play into
+  function speck(o) {
+    const t = ctx.currentTime + lag + (o.at || 0), src = ctx.createBufferSource(), env = ctx.createGain();
+    src.buffer = grain; env.gain.setValueAtTime(o.g, t); env.gain.exponentialRampToValueAtTime(0.0001, t + o.d);
+    src.connect(env); env.connect(o.to); src.start(t, Math.random() * 2.9); src.stop(t + o.d + 0.01);
+  }
+  // A bubble. The bigger it is the lower it rings and the longer it lasts; `rise` is how far its pitch climbs (below 1, falls)
+  function bubble(o) {
+    const t = ctx.currentTime + lag + (o.at || 0), d = o.d || clamp(30 / o.f, 0.014, 0.12), osc = ctx.createOscillator(), env = ctx.createGain();
+    osc.frequency.setValueAtTime(o.f, t); osc.frequency.exponentialRampToValueAtTime(o.f * (o.rise || rnd(1.25, 1.7)), t + d);
+    env.gain.setValueAtTime(0.0001, t); env.gain.exponentialRampToValueAtTime(o.g, t + 0.003); env.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    osc.connect(env); out(env, o); osc.start(t); osc.stop(t + d + 0.02);
+  }
+  // n bubbles over `span` seconds, sized between lo and hi Hz. tilt 1 runs them from lo to hi in order (filling up),
+  // -1 from hi to lo (draining), 0 scatters them. pace above 1 has them come slower and slower, below 1 faster and faster
+  function bubbles(n, lo, hi, span, o) {
+    for (let k = 0; k < n; k++) {
+      const u = n > 1 ? k / (n - 1) : 0, w = o.tilt ? (o.tilt > 0 ? u : 1 - u) : Math.random();
+      bubble(Object.assign({}, o, { f: lo * Math.pow(hi / lo, w) * rnd(0.85, 1.18), g: o.g * rnd(0.5, 1), at: (o.at || 0) + span * Math.pow(u, o.pace || 1) + rnd(0, 0.02) }));
+    }
+  }
+  // wet tissue under pressure: two resonances of the same noise wandering together along the path f
+  function squelch(o) { hiss(Object.assign({ q: 6 }, o)); hiss(Object.assign({ q: 5 }, o, { f: o.f.map(x => x * 2.7), g: o.g * 0.5 })); }
+  // dry crackle: n specks scattered over `span` seconds through one filter. pace above 1 has it die away, below 1 build up
+  function crackle(n, span, o) {
+    const flt = ctx.createBiquadFilter(); flt.type = o.type || 'highpass'; flt.frequency.value = o.f; flt.Q.value = o.q || 0.7; out(flt, o);
+    for (let k = 0; k < n; k++) speck({ to: flt, g: o.g * rnd(0.25, 1), d: rnd(0.003, 0.012), at: (o.at || 0) + span * Math.pow(Math.random(), o.pace || 1) });
+  }
+  // glassware touching: a handful of inharmonic partials and the tick of the contact, never twice at the same pitch
+  function glass(o) {
+    const f = (o.f || 2400) * rnd(0.93, 1.07);
+    for (const [r, g, d] of [[1, 1, 1], [2.32, 0.5, 0.55], [4.25, 0.28, 0.3], [6.63, 0.12, 0.18]]) if (f * r < 15000) tone(Object.assign({}, o, { f: f * r, g: o.g * g, d: (o.d || 0.5) * d, a: 0.001 }));
+    hiss(Object.assign({}, o, { f: 5000, type: 'highpass', g: o.g * 0.8, d: 0.006, a: 0.001 }));
+  }
+  // plastic and switches: a tick with a little body under it. f sets how bright it is
+  function click(o) {
+    hiss(Object.assign({ f: 2600 }, o, { q: 2.5, d: 0.012, a: 0.001 }));
+    tone(Object.assign({}, o, { f: 230, slide: 120, g: o.g * 0.5, d: 0.02, a: 0.001 }));
+  }
+  // something soft and heavy landing
+  function thud(o) {
+    const f = o.f || 95;
+    tone(Object.assign({}, o, { f, slide: f * 0.55, d: o.d || 0.14, a: 0.004 }));
+    hiss(Object.assign({}, o, { f: 260, type: 'lowpass', g: o.g * 0.7, d: 0.05 }));
+  }
+  // k scales every frequency a strain makes, slow every duration: [neither, gold, pink]
+  const BODY = [{ k: 1, slow: 1 }, { k: 1.3, slow: 0.85 }, { k: 0.72, slow: 1.25 }];
+  const path = (B, ...f) => f.map(x => x * B.k);
+  // the two ways a round or a match can end: a culture welling up, and one going down the drain
+  function bloom(B, g) { bubbles(14, 350 * B.k, 1900 * B.k, 0.7, { tilt: 1, pace: 0.6, g: 0.07 * g }); squelch({ f: path(B, 300, 600, 1500), d: 0.6, a: 0.2, g: 0.7 * g }); }
+  function slump(B, g) { bubbles(8, 220 * B.k, 1100 * B.k, 0.8, { tilt: -1, pace: 1.6, rise: 0.8, g: 0.07 * g }); hiss({ f: path(B, 900, 400, 160), q: 4, g: 0.7 * g, d: 0.9, a: 0.05 }); thud({ g: 0.25 * g, at: 0.75 }); }
+
+  // --- the battle: one sound for each kind of event in the log. B: the body of the side it belongs to, p: its pan ---
+  const EV = {
+    food: (B, p) => { squelch({ f: path(B, 320, 520, 1300), d: 0.2 * B.slow, g: 0.9, pan: p }); bubbles(4, 500 * B.k, 1400 * B.k, 0.22 * B.slow, { g: 0.07, at: 0.06, pan: p }); }, // a slurp, and what it stirs up
+    scout: (B, p) => bubbles(2, 1700 * B.k, 2600 * B.k, 0.09, { g: 0.035, pan: p }), // a sniff: two small bubbles
+    contact: (B, p) => { // two wet bodies meeting
+      thud({ g: 0.4, pan: p }); squelch({ f: path(BODY[1], 900, 380, 600), d: 0.3, g: 0.9, pan: p }); squelch({ f: path(BODY[2], 900, 380, 600), d: 0.38, g: 0.9, at: 0.04, pan: p });
+      crackle(10, 0.3, { f: 2500, g: 0.2, at: 0.03, pan: p });
+    },
+    bare: () => { hiss({ f: [900, 500, 180], q: 4, g: 0.7, d: 1.2, a: 0.1 }); bubbles(9, 220, 900, 1.1, { tilt: -1, pace: 1.6, rise: 0.8, g: 0.07 }); }, // the last of it going down a drain
+    breach: (B, p) => { // acid through stone: a sizzle that dies away, the crumbs, and what is left settling
+      crackle(34, 0.7, { f: 4500, g: 0.25, pace: 1.5, pan: p }); crackle(5, 0.35, { f: 500, type: 'bandpass', q: 3, g: 0.6, at: 0.25, pan: p });
+      bubbles(3, 700 * B.k, 1500 * B.k, 0.3, { g: 0.04, at: 0.1, pan: p }); thud({ g: 0.2, at: 0.55, pan: p });
+    },
+    split: (B, p) => { // tissue tearing, faster and faster, then the wet snap as the halves part
+      crackle(14, 0.22, { f: 1600 * B.k, type: 'bandpass', q: 2, g: 0.5, pace: 0.6, pan: p }); squelch({ f: path(B, 1500, 500, 260), d: 0.16, g: 0.9, at: 0.2, pan: p });
+      bubble({ f: 700 * B.k, g: 0.06, at: 0.24, pan: p - 0.4 }); bubble({ f: 560 * B.k, g: 0.06, at: 0.27, pan: p + 0.4 });
+    },
+    fragstarve: (B, p) => squelch({ f: path(B, 600, 300), d: 0.25, g: 0.4, pan: p }),
+    starve: (B, p) => { hiss({ f: path(B, 800, 450, 220), q: 3, g: 0.6, d: 0.8 * B.slow, a: 0.08, pan: p }); bubbles(4, 250 * B.k, 600 * B.k, 0.8 * B.slow, { tilt: -1, pace: 1.7, rise: 0.8, g: 0.06, pan: p }); }, // deflating
+    dormant: (B, p) => { crackle(22, 0.9, { f: 3000, g: 0.22, pace: 2, pan: p }); thud({ f: 120, g: 0.15, at: 0.1, pan: p }); }, // drying to a crust
+    recover: (B, p) => bubbles(6, 400 * B.k, 1300 * B.k, 0.45, { tilt: 1, pace: 0.6, g: 0.05, pan: p }), // coming back to the boil
+    spores: (B, p, ev) => { // a puff and a pop for each shot, up to four
+      for (let k = 0, n = Math.min(ev.shots.length, 4); k < n; k++) { const at = k * 0.08 + rnd(0, 0.02); hiss({ f: [1800, 900, 500], q: 1.2, a: 0.008, d: 0.1, g: 0.5, at, pan: p }); bubble({ f: 1900 * B.k * rnd(0.9, 1.1), g: 0.06, at, pan: p }); }
+    },
+    migrate: (B, p) => { squelch({ f: path(B, 300, 700, 420, 900), d: 0.9 * B.slow, a: 0.15, g: 0.7, pan: p }); bubbles(5, 450 * B.k, 1100 * B.k, 0.8 * B.slow, { g: 0.045, at: 0.1, pan: p }); }, // a long peristaltic gurgle
+    end: (B, p, ev, mine) => mine ? bloom(B, 0.9) : slump(B, 0.9), // the winner's body: welling up if the dish is yours, draining if it is not
+  };
+  // How much an event matters, for thinning. A batch is whatever one frame of playback crossed: a handful at the usual
+  // speeds, dozens at 10000×. At most four of a batch are heard, the weightiest first, played a twentieth of a second
+  // apart in the order they happened; and the more that has sounded in the last half second, the more an event must
+  // matter to be heard at all. A side cannot repeat one kind of event within 120 ms.
+  const EV_RANK = { end: 3, contact: 3, split: 2, breach: 2, bare: 2, starve: 2, dormant: 2, spores: 1, migrate: 1, food: 1, recover: 0, fragstarve: 0, scout: 0 };
+  const lately = [], last = {};
+  function events(batch, me) { // batch: [{ ev, pan }], me: the side the viewer plays
+    if (!live() || !batch.length) return;
+    try {
+      const now = performance.now();
+      while (lately.length && now - lately[0] > 500) lately.shift();
+      const bar = lately.length >= 8 ? 2 : lately.length >= 4 ? 1 : 0;
+      const heard = batch.filter(x => EV[x.ev.type] && EV_RANK[x.ev.type] >= bar).sort((a, b) => EV_RANK[b.ev.type] - EV_RANK[a.ev.type]).slice(0, 4).sort((a, b) => a.ev.t - b.ev.t);
+      lag = 0;
+      for (const { ev, pan } of heard) {
+        const k = ev.type + ev.side; if (now - (last[k] || 0) < 120) continue;
+        last[k] = now; lately.push(now);
+        EV[ev.type](BODY[ev.side] || BODY[0], pan || 0, ev, ev.side === me); lag += 0.05;
+      }
+    } catch (e) { } // a sound that fails must never stop the frame that asked for it
+    lag = 0;
+  }
+
+  // --- the interface: the bench the genome is written at ---
+  const knock = at => { thud({ f: 140, g: 0.2, d: 0.07, at }); hiss({ f: 700, q: 2, g: 0.2, d: 0.015, a: 0.001, at }); };
+  const UI = {
+    geneOn: () => { click({ g: 0.25 }); bubble({ f: rnd(900, 1300), g: 0.1, at: 0.05 }); }, // the pipette pressed, and the drop
+    geneOff: () => { click({ f: 1900, g: 0.2 }); hiss({ f: [500, 1600], q: 2, g: 0.4, d: 0.07, a: 0.02, at: 0.02 }); }, // and drawn back up
+    step: v => click({ f: 1300 + 280 * v, g: 0.25 }), // a dial's detent, brighter the further it is turned
+    deny: () => knock(0), // a gene not yet isolated: a sealed vial
+    over: () => { knock(0.1); knock(0.22); }, // the edit just made took the genome over its budget
+    start: () => { click({ g: 0.25 }); bubble({ f: 780, rise: 2.1, d: 0.06, g: 0.2, at: 0.09 }); hiss({ f: 3200, g: 0.2, d: 0.05, at: 0.1 }); bubbles(3, 900, 2000, 0.15, { g: 0.05, at: 0.14 }); }, // inoculation: a drop into the medium
+    count: () => click({ f: 2000, g: 0.3 }), // the bench timer
+    go: () => glass({ f: 2100, g: 0.1, d: 0.5 }), // the lid going on the dish
+    win: me => { bloom(BODY[me], 1.2); glass({ f: 2300, g: 0.09, d: 0.9, at: 0.75 }); glass({ f: 3050, g: 0.06, d: 0.8, at: 0.86 }); }, // the match verdict: your culture welling up, and the dish set on the rack
+    lose: me => slump(BODY[3 - me], 1.2), // or theirs taking yours down
+    unlock: () => [0, 0.09, 0.2, 0.27].forEach(at => glass({ f: rnd(2400, 3800), g: 0.05, d: 0.4, at: 1.1 + at })), // new genes isolated: vials rattling into the rack after the verdict
+    join: () => { glass({ f: 2000, g: 0.08, d: 0.5 }); glass({ f: 2500, g: 0.07, d: 0.5, at: 0.11 }); }, // versus: the other player connected, two dishes touching
+    leave: () => { knock(0); hiss({ f: [1400, 500], q: 2, g: 0.3, d: 0.12, a: 0.02, at: 0.05 }); },
+    ready: () => { click({ g: 0.2 }); glass({ f: 2800, g: 0.04, d: 0.3, at: 0.03 }); }, // versus: the other player signalled ready
+    sound: () => glass({ f: 2400, g: 0.08, d: 0.5 }), // sound switched on
+  };
+  function ui(name, arg) { if (!live()) return; lag = 0; try { UI[name](arg); } catch (e) { } }
+
+  // --- the bed: what a plate sounds like while it is being watched ---
+  // A standing set of nodes, built with the first match and steered every frame from a reading of the minute on show:
+  //   the room    the incubator's fan and mains hum. The only part still heard, lower, while playback is paused
+  //   the lamp    a ballast buzz while the lamp is lit, on plates that cycle it, with the relay's click as it switches
+  //   each strain a band of noise breathing slowly (its streaming), louder the more of the living tissue is its own and
+  //               quieter the more of it is starving or dormant; bubbles as fast as it is growing; low falling pops
+  //               as fast as it is losing cells
+  //   the front   wet chewing where tissue is being engulfed, and a dry fizz where acid, antibiotic, salt or light burns it
+  // Each strain and the front are panned to where they are on screen. Everything but the room follows playback: it stops
+  // on pause, and `busy` thins it at slow playback speeds and thickens it at fast ones, within limits.
+  function buildBed() {
+    const now = ctx.currentTime;
+    const G = v => { const n = ctx.createGain(); n.gain.value = v; return n; };
+    const F = (type, f, q) => { const n = ctx.createBiquadFilter(); n.type = type; n.frequency.value = f; n.Q.value = q; return n; };
+    const noise = () => { const n = ctx.createBufferSource(); n.buffer = grain; n.loop = true; n.start(now, Math.random() * 2.9); return n; };
+    const osc = (type, f) => { const n = ctx.createOscillator(); n.type = type; n.frequency.value = f; n.start(now); return n; };
+    const pan = () => ctx.createStereoPanner ? ctx.createStereoPanner() : G(1);
+    const chain = (...ns) => { for (let i = 1; i < ns.length; i++) ns[i - 1].connect(ns[i]); };
+    const B = { out: G(0), room: G(0), lamp: G(0), lit: null, body: [], pan: [pan()], into: [] };
+    B.out.connect(bus);
+    chain(noise(), F('lowpass', 240, 0.5), G(ROOM), B.room, B.out);
+    for (const [f, g] of [[120, 1], [180, 0.4], [240, 0.2]]) chain(osc('sine', f), G(g * ROOM * 0.08), B.room);
+    chain(osc('sawtooth', 120), F('bandpass', 2600, 0.8), B.lamp, B.out);
+    for (const s of [1, 2]) {
+      const k = BODY[s].k, flt = F('bandpass', 380 * k, 2.2);
+      B.pan[s] = pan(); B.body[s] = G(0); B.into[s] = G(1);
+      chain(noise(), flt, B.body[s], B.pan[s], B.out); chain(B.into[s], B.pan[s]);
+      chain(osc('sine', 0.19 / BODY[s].slow), G(150 * k), flt.frequency); // shuttle streaming: the band drifts up and down every few seconds
+    }
+    B.fizz = F('highpass', 3800, 0.7); B.chew = F('bandpass', 900, 2.5);
+    chain(B.fizz, B.pan[0], B.out); chain(B.chew, B.pan[0]);
+    BED = B;
+  }
+  const ROOM = 0.045, STREAM = 0.28, LAMP = 0.025; // the levels of the standing layers
+  const count = x => { const n = Math.floor(x); return n + (Math.random() < x - n ? 1 : 0); }; // how many of something that happens x times a frame
+  function bed(dt, st) { // st: see bedState; null when no match is on show
+    if (!live()) return;
+    try {
+      const now = ctx.currentTime;
+      if (!st) { if (BED) BED.out.gain.setTargetAtTime(0, now, 0.25); return; }
+      if (!BED) buildBed();
+      const B = BED, to = (p, v, tc) => { if (p) p.setTargetAtTime(v, now, tc); };
+      const busy = st.playing ? clamp(Math.sqrt(st.rate / 25), 0.35, 1.5) : 0, each = busy * dt;
+      lag = 0;
+      to(B.out.gain, 1, 0.3); to(B.room.gain, st.playing ? 1 : 0.5, 0.6);
+      if (st.lamp !== B.lit) { if (B.lit !== null && st.lamp !== null && st.playing) click({ f: 1500, g: 0.2 }); B.lit = st.lamp; }
+      to(B.lamp.gain, st.lamp ? LAMP : 0, 0.04);
+      const all = Math.max(1, st.cells[1] + st.cells[2]);
+      for (const s of [1, 2]) {
+        const k = BODY[s].k, c = st.cells[s], awake = 1 - 0.75 * st.still[s];
+        to(B.body[s].gain, STREAM * Math.min(1, busy) * (0.3 + 0.7 * c / all) * Math.sqrt(Math.min(1, c / 500)) * awake, 0.5);
+        to(B.pan[s].pan, st.pan[s], 0.4);
+        if (!busy || !c) continue;
+        for (let n = count(Math.min(14, 0.6 + st.grow[s] * 3) * awake * each); n > 0; n--) bubble({ f: rlog(420, 1700) * k, g: rnd(0.01, 0.028), at: Math.random() * dt, to: B.into[s] });
+        for (let n = count(Math.min(8, st.loss[s] * 3) * each); n > 0; n--) bubble({ f: rlog(170, 380) * k, rise: 0.8, g: rnd(0.016, 0.032), at: Math.random() * dt, to: B.into[s] });
+      }
+      to(B.pan[0].pan, st.pan[0], 0.3);
+      for (let n = count(Math.min(18, st.bite * 1.2) * each); n > 0; n--) speck({ to: B.chew, g: rnd(0.08, 0.3), d: rnd(0.012, 0.035), at: Math.random() * dt });
+      for (let n = count(Math.min(30, st.burn * 5) * each); n > 0; n--) speck({ to: B.fizz, g: rnd(0.03, 0.1), d: rnd(0.003, 0.01), at: Math.random() * dt });
+    } catch (e) { } // as with events: never the frame's problem
+  }
+  return { ok: !!AC, get on() { return on; }, set, events, ui, bed };
+})();
+function toggleSound() { SND.set(!SND.on); showSound(); SND.ui('sound'); }
+function showSound() { const b = $('bSound'); b.hidden = !SND.ok; b.setAttribute('aria-pressed', String(SND.on)); b.title = `Sound ${SND.on ? 'on' : 'off'} (M)`; }
+$('bSound').addEventListener('click', toggleSound);
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey || e.metaKey || e.altKey || e.repeat || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable) return;
+  if (e.key.toLowerCase() === 'm') toggleSound();
+});
+showSound();
+
 // ---------------- App state ----------------
 const S = { mode: 'rack', level: 0, genome: cloneG(prog.genome), match: null, battle: null, libOpen: false, playhead: 0, revealed: 0, playing: false, speed: 1500, sel: -1, resultShown: false, shownEvt: -1, lastFx: 0, logN: 0, pvp: null }; // match: the match being played or reviewed and battle the round of it on show (see Match below); pvp: the versus session (see Versus below), null when playing solo
 // Playback speed is a multiple of real time. A tick is one minute of incubation, so Nx advances N/60 ticks a wall
@@ -3436,14 +3701,16 @@ function renderLab() {
   $('lib').addEventListener('toggle', e => { S.libOpen = e.target.open; });
   if (vs) renderLobby();
   renderLibrary();
+  const fits = () => genomeCost(g) <= budgetNow(); // an edit that takes the genome over its budget gets a knock
   Lab.querySelectorAll('[data-step]').forEach(b => b.addEventListener('click', () => {
     const [k, d] = b.dataset.step.split(':'), drive = k.startsWith('taxis.'), key = drive ? k.slice(6) : k, obj = drive ? g.taxis : g;
-    const v = clamp(obj[key] + (+d), drive ? 0 : 1, 5); if (v !== obj[key]) { const was = obj[key]; obj[key] = v; TELE.edit(k, was, v); refreshLab(); }
+    const v = clamp(obj[key] + (+d), drive ? 0 : 1, 5); if (v !== obj[key]) { const was = obj[key], fit = fits(); obj[key] = v; TELE.edit(k, was, v); SND.ui('step', v); if (fit && !fits()) SND.ui('over'); refreshLab(); }
   }));
   Lab.querySelectorAll('.gene').forEach(b => b.addEventListener('click', () => {
-    const id = b.dataset.id, G = GENE_BY_ID[id]; if (!isolated(G)) return;
-    const k = g.genes.indexOf(id); if (k >= 0) g.genes.splice(k, 1); else g.genes.push(id);
+    const id = b.dataset.id, G = GENE_BY_ID[id]; if (!isolated(G)) { SND.ui('deny'); return; }
+    const k = g.genes.indexOf(id), fit = fits(); if (k >= 0) g.genes.splice(k, 1); else g.genes.push(id);
     TELE.edit('gene', k >= 0 ? id : null, k >= 0 ? null : id);
+    SND.ui(k >= 0 ? 'geneOff' : 'geneOn'); if (fit && !fits()) SND.ui('over');
     refreshLab();
   }));
   $('inoc').addEventListener('click', () => S.pvp ? pvpReady() : startMatch());
@@ -3721,7 +3988,7 @@ function peerLeft(R, id) {
 function lostOpponent(text) {
   const vs = S.pvp, was = vsConnected();
   vs.opp = null; vs.them = freshThem(); vs.me.ready = false;
-  setStatus(was ? 'wait' : 'err', `${text} Your own code still works.`);
+  setStatus(was ? 'wait' : 'err', `${text} Your own code still works.`); if (was) SND.ui('leave');
   if (S.mode === 'lab') { renderLab(); } else if (S.mode === 'battle') { hint.textContent = text; hint.style.opacity = 1; }
 }
 function onMsg(R, id, m) {
@@ -3744,7 +4011,8 @@ function onMsg(R, id, m) {
       const genome = netGenome(m.genome); if (!genome) break;
       vs.them = { ready: true, key: String(m.key || ''), name: netName(m.name), genome, label: netName(m.name), seeds: netSeeds(m.seeds) };
       if (genomeCost(genome) > vs.set.cap) vs.them.ready = false;
-      renderLobby(); checkStart(); break;
+      renderLobby(); checkStart(); if (vs.them.ready) SND.ui('ready'); // not when it started the match, which has a sound of its own
+      break;
     }
     case 'unready': vs.them.ready = false; renderLobby(); break;
     case 'name': vs.them.label = netName(m.name); if (!vs.them.ready) vs.them.name = vs.them.label; renderLobby(); renderLibrary(); break;
@@ -3773,7 +4041,7 @@ function onHello(R, id, m) {
   if (vs.opp.code < vs.code) { vs.set = netSet(m.set); vs.setV = Math.max(0, +m.setV || 0); } // the lower code hosts: its settings win the first handshake
   if (vs.joining && !vs.opp.rooms.has(vs.joining)) leaveCode(vs.joining);
   vs.joining = null; vs.me.ready = false;
-  setStatus('on', `Connected to ${oppLabel()}.`);
+  setStatus('on', `Connected to ${oppLabel()}.`); SND.ui('join');
   if (S.mode === 'lab') { S.level = vs.set.level; renderLab(); previewLevel(S.level); }
 }
 
@@ -4027,9 +4295,11 @@ function beginRound(k) {
   const R = $('result');
   R.innerHTML = `<div class="card countdown" role="dialog" aria-label="Round ${k + 1} of ${M.n}"><div><div class="eyebrow">${plateLabel(M)}</div><div class="mtitle">Round ${k + 1} of ${M.n}</div><div class="score">${score}</div></div><div class="num" id="cdNum" aria-live="polite">3</div></div>`;
   R.hidden = false;
+  SND.ui(k ? 'count' : 'start'); // the match opens on a drop from the pipette in place of the first tick
   let n = 3;
   const tick = () => {
-    if (--n <= 0) { cancelCountdown(); R.hidden = true; S.playing = true; setPlayIcon(); return; }
+    if (--n <= 0) { cancelCountdown(); R.hidden = true; S.playing = true; setPlayIcon(); SND.ui('go'); return; }
+    SND.ui('count');
     const num = $('cdNum'); if (num) { num.textContent = n; num.style.animation = 'none'; void num.offsetWidth; num.style.animation = ''; }
     countdown = setTimeout(tick, CD_STEP);
   };
@@ -4093,15 +4363,53 @@ function seek(t, fxOn) {
   if (S.playhead < lastTick() - 0.01) S.resultShown = false; // the end can be marked again once it has been left
   if (fxOn) fireEvents(prev, S.playhead);
 }
+const panV = new THREE.Vector3();
+// Where a point of the plate (in cells, fractions allowed) sits across the screen as the camera has it, -0.8 at the left
+// edge to 0.8 at the right: the pan of a sound made there.
+function panAt(x, y) { return clamp(panV.set(((x + 0.5) / N) * SIZE - SIZE / 2, 0, SIZE / 2 - ((y + 0.5) / N) * SIZE).project(camera).x, -1, 1) * 0.8 || 0; }
+function cellPan(cell) { return cell < 0 ? 0 : panAt(cell % N, Math.floor(cell / N)); }
+// What the sound bed needs to know about the minute on show (see SND.bed), read off its frame: each side's cells, how fast
+// it is gaining or losing them (over the last four minutes) and how much of it is `still`, starving or dormant; how much
+// tissue is being engulfed (bite) or burnt by acid, antibiotic, salt and light, or is withering (burn); and where on the
+// plate each side and the fighting are, for the pan. The plate is read once a tick; the pans follow the camera every frame.
+const bedSt = { b: null, t: -1, cells: [0, 0, 0], grow: [0, 0, 0], loss: [0, 0, 0], still: [0, 0, 0], at: [[0, 0], [0, 0], [0, 0]], pan: [0, 0, 0], bite: 0, burn: 0, lamp: null, playing: false, rate: 0 };
+function bedState(b, t) {
+  const st = bedSt, F = b.frames[t];
+  if (F && (st.b !== b || st.t !== t)) {
+    st.b = b; st.t = t; st.bite = st.burn = 0;
+    const C = b.stats.cells, t0 = Math.max(0, t - 4), sx = [0, 0, 0], sy = [0, 0, 0], sw = [0, 0, 0], asleep = [0, 0, 0]; // index 0: the fighting, weighted by damage
+    for (let i = 0; i < NN; i++) {
+      const fl = F.flags[i]; if (!fl) continue;
+      const o = fl & 3, src = fl >> 4, x = i % N, y = (i - x) / N;
+      if (o) { sx[o] += x; sy[o] += y; sw[o]++; if (fl & 4) asleep[o]++; }
+      if (src) { const w = F.dens[i * 4 + 3] / 255 * (src > 5 ? 0.5 : 1); if (src === 1) st.bite += w; else st.burn += w; sx[0] += x * w; sy[0] += y * w; sw[0] += w; }
+    }
+    for (const s of [0, 1, 2]) { st.at[s][0] = sw[s] ? sx[s] / sw[s] : (N - 1) / 2; st.at[s][1] = sw[s] ? sy[s] / sw[s] : (N - 1) / 2; }
+    for (const s of [1, 2]) {
+      const d = (C[s][t] - C[s][t0]) / Math.max(1, t - t0);
+      st.cells[s] = C[s][t]; st.grow[s] = Math.max(0, d); st.loss[s] = Math.max(0, -d);
+      let n = 0, hungry = 0; for (const f of F.frags[s]) { n += f[0]; if (f[2]) hungry += f[0]; }
+      st.still[s] = Math.max(n ? hungry / n : 0, sw[s] ? asleep[s] / sw[s] : 0);
+    }
+    st.lamp = b.cycle ? b.lampAt(t) : null;
+  }
+  for (const s of [0, 1, 2]) st.pan[s] = panAt(st.at[s][0], st.at[s][1]);
+  st.playing = S.playing && S.playhead < lastTick(); st.rate = S.speed / TICK_SEC;
+  return st;
+}
 function fireEvents(a, b) {
-  if (!CELL_FX || !S.battle || b <= a) return;
+  if (!S.battle || b <= a) return;
+  const heard = [];
   for (const ev of S.battle.events) {
     if (ev.t > a && ev.t <= b) {
+      heard.push({ ev, pan: ev.type === 'end' ? 0 : cellPan(ev.type === 'spores' ? ev.shots[0][0] : ev.cell) });
+      if (!CELL_FX) continue;
       const col = ev.side === 1 ? 0xf4c53c : ev.side === 2 ? 0xe2508a : 0xffffff;
       if (ev.type === 'spores') { for (const [f, to] of ev.shots) fxSpore(f, to, col); }
       else if (ev.type !== 'recover' && ev.type !== 'scout' && ev.cell >= 0) fxRing(ev.cell, col, ev.type === 'end' ? 2.2 : ev.type === 'contact' || ev.type === 'split' ? 1.6 : 1.1);
     }
   }
+  SND.events(heard, S.battle.me);
 }
 // Solo rivals are Latin binomials and go by their genus in the log; player strains keep their full name.
 function sideName(s, b) { b = b || S.battle; return b.pvp || s === 1 ? b.names[s] : b.names[s].split(' ')[0]; }
@@ -4395,6 +4703,7 @@ function showSummary() {
       if (!prog.cleared[M.level]) { first = true; prog.cleared[M.level] = true; M.newGenes = GENES.filter(G => G.unlock === M.level + 2); }
       save(); renderProgress();
     }
+    SND.ui(win ? 'win' : 'lose', me); if (M.newGenes.length) SND.ui('unlock');
     TELE.finish(M, first); // versus and state-blob matches carry no telemetry, so this is a no-op for them; the last plate isolates no genes, so the first win is flagged here rather than read off newGenes
   }
   const nextL = LEVELS[M.level + 1], newKb = M.newGenes.reduce((a, G) => a + G.cost, 0), rise = nextL ? nextL.budget - LEVELS[M.level].budget : 0;
@@ -4760,6 +5069,7 @@ function frame(now) {
     showFrame(S.preview, 0, 0);
   }
   if (cam.auto && !pointers.size) { cam.theta += dt * 0.08; updateCamera(); }
+  SND.bed(dt, S.mode === 'battle' && S.match && S.battle && !S.showcase ? bedState(S.battle, Math.floor(S.playhead)) : null);
   updateFx(dt);
   if (renderer) renderer.render(scene, camera);
   requestAnimationFrame(frame);

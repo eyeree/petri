@@ -87,6 +87,17 @@ previous and next round outside them, a speed slider from real time to 10000×, 
 to go back to the lab, and Match results to open the summary. The timeline only reveals
 as far as you have watched, so a first viewing never gives away the ending.
 
+Sound is on by default; the speaker button in the header or the M key switches it off and
+on, and the choice is remembered. It is the sound of a wet bench rather than of an
+instrument: bubbles, squelches and dry crackle for the cultures, glass, pipette clicks and
+knocks for the lab. Every event in the battle log has a sound, placed left or right by where
+it happened on screen, and the two strains differ in body as they do in colour: gold is the
+thinner, quicker fluid and pink the thicker, slower one. Under a match runs a bed that follows
+the plate: each strain streams and bubbles as fast as it is growing, the front line chews
+where tissue is engulfed and fizzes where it is burnt, and the incubator hums (with the
+lamp's buzz on plates that cycle it). Sound follows the playhead: on pause only the hum is
+left, and a scrubbed timeline is silent.
+
 For debugging, S opens the simulation state: the moment on show as a text blob holding the
 plate, both genomes, every round's seed, the round and minute, the selected cell and the
 camera. Copy it to hand that moment to whoever is debugging it, or paste a blob in and load
@@ -122,7 +133,8 @@ of strict NATs may fail to connect.
 
 ## Development
 
-Everything is in `index.html`: the simulation, the three.js renderer and the interface.
+Everything is in `index.html`: the simulation, the three.js renderer, the interface and
+the sound, which is synthesized with Web Audio (the `Audio` section) so there are no sample files.
 The simulation block at the top of the script (from `MYXO SIMULATION` to the
 `module.exports` line) has no DOM dependencies and runs under Node, which is how
 balance is checked: extract it with `sed`, require it, and run every plate against a

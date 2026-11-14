@@ -1,7 +1,7 @@
 # Myxo Petri Wars
 
 A slime-mould auto-battler that runs entirely in one file, `index.html`: the simulation,
-the three.js renderer, the interface, versus play and telemetry. There is no build step;
+the three.js renderer, the interface, synthesized sound, versus play and telemetry. There is no build step;
 serve the folder with any static server (`python3 -m http.server`) or open the file directly.
 It is published with GitHub Pages at <https://eyeree.art/petri/>.
 
